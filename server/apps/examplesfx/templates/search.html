@@ -1,0 +1,78 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+
+{% block title %}Search{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}appfx/css/search-page.css" />
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+
+    <style>       
+     
+        #main-area {
+            background: white;
+            padding-top: 10px;
+            padding-bottom: 20px;
+            width: 100%;
+        }   
+        
+        .splunk .nav-tabs {
+            padding-top: 10px;
+            padding-left: 20px;
+        } 
+        
+        .splunk .nav-tabs li {
+            margin-right: 5px;
+        }
+    </style>
+
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Recreating the Search Timeline UI</h4>
+                </div>
+                <div class="panel-body">
+                    <p>
+                    This example shows how you can use the components of the Application
+                    Framework to recreate portions of the Splunk Search Timeline UI.
+                    Without any custom code, we can put the controls and
+                    contexts we want on the page.
+                    </p>
+                    
+                    <p>
+                    Another benefit is that this is still just an HTML/JS/CSS page:
+                    we can add custom HTML (such as this blurb), or even add custom
+                    interaction using JavaScript.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+    <div class="section-body" id="section-body">
+        <div class="section-inner">
+            {% searchbar id="main-searchbar" contextid="main-search" %}
+            {% searchcontrols id="main-searchcontrols" contextid="main-search" %}
+        </div>
+    </div>
+
+    <div id="main-area">
+        {% timeline id="main-timeline" contextid="main-search" %}
+        {% eventtable id="main-eventtable" contextid="main-search" %}
+    </div>
+
+{% endblock content%}
+
+{% block contexts %}
+
+    {% search id="main-search" app="search" preview=True required_field_list="*" status_buckets=300 %}
+
+{% endblock contexts %}

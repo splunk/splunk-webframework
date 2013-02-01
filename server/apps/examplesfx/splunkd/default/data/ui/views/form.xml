@@ -1,0 +1,19 @@
+<form>
+  <label>Basic SimpleXML Form</label>
+
+  <searchTemplate>index=_internal sourcetype=$sourcetype$ | head 100</searchTemplate>
+
+  <fieldset>
+    <input type="dropdown" token="sourcetype">
+      <label>Sourcetype</label>
+      <populatingSearch fieldForValue="sourcetype" fieldForLabel="sourcetype">| metadata index=_internal type=sourcetypes | fields sourcetype</populatingSearch>
+    </input>
+  </fieldset>
+
+  <row>
+    <table>
+      <title>Results</title>
+        <option name="count">20</option>
+    </table>
+  </row>
+</form>

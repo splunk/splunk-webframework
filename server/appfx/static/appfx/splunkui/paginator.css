@@ -1,0 +1,30 @@
+/* Copyright 2012 Splunk, Inc. */
+
+.appfx-paginator {
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+}
+.appfx-paginator .disabled {
+    color: #999;
+}
+.appfx-paginator .selected {
+    color: black;
+    font-weight: bold;
+}
+.appfx-paginator a {
+    border-color: #fff;
+    border-style: solid;
+    border-width: 1px;
+    border-radius: 3px;
+    padding-left: 5px;
+    padding-right: 5px;
+    text-decoration: none;
+}
+.appfx-paginator a:hover {
+    border-color: #ccc;
+}
+.appfx-paginator span {
+    padding-left: 5px;
+    padding-right: 5px;
+}

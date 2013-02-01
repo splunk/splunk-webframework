@@ -1,0 +1,191 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+
+    <style>    
+    </style>
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Forms</h4>
+                </div>
+                <div class="panel-body">
+                    <p>
+                    Just like dashboards, we can build simple forms using Django
+                    template tags and JavaScript. In this case, we use a similar
+                    dashboard to what you saw previously, but we parameterize
+                    the query to have a dynamic <code>$count$</code> token. We 
+                    acquire this token from the dropdown (<code>select</code>) 
+                    control.
+                    </p>
+                    
+                    <p>
+                    We also show how to populate a form control, in this
+                    case a radio button group, from search results. In this case,
+                    we are controlling the <code>$host</code> token, whose values
+                    we get from a metadata search.
+                    </p>
+                    
+                    <p>
+                    Finally, notice that in JavaScript we set defaults
+                    for these tokens and register event handlers for when
+                    the form controls change.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span6">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Form Input</h4>
+                </div>
+                <div class="panel-body">
+                    How many events would you like to see?
+                    {% select id="counts" default="0" %}
+                </div>
+            </div>
+        </div>
+        <div class="span6">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Form Input from Search</h4>
+                </div>
+                <div class="panel-body">
+                    What host should we use?
+                    {% radio id="host-radio" contextid="hostsearch" valueField="host" default="10" %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span6">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Chart 1</h4>
+                </div>
+                <div class="panel-body">
+                    {% chart id="chart1" contextid="simplesearch1" type="pie" %}
+                </div>
+            </div>
+        </div>
+        <div class="span6">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Chart 2</h4>
+                </div>
+                <div class="panel-body">
+                    {% chart id="chart2" contextid="simplesearch1" type="bar" %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-body">
+                    {% timeline id="timeline1" contextid="simplesearch1" %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>My Table</h4>
+                </div>
+                <div class="panel-body">
+                    <div class="pull-right">
+                        {% paginator id="table-paginator" %}
+                    </div>
+                    {% resulttable id="table1" contextid="simplesearch2" paginator="table-paginator" %}
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+</div>
+
+{% endblock content%}
+
+{% block contexts %}
+    {% search id="simplesearch1" search="search index=_internal host=$host$ | head $count$ | stats count by sourcetype" 
+        preview=True cache=60 status_buckets=300 autostart=False %}
+        
+    {% search id="simplesearch2" search="search index=_internal host=$host$ | head $count$ | stats count by source" 
+        preview=True cache=60 status_buckets=300 autostart=False %}
+        
+    {% search id="hostsearch" search="| metadata index=* type=hosts" cache=True preview=True %}
+{% endblock contexts %}
+
+{% block js %}
+<script>
+    AppFx.on("start", function() {
+        // Fetch a reference to the control and contexts
+        var select = AppFx.Components.getInstance("counts");
+        var radio = AppFx.Components.getInstance("host-radio");
+        var simpleSearch1 = AppFx.Components.getInstance("simplesearch1");
+        var simpleSearch2 = AppFx.Components.getInstance("simplesearch2");
+        
+        // Set up default values for $count$ and $host$
+        simpleSearch1.query.set({"count": 10, "host": "*"});
+        simpleSearch2.query.set({"count": 10, "host": "*"});
+        
+        // Set up the choices, since this is static
+        select.settings.set("choices", [
+            {value: "10", label: "10"},
+            {value: "500", label: "500"},
+            {value: "1000", label: "10000"},
+        ]);
+        
+        // Add "all" choices to the radio
+        radio.settings.set("choices", [
+            {value: "*", label: "(all)"}    
+        ]);
+        
+        // Set up a handler for when the selection changes
+        select.on("change", function() {
+            if (!select.val()) {
+                return;   
+            }
+            
+            // Set the tokens for both contexts
+            simpleSearch1.query.set("count", select.val());
+            simpleSearch2.query.set("count", select.val());
+            
+            // Start the searches
+            simpleSearch1.startSearch();
+            simpleSearch2.startSearch();
+        });
+        
+        // Set up a handler for when the selection changes
+        radio.on("change", function() {
+            if (!radio.val()) {
+                return;   
+            }
+            
+            // Set the tokens for both contexts
+            simpleSearch1.query.set("host", radio.val());
+            simpleSearch2.query.set("host", radio.val());
+            
+            // Start the searches
+            simpleSearch1.startSearch();
+            simpleSearch2.startSearch();
+        });
+    });
+</script>
+
+{% endblock js %}

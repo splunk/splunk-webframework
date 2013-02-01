@@ -1,0 +1,22 @@
+.splunk footer {
+  height: 48px;
+  padding: 0 20px;
+  font-size: 11px;
+}
+.splunk div.divider {
+  border-top: 1px solid #CCC;
+  border-bottom: 1px solid white;
+  margin: 0 -10px;
+}
+.splunk footer .divider {
+  margin: 0 -20px 20px -20px;
+  font-size: 11px;
+}
+.splunk footer p {
+  color: #333;
+  height: 13px;
+}
+.splunk footer a {
+  padding-right: 20px;
+  color: #999;
+}

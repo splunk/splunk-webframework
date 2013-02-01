@@ -1,0 +1,58 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Saved Searches</h4>
+                </div>
+                <div class="panel-body">
+                    This example shows how to use a saved search context to power 
+                    multiple controls.
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span6">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Chart 1</h4>
+                </div>
+                <div class="panel-body">
+                    {% chart id="chart1" contextid="savedsearch1" type="pie" %}
+                </div>
+            </div>
+        </div>
+        <div class="span6">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>My Table</h4>
+                </div>
+                <div class="panel-body">
+                    <div class="pull-right">
+                        {% paginator id="table-paginator" %}
+                    </div>
+                    {% resulttable id="table1" contextid="savedsearch1" paginator="table-paginator" %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content%}
+
+{% block contexts %}
+    {% savedsearch id="savedsearch1" searchname="Top five sourcetypes" app="search" %}
+{% endblock contexts %}

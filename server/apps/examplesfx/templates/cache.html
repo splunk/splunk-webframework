@@ -1,0 +1,98 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Caching</h4>
+                </div>
+                <div class="panel-body">
+                    One feature of search contexts is the ability to use pre-existing
+                    search jobs if they exist. This feature is beneficial to
+                    developers, who can have a way to load pages faster, without 
+                    having to create saved searches.
+                    
+                    You can use caching by specifying the <code>cache</code> 
+                    property on search contexts (the default is <code>false</code>).
+                    This property takes one of these values:
+                    
+                    <div class="well">
+                        <ul>
+                            <li><code>true</code>: Always use any existing search job.</li>
+                            <li><code>false</code>: Always create a new job.</li>
+                            <li><code>n</code>: Use an existing search job if it 
+                                is newer than <code>n</code> seconds, where <i>n</i> &gt; 0.</li>
+                        </ul>
+                    </div>
+                    
+                    The search job must be an exact match&mdash;all parameters on it
+                    must be equal to what the context would have created itself.
+                    
+                    Below, you can see three tables, one with each value. After
+                    the initial page loads, refresh the page and notice how much
+                    more quickly the cached values load.
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span4">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Never Cache</h4>
+                </div>
+                <div class="panel-body">
+                    <div class="pull-right">
+                        {% paginator id="table-paginator1" %}
+                    </div>
+                    {% resulttable id="table1" contextid="nocache" paginator="table-paginator1" %}
+                </div>
+            </div>
+        </div>
+        <div class="span4">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Always Cache</h4>
+                </div>
+                <div class="panel-body">
+                    <div class="pull-right">
+                        {% paginator id="table-paginator2" %}
+                    </div>
+                    {% resulttable id="table2" contextid="cache" paginator="table-paginator2" %}
+                </div>
+            </div>
+        </div>
+        <div class="span4">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Cache for 60 seconds</h4>
+                </div>
+                <div class="panel-body">
+                    <div class="pull-right">
+                        {% paginator id="table-paginator3" %}
+                    </div>
+                    {% resulttable id="table3" contextid="cache60" paginator="table-paginator3" %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content%}
+
+{% block contexts %}
+    {% search id="nocache" search="search index=_internal | head 1000 | stats count by sourcetype" cache=False %}
+    {% search id="cache" search="search index=_internal | head 1000 | stats count by sourcetype" cache=True %}
+    {% search id="cache60" search="search index=_internal | head 1000 | stats count by sourcetype" cache=60 %}
+{% endblock contexts %}

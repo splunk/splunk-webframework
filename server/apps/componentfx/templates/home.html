@@ -1,0 +1,1147 @@
+{% extends 'appfx:base_with_basic_styles.html' %}
+
+{% load splunkui %}
+
+{% block splunkstyles %}{% endblock splunkstyles %}
+
+{% block css %}
+
+<link rel="stylesheet" href="{{STATIC_URL}}appfx/contrib/bootstrap/css/bootstrap.css"/>
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/prettify.css"/>
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/docs.css"/>
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/bootstrap-responsive.css"/>
+<style>
+body{
+    padding-top: 0px;
+    margin-bottom: 60px;
+
+}
+body .container p{
+    line-height: 20px;
+    font-size: 14px;
+}
+
+#title-sub{
+    font-size: 20px;
+    margin-left: 10px
+}
+
+.section{
+
+    margin-top: 30px;
+}
+.affix{
+    position: fixed;
+    top: 10px;
+
+}
+#example-map{
+    height:400px;
+}
+.splunk h1{
+    margin-bottom: 10px;
+}
+.jumbotron{
+    background: #0e0e0e; /* Old browsers */
+    background: -moz-linear-gradient(-45deg,  #0e0e0e 7%, #5b5b5b 86%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, right bottom, color-stop(7%,#0e0e0e), color-stop(86%,#5b5b5b)); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(-45deg,  #0e0e0e 7%,#5b5b5b 86%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(-45deg,  #0e0e0e 7%,#5b5b5b 86%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(-45deg,  #0e0e0e 7%,#5b5b5b 86%); /* IE10+ */
+    background: linear-gradient(135deg,  #0e0e0e 7%,#5b5b5b 86%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#0e0e0e', endColorstr='#5b5b5b',GradientType=1 ); /* IE6-9 fallback on horizontal gradient */
+}
+
+#toc li a{
+    color:  #505050;
+    font-weight: bold;
+}
+
+.bs-docs-sidenav {
+  width: 228px;
+  margin: 30px 0 0;
+  padding: 0;
+  background-color: #fff;
+  -webkit-border-radius: 0px;
+     -moz-border-radius: 0px;
+          border-radius: 0px;
+  -webkit-box-shadow: 0 1px 4px rgba(0,0,0,.065);
+     -moz-box-shadow: 0 1px 4px rgba(0,0,0,.065);
+          box-shadow: 0 1px 4px rgba(0,0,0,.065);
+}
+
+.bs-docs-sidenav > li:first-child > a {
+  -webkit-border-radius: 0px 0px 0 0;
+     -moz-border-radius: 0px 0px 0 0;
+          border-radius: 0px 0px 0 0;
+}
+.bs-docs-sidenav > li:last-child > a {
+  -webkit-border-radius: 0 0 0px 0px;
+     -moz-border-radius: 0 0 0px 0px;
+          border-radius: 0 0 0px 0px;
+}
+
+</style>
+{% endblock css %}
+
+{% block content %}
+
+<header class="jumbotron subhead" id="overview">
+    <div class="container">
+        <h1>ComponentFx</h1>
+        <p id="title-sub">A reference of the controls and contexts in the new Splunk App Framework.</p>
+    </div>
+
+</header>
+
+<div class="container">
+    <div class="row">
+        <div class="span3 bs-docs-sidebar" id="sidenav">
+            <div id="toc" data-spy="affix" >
+                <ul id="navlist" class="nav nav-list bs-docs-sidenav">
+                    <li><a href="#overview"> Overview</a></li>
+                    <li><a href="#contexts"> Contexts</a></li>
+                    <li><a href="#charts"> Charts</a></li>
+                    <li><a href="#event-table"> Event table</a></li>
+                    <li><a href="#forms"> Forms</a></li>
+                    <li><a href="#googlemap-section"> Google Maps</a></li> 
+                    <li><a href="#result-table"> Result table + paginator</a></li>   
+                    <li><a href="#search-bar"> Search bar</a></li>
+                    <li><a href="#single"> Single</a></li>
+                    <li><a href="#timeline"> Timeline</a></li>
+                    <li><a href="#time-picker"> Time picker</a></li>         
+                    <li><a href="#learnmore"> Learn more</a></li>         
+              </ul>
+          </div>
+    </div>
+    <div class="span9 splunk" >
+        <!-- OVERVIEW -->
+        <div class="section" id="javascriptvsdjango">
+            
+            <h1 id="overview">Overview</h1>
+            <p>This app provides a reference of the various components (contexts and controls) that are available in the new Splunk Application Framework. This app provides explanations and examples of the all of the components, demonstrates how they are used, and lists the options for each.</p>
+            <h3>JavaScript vs Django</h3>
+            <p>The Splunk Application Framework allows developers to create components using Django templates tags and JavaScript. The fundamental difference between these two methods is that Django tags are processed server-side, while JavaScript is run entirely on the client. No matter how a control is initially created (Django or JavaScript), the result is an object that you can interact with at run time using JavaScript.</p>
+
+            <h3 id="django">Django</h3>
+            <p>Django makes it possible to declare components in HTML pages using component tags. Tags are parsed by the server and replaced with the proper HTML elements before being sent to the client. On the client, the framework processes the resulting HTML, inserting the necessary DOM elements. This app shows how to instantiate all of the framework components. For example, a Splunk chart can be added to a page by adding a Django <code>chart</code> tag to that page's HTML template:</p>
+<pre class="prettyprint linenums lang-js lang-js" >
+&#123;% chart id="example-chart" contextid="example-search" %&#125;
+</pre>
+            <p>We'll show you the basics of how to use the Django template tags in this app, but we don't go too deep into Django. For that, go to the source (<a href="https://www.djangoproject.com/" target="_blank">Django's website</a>).</p>
+
+            <h3 id="javascript">JavaScript</h3>
+            <p>You can create and interact with the components of the Splunk Application Framework using JavaScript only, without any Django tags. You'll need to manually load the required resources though (this happens automatically when you use the Django tags, which call the <code>componentloader</code>). For JavaScript, the framework provides a <code>load</code> method that takes a list of components and loads the necessary files before calling the given callback function. The standard pattern for usage is:</p>
+
+<pre class="prettyprint linenums lang-js">
+//define dependencies
+var deps = [
+    "appfx/splunkui/chart",
+    "appfx/splunkui/resulttable",
+    "appfx/splunkui/searchcontext",            
+];
+
+//load requirements and define a callback
+AppFx.load(deps,function() {
+    //here the chart, resulttable and searchcontext are ready
+})
+</pre>   
+
+        <p>Once the required elements are loaded, use the <code>AppFx.Components.create</code> method to create components, providing the component type, a unique ID for the component, and a dictionary of component options as arguments. To display UI controls on the page, call <code>render</code>. For contexts, call <code>start</code> to start the search. Note that UI controls require a <code>&lt;div&gt;</code> tag, which is a jQuery selector that corresponds to a location (element ID) on the page for the control. This element ID is passed in with the <code>el</code> parameter (see below). The component type begins with <code>"appfx-"</code> (see the <a href="http://docs.splunk.com/Documentation:AppFramework" target="_blank">Component Reference</a> here for a complete reference).</p>
+        <p>Here is an example that continues the previous code snippet by adding a <code>resulttable</code> and a <code>searchcontext</code> once components are loaded:</p>
+
+<pre class="prettyprint linenums lang-js">
+//define dependencies
+var deps = [
+    "appfx/splunkui/chart",
+    "appfx/splunkui/resulttable",
+    "appfx/splunkui/searchcontext",            
+];
+
+//load requirements and define a callback
+AppFx.load(deps,function() {
+    
+    //create a resulttable. Note the appfx- prefix
+    AppFx.Components.create("appfx-resulttable", "resulttable1", {
+        contextid: "search1",
+        el: $("#divToHangOn")   //name the div to add this component to
+    }).render();                //call render                
+
+    //create a searchcontext. Note the appfx- prefix
+    AppFx.Components.create("appfx-searchcontext", "search1", {
+        earliest_time: "-24h@h",
+        latest_time: "now",
+        search: "search index=_internal | stats count by sourcetype" 
+    }).start();                     //call start
+})
+</pre>  
+
+        <p>This pattern is used for all of the framework components.</p>
+
+        <h3>Listening to click events</h3>
+        <p>You can listen to and respond to click events on all controls in javascript as follows:</p>
+
+<pre class="prettyprint linenums lang-js">
+AppFx.Components.getInstance("example-chart")
+    .on("clicked:chart", function (e) {
+        // your code here
+    })
+</pre>
+        <p>Information about the event is encapsulated in the <code>e</code> argument that is passed into this function.</p>
+
+        </div>
+        <!-- END OVERVIEW-->
+
+        <!-- SEARCH CONTEXTS -->
+        <div class="section" id="contexts">
+            <div class="page-header"></div>
+            <h1>Contexts</h1>
+            <p>Search is a core feature of the Splunk App Framework. All of the framework UI controls can be bound to a search in various ways. Some controls are populated by searches, some modify the searches they are bound to, and some do both.</p>
+            <p>Each search is represented by a <i>context</i>, which manages the query, properties, operation, and lifetime of an individual search job. You can create contexts using Django template tags or JavaScript. Contexts can correspond to a saved search, or a search job you create on the fly in code or dynamically with UI controls.</p>
+
+            <h2>Search context</h2>
+            <p>A search context (declared with the <code>search</code> tag) represents a search job, which can be generated dynamically or hard coded. Here is an example of declaring a search context using the <code>search</code> tag. The second <code>search</code> corresponds to the search query&mdash;this query counts the events in the internal index:</p>
+<pre class="prettyprint linenums lang-js" >
+&lt!-- django --&gt
+&#123;% search id="example-search" search="search index=_internal | stats count" %&#125;
+
+//javascript
+AppFx.Components.create("appfx-searchcontext", "search1", {
+    search: "search index=_internal | stats count by sourcetype" 
+}).start();
+</pre>
+            <p>To bind a search context to a control, provide the context's unique ID in the control's <code>contextid</code> property. For example, to create a chart that is bound to the previous search context:</p>
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% chart id="example-chart" contextid="example-search" type="line" %&#125;
+
+//javascript
+AppFx.Components.create("appfx-chart", "example-chart", {
+    contextid: "example-search",
+    el: $("#divToHangOn")
+}).render();
+</pre>
+            <h3>Options</h3>
+            <p>You can set the following properties using templates tags or JavaScript. These search context options do not affect the search job on the Splunk server.</p>
+            <ul>
+                <p><code>app</code>: Sets the namespace (the app context) to run in.</p>
+                <p><code>autostart</code>: When <code>true</code>, search context automatically starts a new job when its properties have changed and when the page first loads (and the <code>component-loader</code> is called). When <code>false</code>, application code must call <code>startSearch</code> manually to start a search.</p>
+                <p><code>cache</code>: When <code>true</code> search always uses the results from a preexisting search job when possible. When <code>false</code> search never uses results from preexisting search jobs. When <code><i>n</i></code>, only search jobs that are newer than <i>n</i> seconds are used.</p>
+                <p><code>search</code>: The search query string.</p>
+                <p><code>sid</code>: The search job ID.</p>
+
+            </ul>
+            <h3>Search job options</h3>
+            <p>Additional properties can be set (in Django or Javascript) that modify the search job on the Splunk instance. For example, to set the <code>"latest_time"</code> property:</p>
+
+<pre class="prettyprint linenums lang-js" >
+&lt!-- django --&gt
+&#123;% search id="example-search" search="search index=_internal | stats count" latest_time="now" %&#125;
+
+//javascript
+AppFx.Components.create("appfx-searchcontext", "search1", {
+    latest_time: "now",
+    search: "search index=_internal | stats count by sourcetype" 
+}).start();
+</pre>
+
+            <p>For a complete list of search job options, see the <a href="http://docs.splunk.com/DocumentationStatic/AppFramework/0.1Preview/compref_searchcontext.html" target="_blank">SearchContext</a> reference documentation.</p>
+
+            <h3>Events</h3>
+            <p>The following events are fired by this component:</p>
+            <ul>
+                <p><code>search:error</code>: Fired when an error occurs.</p>
+                <p><code>search:fail</code>: Fired when the search job fails.</p>
+                <p><code>search:progress</code>: Fired to indicate search progress.</p>
+                <p><code>search:cancelled</code>: Fired when the search is cancelled.</p>
+                <p><code>search:start</code>: Fired when the search is started.</p>
+            </ul>
+
+
+            <h2>Saved search context</h2>
+            <p>A saved search context (declared with the <code>savedsearch</code> tag) corresponds to a saved search (by providing its name) on a Splunk instance. Bind the saved search context to a UI control the same way you'd bind a search context. For example, to bind a table to a saved search called <b>example-saved-search</b> through a <code>savedsearchcontext</code>:</p>
+
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% chart id="example-chart" contextid="saved-search" type="line" %&#125;
+&#123;% savedsearchcontext id="saved-search" searchname="example-saved-search" %&#125;
+
+//javascript
+AppFx.Components.create("appfx-chart", "example-chart", {
+    contextid: "example-saved-search",
+    el: $("#divToHangOn")
+}).render();
+AppFx.Components.create("appfx-savedsearchcontext", "example-saved-search", {
+    searchname: "all100",
+}).start();
+</pre>
+        <h3>Options</h3>
+            <p>You can set the following properties using templates tags or JavaScript:</p>
+            <ul>
+                <p><code>app</code>: Sets the namespace (the app context) to run in.</p>
+                <p><code>autostart</code>: When <code>true</code>, search context automatically starts a new job when its properties have changed and when the page first loads (and the <code>component-loader</code> is called). When <code>false</code>, application code must call <code>startSearch</code> manually to start a search.</p>
+                <p><code>cache</code>: When <code>true</code> search always uses the results from a preexisting search job when possible. When <code>false</code> search never uses results from preexisting search jobs. When <code><i>n</i></code>, only search jobs that are newer than <i>n</i> seconds are used.</p>
+                <p><code>searchname</code>: The name of the saved search on the Splunk server.</p>
+            </ul>
+
+        <h3>Events</h3>
+        <p>The following events are fired by this component:</p>
+        <ul>
+            <p><code>search:error</code>: Fired when an error occurs.</p>
+            <p><code>search:fail</code>: Fired when the search job fails.</p>
+            <p><code>search:progress</code>: Fired to indicate search progress.</p>
+            <p><code>search:cancelled</code>: Fired when the search is cancelled.</p>
+            <p><code>search:start</code>: Fired when the search is started.</p>
+        </ul>
+
+        <h2>Group context</h2>
+        <p>A group context (declared with the <code>group</code> tag) groups (combines) other contexts. If one event or property change is applied to the group or to an individual context, the event or change is applied to all of them. You can also bind a control to multiple contexts by using a group context. For example, rather than selecting a time range for individual searches separately, apply a <b>TimePicker</b> control to multiple searches using a group context.</p>
+
+        <p><b>Note</b>&nbsp;&nbsp;Provide the names of the contexts to group before you provide the group context ID (<code>id</code>).</p>
+
+        <p>Here's an example:</p>
+
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% search id="example-search1" search="search index=_internal | stats count" %&#125;
+&#123;% search id="example-search2" search="search index=_internal | stats avg" %&#125;
+&#123;% search id="example-search3" search="search index=_internal | stats max" %&#125;
+&#123;% group "example-search1" "example-search2" "example-search3" id="search-group" %&#125;
+
+//javascript
+AppFx.Components.create("appfx-searchcontext", "example-search1", {
+    search: "search index=_internal | stats count by sourcetype" 
+}).start();
+AppFx.Components.create("appfx-searchcontext", "example-search2", {
+    search: "search index=_internal | stats avg by sourcetype" 
+}).start();
+AppFx.Components.create("appfx-searchcontext", "example-search3", {
+    search: "search index=_internal | stats max by sourcetype" 
+}).start();
+AppFx.Components.create("appfx-groupcontext", "example-group", {
+    contexts:["example-search1" , "example-search2", "example-search3" ]
+}).start();
+</pre>
+        <h3>Options</h3>
+            <p>You can set the following properties using templates tags or JavaScript:</p>
+            <ul>
+                <p><code>id</code>: Unique ID of the group context.</p>
+                <p><code>[contextid]</code>: A list of context IDs of the search contexts to be grouped.</p>
+            </ul>
+
+        </div>
+        <!-- END SEARCH CONTEXTS -->
+
+        <!-- CHART -->
+        <div class="section" id="charts">
+
+            <h1>Charts</h1>
+            <p>The <b>Chart</b> control displays any series of data you want to plot in various configurable chart types.</p>
+            <p>Use the <code>&#123;% chart %&#125;</code> tag with the <code>type</code> property to specify which type of chart to display.</p>
+
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% chart id="example-chart" contextid="example-search" type="line" %&#125;
+
+//javascript
+AppFx.Components.create("appfx-chart", "example-chart", {
+    contextid: "example-search",
+    type: "line",
+    el: $("#divToHangOn")
+}).render();
+</pre>
+            <h2>Chart types</h2>
+            <p>You can use the following types of charts:</p>
+            <ul>
+                <li>Area</li>
+                <li>Bar</li>
+                <li>Column</li>
+                <!-- <li>Filler gauge</li> -->
+                <!--<li>hybrid</li>-->
+                <li>Line</li>
+                <!-- <li>Marker gauge</li> -->
+                <li>Pie</li>
+                <!-- <li>Radial gauge</li> -->
+                <li>Scatter</li>
+            </ul>   
+
+            <h3>Area</h3>
+            <p>An area chart (type=<code>"area"</code>) renders each series in a data set as a filled area with an optional line. The data table upon which the chart is structured must contain at least two columns: the first column contains the values to be plotted on the x-axis (such as <b>_time</b> values for a time chart), and each additional column contains a series of values to be plotted on the y-axis.</p>
+
+            <div class="bs-docs-example">
+                {% chart id="example-chart-area" contextid="chart-search" type="area" %}
+            </div>
+
+            <h3>Bar</h3>
+            <p>A bar chart (type=<code>"bar"</code>) renders data as horizontal bars. The data set must contain at least two columns: the first column contains the values to be plotted on the y-axis, and each additional column contains a series of values to be plotted on the x-axis.</p>
+
+            <div class="bs-docs-example">
+                {% chart id="example-chart-bar" contextid="chart-search" type="bar" %}
+            </div>
+
+            <h3>Column</h3>
+            <p>A column chart (type=<code>"column"</code>) renders data as vertical columns. The data table upon which the chart is structured must contain at least two columns: the first column contains the values to be plotted on the x-axis, and each additional column contains a series of values to be plotted on the y-axis.</p>
+            
+            <div class="bs-docs-example">
+                {% chart id="example-chart-column" contextid="chart-search" type="column" %}
+            </div>
+
+            <!-- <h3>Filler gauge</h3>
+            <p>A filler gauge chart (type=<code>"fillerGauge"</code>) enables the visualization of a single numerical value mapped against a range of colors that may have particular business meaning or logic. The filler gauge is similar in appearance to a thermometer, with a liquid-like filler indicator that changes color as it rises or lowers and passes range boundaries. At least two range values are required to define a minimum and maximum range. Additional values can be supplied to define intervals between the minimum and maximum values.</p>
+
+            <div class="bs-docs-example">
+                {% chart id="example-chart-fillerGauge" contextid="example-search" type="fillerGauge" %}
+            </div> -->
+
+            <!--
+            <h3>hybrid</h3>
+            <p>TBD</p>
+
+            <div class="bs-docs-example">
+                {% chart id="example-chart-hybrid" contextid="example-search" type="hybrid" %}
+            </div>
+        -->
+
+        <h3>Line</h3>
+        <p>A line chart (type=<code>"line"</code>) is a basic line graph that renders each series in a data set as a line with optional markers. The data table upon which the chart is structured must contain at least two columns: the first column contains the values to be plotted on the x-axis (such as <b>_time</b> values for a time chart), and each additional column contains a series of values to be plotted on the y-axis</p>
+
+        <div class="bs-docs-example">
+            {% chart id="example-chart-line" contextid="chart-search" type="line" %}
+        </div>
+
+       <!--  <h3>MarkerGauge</h3>
+        <p>A marker gauge chart (type=<code>"markerGauge"</code>) enables the visualization of a single numerical value mapped against a range of colors that may have particular business meaning or logic. The marker gauge is similar in appearance to a slide rule, with a linear range scale and a sliding marker that rests at the value returned by the search. At least two range values are required to define a minimum and maximum range. Additional values can be supplied to define intervals between the minimum and maximum values. </p>
+
+        <div class="bs-docs-example">
+            {% chart id="example-chart-markerGauge" contextid="example-search" type="markerGauge" %}
+        </div> -->
+
+        <h3>Pie</h3>
+        <p>A pie chart (type=<code>"pie"</code>) renders data as a circle divided into slices. The data table upon which the chart is structured must contain at least two columns: the first column contains the labels for each pie chart slice, and the second column contains the values for those slices.</p>
+
+        <div class="bs-docs-example">
+            {% chart id="example-chart-pie" contextid="chart-search" type="pie" %}
+        </div>
+
+       <!--  <h3>Radial gauge</h3>
+        <p>A radial gauge chart (type=<code>"radialGauge"</code>) enables the visualization of a single numerical value mapped against a range of colors that may have particular business meaning or logic. The radial gauge is similar in appearance to a speedometer in appearance with an arced range scale and a rotating needle. At least two range values are required to define a minimum and maximum range. Additional values can be supplied to define intervals between the minimum and maximum values.</p>
+
+        <div class="bs-docs-example">
+            {% chart id="example-chart-radialGauge" contextid="example-search" type="radialGauge" %}
+        </div> -->
+
+        <h3>Scatter</h3>
+        <p>A scatter chart (type=<code>"scatter"</code>) is a Cartesian chart that renders data as scattered markers, and supports single and multiple series.</p>
+
+        <div class="bs-docs-example">
+            {% chart id="example-chart-scatter" contextid="example-search" type="scatter" %}
+        </div>
+
+        <h2>Options</h2>
+        <p>Charts support the same options as the Splunk JSChart library. For a complete list of Splunk JSChart properties, see <a href="http://docs.splunk.com/Documentation/Splunk/5.0.1/Viz/CustomChartingConfig-ChartLegend" target="_blank">Chart and legend properties</a>.</p>
+        <p>These properties must be set in JavaScript, for example:</p>
+
+<pre class="prettyprint linenums lang-js">
+AppFx.Components.getInstance("example-chart").settings.set({
+    "axisTitleX.text": " x-axis title ",
+    "axisTitleY.text": " y-axis title ",
+    "legend.placement": "none",
+});
+</pre>
+
+    <p>In addition to the charting library properties, you can set the following properties using templates tags or JavaScript:</p>
+    <ul>
+        <p><code>search</code>: The search context of the chart.</p>
+
+        <p><code>type</code>: The type of chart.</p>
+
+        <p><code>datasource</code>: The name of the datasource to use.</p>
+    </ul>
+
+    <h3>Events</h3>
+    <p>The following events are fired by charts:</p>
+    <ul>
+        <p><code>clicked:chart</code>: Fired when the chart is clicked.</p>
+        <p><code>clicked:legend</code>: Fired when the legend is clicked.</p>
+    </ul>
+</div>
+<!-- END CHART -->
+
+
+<!-- EVENT TABLE -->
+<div class="section" id="event-table">
+    <div class="page-header"></div>
+    <h1>Event table</h1>
+    <p>The <b>EventTable</b> control is a fully-featured Splunk-style event table that supports pagination and variable formatting. Given a search context, the <b>EventTable</b> displays the events corresponding to that search.</p>
+    <p>Use the <code>&#123;% eventtable %&#125;</code> tag with the <code>search</code> property to specify the search context.</p>
+
+    <div class="bs-docs-example">
+        {% eventtable id="example-eventtable" contextid="example-event-search"%}
+    </div>
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% block content %&#125;
+    &#123;% eventtable id="example-eventtable" contextid="example-event-search"%&#125;
+&#123;% endblock content %&#125;
+&#123;% block contexts %&#125; 
+    &#123;% search id="example-event-search" search="search index=_internal | head 3"%&#125; 
+&#123;% endblock contexts%&#125;
+
+//javascript
+AppFx.Components.create("appfx-eventtable", "example-eventtable", {
+    contextid: "example-search",
+    el: $("#divToHangOn")
+}).render();
+AppFx.Components.create("appfx-searchcontext", "example-search", {
+    search: "search index=_internal | head 3" 
+}).start();   
+</pre> 
+
+    <h2>Options</h2>
+    <p>You can set the following properties using templates tags or JavaScript:</p>
+    <ul>
+        <p><code>event-datasource</code>: The name of the complete event datasource.</p>
+        <p><code>summary-datasource</code>: The name of the complete summary datasource.</p>
+    </ul>
+</div>
+<!-- END EVENT TABLE -->
+
+<!-- FORMS -->
+<div class="section" id="forms">
+    <div class="page-header"></div>
+    <h1>Forms</h1>
+    <p>The form controls (<b>Radio</b>, <b>Select</b>, and <b>TextBox</b>) display common elements of web forms (a group of radio buttons, a drop-down list, and a text box). All of these controls have a <code>val</code> method that can be used to retrieve their current value. For example:</p>
+
+<pre class="prettyprint linenums lang-js">
+AppFx.Components.getInstance("example-textbox").val();
+</pre>
+
+    <h3>Events</h3>
+    <p>All forms controls for the <code>change</code> event.</p>
+    <ul>
+        <p><code>change</code>: Fired when value changes.</p>
+    </ul>
+
+    <h2>Radio</h2>
+    <p>The <b>Radio</b> control represents a radio button group. This control makes it easier to populate a radio button group from a search, but it can also be used like a standard HTML radio button group.</p>
+    <p>Use the <code>&#123;% radio %&#125;</code> tag and set the default option the in <code>default</code> property:</p>
+
+    <div class="bs-docs-example">
+        {% radio id="example-radio" default="One" %}
+    </div>
+
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% radio id="example-radio" default="One"%&#125;
+
+//javascript
+AppFx.Components.create("appfx-radio", "example-radio", {
+    default: "One",
+    el: $("#divToHangOn")
+}).render();
+</pre>
+
+    <h3>Options</h3>
+    <p>You can set properties for radio button groups, but some can only be set in JavaScript because they take a list that cannot be declared using templates tags.</p>
+    <ul>
+        <p><code>choices</code>: A static dictionary of options for the radio button group (must be set in JavaScript).
+<pre class="prettyprint linenums lang-js">
+// set up choices            
+var choices = [{label: " One", value: "One"},
+{label:" Two", value: "Two"}, 
+{label:" Three", value: "Three"}];
+
+// assign them to the button group
+AppFx.Components.getInstance("example-radio").settings.set("choices", choices);      
+</pre>
+        </p>
+            <p><code>search</code>: The context that specifies the search to populate the radio button group. For this to be very useful, set <code>valueField</code>, <code>labelField</code>, or both to specify which fields in the search results to use for values and labels. See the example below for more on this.</p>
+            <p><code>valueField</code>: The search field to use for button values. If a <code>labelField</code> is not set, the button labels default to the <code>valueField</code> values.</p>
+            <p><code>labelField</code>: The search field to use for button labels. If a <code>labelField</code> is not set, the button labels default to the <code>valueField</code> values.</p>
+            <p><code>default</code>: The default selected button.</p>
+        </ul>
+
+        <h3>Example</h3>
+        <p>In this example, a radio group is created and bound to a search context that shows all of the available indexes on the Splunk instance. The button group is created in the content block and the search context is created in the contexts block.</p>
+
+        <div class="bs-docs-example">
+            {% radio id="example-radio2" contextid="indexes-search" labelField="index" valueField="index"%}
+        </div>
+
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% block content %&#125;
+    &#123;% radio id="example-radio2" contextid="indexes-search" labelField="index" valueField="index"%&#125;
+&#123;% endblock content %&#125; 
+
+&#123;% block contexts %&#125; 
+    &#123;% search id="indexes-search" search="| eventcount summarize=false index=* index=_* | dedup index | fields index" preview=False cache=True %&#125; 
+&#123;% endblock contexts%&#125;
+
+//javascript
+AppFx.Components.create("appfx-radio", "example-radio", {
+    default: "One",
+    contextid: "indexes-search",
+    labelField: "index",
+    valueField: "index",
+    el: $("#divToHangOn")
+}).render();
+AppFx.Components.create("appfx-searchcontext", "indexes-search", {
+    search: "| eventcount summarize=false index=* index=_* | dedup index | fields index",
+}).start();   
+</pre>  
+
+        <h2>Select</h2>
+        <p>The <b>Select</b> control represents a drop-down list that can be bound to a search context, but can also be used as a standard HTML select control that emits change events.</p>
+        <p>Use the <code>&#123;% select %&#125;</code> tag and set the default option the in <code>default</code> property:</p>
+
+        <div class="bs-docs-example">
+            {% select id="example-select" default="One" %} 
+        </div>
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% select id="example-select" default="One"%&#125;
+
+//javascript
+AppFx.Components.create("appfx-select", "example-select", {
+    default: "One",
+    el: $("#divToHangOn")
+}).render();
+</pre>
+
+        <h3>Options</h3>
+        <p>You can set properties for a select drop-down list, but some properties can only be set in JavaScript because they take a list that cannot be declared using templates tags.</p>
+        <ul>
+            <p><code>choices</code>: A static dictionary of options for the drop-down list (must be set in JavaScript):
+<pre class="prettyprint linenums lang-js">
+// set up choices            
+var choices = [{label: " One", value: "One"},
+{label:" Two", value: "Two"}, 
+{label:" Three", value: "Three"}];
+
+// assign them to the button group
+AppFx.Components.getInstance("example-select").settings.set("choices", choices);      
+</pre>
+            </p>
+                <p><code>valueField</code>: The search field to use for list options. If no <code>labelField</code> is set, the select options will default to the <code>valueField</code> values.</p>
+                <p><code>labelField</code>: The search field to use for list options. If no <code>labelField</code>is set, the select options will default to the <code>valueField</code> values.</p>
+                <p><code>default</code>: The default selected option.</p>
+            </ul>
+
+            <h3>Example</h3>
+            <p>This example shows how to bind a <b>Select</b> control to a search context to populate the drop-down list options using template tags. The <b>Select</b> control is defined in the content block and the search context is defined in the contexts block.</p>
+
+            <div class="bs-docs-example">
+                {% select id="example-select1" contextid="indexes-search" valueField="index"%}   
+            </div>
+
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% block content %&#125;
+    &#123;% select id="example-select" contextid="indexes-search" valueField="index"%&#125;
+&#123;% endblock content %&#125;
+
+&#123;% block contexts %&#125; 
+    &#123;% search id="indexes-search" search="| eventcount summarize=false index=* index=_* | dedup index | fields index" preview=False cache=True %&#125; 
+&#123;% endblock contexts%&#125; 
+
+//javascript
+AppFx.Components.create("appfx-select", "example-select", {
+    default: "One",
+    contextid: "indexes-search",
+    labelField: "index",
+    valueField: "index",
+    el: $("#divToHangOn")
+}).render();
+AppFx.Components.create("appfx-searchcontext", "indexes-search", {
+    search: "| eventcount summarize=false index=* index=_* | dedup index | fields index",
+}).start();   
+</pre>    
+
+        </div>
+
+        <h2>Text box</h2>
+        <p>The <b>TextBox</b> control represents a basic text input box. The <code>val</code> method returns the current text.</p>
+        <p>Use the <code>&#123;% textbox %&#125;</code> tag and set the default text the in <code>default</code> property.</p>
+
+        <h3>Options</h3>
+        <p>Textbox only has one option:</p>
+        <ul>
+            <p><code>default</code>: The default text.</p>
+        </ul>
+
+        <h3>Example</h3>
+        <p>In this example, two text boxes are created using templates tags. In JavaScript, when a <code>change</code> event occurs, the text boxes swap their values.</p>
+
+        <div class="bs-docs-example">
+            {% textbox id="example-textbox1" default="type here" %}
+            {% textbox id="example-textbox2" default="to be replaced" %}
+        </div>
+
+        <p>In template tags:</p>
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% textbox id="example-textbox1" default="type here" %&#125; 
+&#123;% textbox id="example-textbox2" default="to be replaced" %&#125;
+</pre>
+        <p>In JavaScript:</p>
+<pre class="prettyprint linenums lang-js">
+//get textbox elements
+var tb1 = AppFx.Components.getInstance("example-textbox1");
+var tb2 = AppFx.Components.getInstance("example-textbox2");
+
+//attach change events
+tb1.on("change", function(){
+    tb2.val(tb1.val());
+})
+tb2.on("change", function(){
+    tb1.val(tb2.val());
+})
+</pre>
+
+
+<!-- END FORMS -->
+
+<!-- GOOGLE MAP -->
+<div class="section" id="googlemap-section">
+    <div class="page-header"></div>
+    <h1>Google Maps</h1>
+    <p>The <b>GoogleMap</b> control binds a Google map to a search that interprets geographic data and displays it on a map. If your search includes <b>lat</b> and <b>lng</b> fields, markers are automatically displayed for those results on the map.</p>
+
+    <h2>Example</h2>
+    <p>In this example, the <b>GoogleMap</b> control is bound to a search that includes latitude and longitude values renamed as <b>lat</b> and <b>lng</b>. Search results (markers) are automatically displayed at their locations on the map.</p>
+
+    <div class="bs-docs-example">
+        {% googlemap id="example-map" contextid="example-map-search" %}    
+    </div>
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% block content %&#125;
+    &#123;% googlemap id="example-map" contextid="example-map-search"%&#125;
+&#123;% endblock content %&#125;
+
+&#123;% block contexts %&#125; 
+    &#123;search id="example-map-search" search="| inputlookup appfx.demo.dataset.csv | rename device_ip_latitude as lat, device_ip_longitude as lng | stats count by lat, lng "&#125; 
+&#123;% endblock contexts%&#125;
+
+//javascript
+AppFx.Components.create("appfx-googlemap", "example-googlemap", {
+    contextid: "example-map-search",
+    el: $("#divToHangOn")
+}).render();
+AppFx.Components.create("appfx-searchcontext", "example-map-search", {
+    search: "| inputlookup appfx.demo.dataset.csv | rename device_ip_latitude as lat, device_ip_longitude as lng | stats count by lat, lng ",
+}).start();    
+</pre>   
+
+    <h2>Options</h2>
+    <p>The <code>googlemap</code> control wraps a <code>google.maps.Map</code> from the Google mapping libary. This allows developers to use the entire Google mapping API with the <code>googlemap</code> control. The <code>map</code> property of the <code>googlemap</code> control can be interacted with as any <code>google.maps.Map</code>. For more on the Google mapping API see the <a href="https://developers.google.com/maps/">Google Maps API documentation</a>.</p>
+
+</div>
+
+<!-- END GOOGLE MAP -->
+
+<!-- RESULT TABLE -->
+<div class="section" id="result-table">
+    <div class="page-header"></div>
+    <h1>Result table + paginator</h1>
+    <p>The <b>ResultTable</b> control is a fully-featured Splunk-style results table that supports pagination (if you attach a <b>Paginator</b> control). Given a search context, the <b>ResultTable</b> displays the processed search results from that search.</p>
+    <p>Use the <code>&#123;% resulttable %&#125;</code> tag with the <code>search</code> property to specify the search context.</p>
+
+    <div class="bs-docs-example">
+        {% resulttable id="example-table" contextid="example-search" pageSize="5" %} 
+    </div>
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% resulttable id="example-table" contextid="example-search" pageSize="5"%&#125;
+
+//javascript
+AppFx.Components.create("appfx-resulttable", "example-resulttable", {
+    contextid: "example-search",
+    el: $("#divToHangOn")
+}).render();
+</pre>
+
+    <h2>Options</h2>
+    <p>You can set the following properties using templates tags or JavaScript:</p>
+    <ul>
+        <p><code>search</code>: The search context of the table.</p>
+
+        <p><code>datasource</code>: The name of the datasource to use</p>
+
+        <p><code>page</code>: The zero-indexed page to set the table to.</p>
+
+        <p><code>pageSize</code>: The number of results per page.</p>
+
+        <p><code>Fields</code>: The fields to include in the table (must be set in JavaScript).</p>
+    </ul>
+
+<pre class="prettyprint linenums lang-js">
+var table= AppFx.Components.getInstance("example-table");
+table.settings.set("fields", ["_time", "splunkd"]);
+</pre>
+
+    <h3>Events</h3>
+    <p>The result table fires the following events:</p>
+    <ul>
+        <p><code>clicked:cell</code>: Fired when a cell is clicked.</p>
+        <p><code>clicked:row</code>: Fired when a row is clicked.</p>
+    </ul>
+
+    <h2>Paginator</h2>
+    <p>The <b>Paginator</b> control attaches a paginator to a result table to page through data.</p>
+
+    <p>Use the <code>&#123;% paginator %&#125;</code> tag with the <code>search</code> property to specify the search context.</p>
+
+    <div class="bs-docs-example">
+        {% resulttable id="example-table2" contextid="example-search" pageSize="5" paginator="paginator" %} 
+
+        {% paginator id="paginator" %}
+    </div>
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% resulttable id="example-table" contextid="example-search" pageSize="5" paginator="paginator" %&#125;
+&#123;% paginator id="paginator" %&#125;
+
+//javascript
+AppFx.Components.create("appfx-resulttable", "example-resulttable", {
+    contextid: "example-search",
+    pageSize: "5",
+    paginator: "paginator",
+    el: $("#divToHangOn")
+}).render();
+AppFx.Components.create("appfx-paginator", "paginator", {
+    el: $("#paginatorDiv") //needs it's own div
+}).render();
+</pre>
+
+</div>
+<!-- END RESULT TABLE -->
+
+<!-- SEARCH BAR -->
+<div class="section" id="search-bar">
+    <div class="page-header"></div>
+    <h1>Search bar</h1>
+    <p>The <b>SearchBar</b> control represents a search input control that can be bound to a data context. However, unlike most other controls, <b>SearchBar</b> provides a query to that search context and modifies it rather than taking results from the search context.</p>
+
+    <p>Use the <code>&#123;% searchbar %&#125;</code> tag with the <code>search</code> property to specify the search context.</p>
+
+    <h2>Options</h2>
+    <p>You can set the following property:</p>
+    <ul>
+        <p><code>timepicker</code>: When "true", the search bar includes a time picker.</p>
+    </ul>
+
+    <h2>Example</h2>
+    <p>The following example shows a <b>SearchBar</b> control with a <b>TimePicker</b> and a <b>ResultTable</b> control, all bound to the same search context. A default search is used, but if a new one is entered, the result table is updated.</p>
+
+    <div class="bs-docs-example">
+        {% searchbar id="example-search-bar" contextid="example-bar-search" %}
+
+        {% resulttable id="bar-table" contextid="example-bar-search" pageSize="5" %}
+    </div>
+
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% block content %&#125;
+    &#123;% searchbar id="example-search-bar" contextid="example-bar-search" %&#125;
+    &#123;% resulttable id="bar-table" contextid="example-bar-search" pageSize="5" %&#125;
+&#123;% endblock content %&#125; 
+&#123;% block contexts %&#125; 
+    &#123;% search id="example-bar-search" search="search index=_internal | head 100 | timechart count by sourcetype span=100s" %&#125;   
+&#123;% endblock contexts%&#125;
+
+//javascript
+AppFx.Components.create("appfx-searchbar", "example-searchbar", {
+    contextid: "example-bar-search",
+    el: $("#divToHangOn")
+}).render();
+AppFx.Components.create("appfx-resulttable", "example-resulttable", {
+    contextid: "example-bar-search",
+    pageSize: "5",
+    el: $("#divToHangOn2") // seperate div
+}).render();
+AppFx.Components.create("appfx-searchcontext", "example-bar-search", {
+    search: "search index=_internal | head 100 | timechart count by sourcetype span=100s",
+}).start();    
+</pre> 
+</div>
+<!-- END SEARCH BAR -->
+
+<!-- SINGLE-->
+<div class="section" id="single">
+    <div class="page-header"></div>
+    <h1>Single</h1>
+    <p>The <b>Single</b> control displays a single value based on a search context, which can be useful for showing an aggregate value such as a <code>stats count</code>.</p>
+
+    <p>Use the <code>&#123;% single %&#125;</code> tag with the <code>search</code> property to specify the search context.</p>
+
+    <div class="bs-docs-example">
+        {% single id="example-single" contextid="example-single-search" beforeLabel="Event count:" %}
+    </div>
+
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% block content %&#125;
+    &#123;% single id="example-single" contextid="example-single-search" beforeLabel="Event count:" %&#125;
+&#123;% endblock content %&#125; 
+&#123;% block contexts %&#125; 
+    &#123;% search id="example-single-search" search="search index=_internal | stats count" earliest_time="-15m" latest_time="now" %&#125;   
+&#123;% endblock contexts%&#125;
+
+//javascript
+AppFx.Components.create("appfx-single", "example-single", {
+    contextid: "example-single-search",
+    el: $("#divToHangOn")
+}).render();
+AppFx.Components.create("appfx-searchcontext", "example-single-search", {
+    search: "search index=_internal | stats count",
+}).start();    
+</pre> 
+
+    <h2>Options</h2>
+    <p>You can set the following properties using templates tags or JavaScript:</p>
+    <ul>
+        <p><code>search</code>: The search context.</p>
+        <p><code>afterLabel</code>: A label to be placed after the value.</p>
+        <p><code>beforeLabel</code>: A label to be placed in front of the value.</p>
+        <p><code>Field</code>: The search field to use as the display value.</p>
+        <p><code>classField</code>: When set to "range", works with the rangemap search command to visually convey severity (see the example below). For more on rangemap, see <a href="http://docs.splunk.com/Documentation/Splunk/latest/SearchReference/Rangemap#Using_rangemap_with_single_value_panels" target="_blank">Using rangemap with single value panels</a>.</p>
+    </ul>
+
+    <h2>Example</h2>
+    <p>In this example, the search context bound to the <b>Single</b> control uses the rangemap search command to create a range field in the search results that indicates a severity of values.</p>
+
+    <div class="bs-docs-example">
+        {% single id="example-single2" contextid="example-single-search" beforeLabel="Event count:" classField="range" %}
+    </div>
+
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% block content %&#125;
+    &#123;% single id="example-single" contextid="example-single-search" beforeLabel="Event count:" classField="range" %&#125;
+&#123;% endblock content %&#125; 
+&#123;% block contexts %&#125; 
+    &#123;% search id="example-single-search" search="search index=_internal | stats count | rangemap field=count low=0-3 elevated=3-6 severe=6-10 default=severe" earliest_time="-15m" latest_time="now" %&#125;   
+&#123;% endblock contexts%&#125;   
+</pre> 
+
+</div>
+<!-- END SINGLE -->
+
+<!-- TIMELINE -->
+<div class="section" id="timeline">
+    <div class="page-header"></div>
+    <h1>Timeline</h1>
+    <p>The <b>Timeline</b> control displays an event timeline of a given search and allows interactive modification of the search time range. This control modifies and is modified by its search context.</p>
+
+    <p>Use the <code>&#123;% timeline %&#125;</code> tag with the <code>search</code> property to specify the search context.</p>
+
+    <h2>Options</h2>
+    <p>You can set the following property using templates tags or JavaScript:</p>
+    <ul>
+        <p><code>datasource</code>: The name of the datasource.</p>
+    </ul>
+
+    <h2>Example</h2>
+    <p>In this example, <b>TimePicker</b>, <b>Timeline</b>, and <b>ResultTable</b> controls are bound to the same search. The time range can be changed by the time picker or the timeline. Custom time ranges can be interactively selected using the timeline.</p>
+
+    <div class="bs-docs-example">
+        {% timepicker id="timeline-timepicker" preset="today" contextid="example-timeline-search" %}
+        {% timeline id="example-timeline" contextid="example-timeline-search" %}
+        {% resulttable id="timeline-table" contextid="example-timeline-search" pageSize="5" %}
+    </div>
+
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% block content %&#125;
+    &#123;% timepicker id="example-timepicker" preset="today" contextid="example-timeline-search" %&#125;
+    &#123;% timeline id="example-timeline" contextid="example-timeline-search" %&#125;
+    &#123;% resulttable id="example-table" contextid="example-timeline-search" pageSize="5" %&#125;
+&#123;% endblock content %&#125; 
+&#123;% block contexts %&#125; 
+    &#123;% search id="example-timeline-search" search="search index=_internal" preview=True status_buckets=300 %&#125;
+&#123;% endblock contexts%&#125;
+
+//javascript
+AppFx.Components.create("appfx-timepicker", "example-timepicker", {
+    contextid: "example-timeline-search",
+    preset: "today",
+    el: $("#divToHangOn")
+}).render();
+AppFx.Components.create("appfx-timeline", "example-timeline", {
+    contextid: "example-timeline-search",
+    el: $("#divToHangOn2")
+}).render();
+AppFx.Components.create("appfx-resulttable", "example-resulttable", {
+    contextid: "example-timeline-search",
+    pageSize: "5",
+    el: $("#divToHangOn3")
+}).render();
+AppFx.Components.create("appfx-searchcontext", "example-timeline-search", {
+    search: "search index=_internal",
+    preview: "True",
+    status_buckets: 300
+}).start();
+</pre> 
+
+</div>
+<!-- END TIMELINE -->
+
+<!-- TIME PICKER -->
+<div class="section" id="time-picker">
+    <div class="page-header"></div>
+    <h1>Time picker</h1>
+    <p>A <b>TimePicker</b> control can be used by itself to modify the time range for a search context. This control can be used with a <b>SearchBar</b> control to modify the time range for the search bar's search.</p>
+    <p>Use the <code>&#123;% timepicker %&#125;</code> tag with the <code>search</code> property to specify the search context.</p>
+
+    <h2>Options</h2>
+    <p>You can set the following property using templates tags or JavaScript:</p>
+    <ul>
+        <p><code>preset</code>: When set, the time picker starts with the selected time range. Possible values are:</p>
+        <ul>
+            <li> <p><b>rt-30s</b>, Label: 30SecondWindow</p></li>
+            <li> <p><b>rt-1m</b>, Label: 1MinuteWindow</p></li>
+            <li> <p><b>rt-5m</b>, Label: 5MinuteWindow</p></li>
+            <li> <p><b>rt-30m</b>, Label: 30MinuteWindow</p></li>
+            <li> <p><b>rt-1h</b>, Label: 1HourWindow</p></li>
+            <li> <p><b>rt</b>, Label: AllTime(Real-time)</p></li>
+            <li> <p><b>today</b>, Label: Today</p></li>
+            <li> <p><b>week</b>, Label: Weektodate</p></li>
+            <li> <p><b>bizweek</b>, Label: Businessweektodate</p></li>
+            <li> <p><b>month</b>, Label: Monthtodate</p></li>
+            <li> <p><b>year</b>, Label: Yeartodate</p></li>
+            <li> <p><b>yesterday</b>, Label: Yesterday</p></li>
+            <li> <p><b>prev-week</b>, Label: PreviousWeek</p></li>
+            <li> <p><b>prev-bizweek</b>, Label: PreviousBusinessWeek</p></li>
+            <li> <p><b>prev-month</b>, Label: PreviousMonth</p></li>
+            <li> <p><b>prev-year</b>, Label: PreviousYear</p></li>
+            <li> <p><b>ht-15m</b>, Label: Last15minutes</p></li>
+            <li> <p><b>ht-60m</b>, Label: Last60minutes</p></li>
+            <li> <p><b>ht-4h</b>, Label: Last4hours</p></li>
+            <li> <p><b>ht-24h</b>, Label: Last24hours</p></li>
+            <li> <p><b>ht-7d</b>, Label: Last7days</p></li>
+            <li> <p><b>ht-30d</b>, Label: Last30days</p></li>
+            <li> <p><b>alltime</b>, Label: AllTime</p></li>
+            <li> <p><b>custom</b>, Label: Custom</p></li>
+        </ul>
+    </ul>
+
+    <h2>Example</h2>
+    <p>In this example, a <b>TimePicker</b> control is bound to the same search as a single value. As the time range changes with the time picker, the value changes based on the new time range.</p>
+
+    <div class="bs-docs-example">
+        {% timepicker id="example-timepicker" preset="today" contextid="timepicker-search" %}
+        {% single id="timepicker-single" contextid="timepicker-search" afterLabel="events" %}
+    </div>
+
+<pre class="prettyprint linenums lang-js">
+&lt!-- django --&gt
+&#123;% block content %&#125;
+    &#123;% timepicker id="example-timepicker" preset="today" contextid="timepicker-search" %&#125;
+    &#123;% single id="timepicker-single" contextid="timepicker-search" afterLabel="events" %&#125;
+&#123;% endblock content %&#125; 
+&#123;% block contexts %&#125; 
+    &#123;% search id="timepicker-search" search="search index=_internal | stats count" %&#125;   
+&#123;% endblock contexts%&#125;    
+
+//javascript
+AppFx.Components.create("appfx-timepicker", "example-timepicker", {
+    contextid: "timepicker-search",
+    preset: "today",
+    el: $("#divToHangOn")
+}).render();
+AppFx.Components.create("appfx-single", "example-single", {
+    contextid: "timepicker-search",
+    afterLabel: "events",
+    el: $("#divToHangOn2")
+}).render();
+AppFx.Components.create("appfx-searchcontext", "timepicker-search", {
+    search: "search index=_internal | stats count",
+    preview: "True",
+    status_buckets: 300
+}).start();
+</pre> 
+
+</div>
+<!-- END TIME PICKER -->
+
+<!-- LEARN MORE -->
+<div class="section" id="learnmore">
+    <div class="page-header"></div>
+    <h1>Learn more</h1>
+    <p>We have more resources for you to learn about the new Splunk App Framework:</p>
+    <ul>
+        <li><a href="http://dev.splunk.com/view/app-framework/SP-CAAAEMA" target="_blank">The Splunk Developer Portal</a> is the home of our documentation, where you'll find more in-depth explanations of how things work, including code examples.</li>
+        <li><a href="http://docs.splunk.com/Documentation:AppFramework" target="_blank">Splunk App Framework Component Reference</a> is the complete reference for all of the contexts and controls, including methods, properties, events, and more code examples.</li>
+    </ul>
+</div>
+<!-- END LEARN MORE -->
+
+
+</div>
+</div>
+</div> <!-- END CONTENT CONTAINER -->
+
+{% endblock content %}
+
+{% block contexts %}
+{% search id="example-search" search="search index=_internal | head 100 | timechart count by sourcetype span=100s" preview=False cache=True %}
+
+{% search id="indexes-search" search="| eventcount summarize=false index=* index=_* | dedup index | fields index" preview=False cache=True %}
+
+{% search id="example-event-search" search="search index=_internal | head 3" %}
+
+{% search id="example-single-search" search="search index=_internal | stats count | rangemap field=count low=0-3 elevated=3-6 severe=6-10 default=severe" earliest_time="-15m" latest_time="now" %}
+
+{% search id="example-bar-search" search="search index=_internal | head 100 " %}
+
+{% search id="timepicker-search" search="search index=_internal | stats count" %}
+
+{% search id="example-timeline-search" search="search index=_internal" preview=True status_buckets=300 %}
+
+{% search id="example-map-search" search="| inputlookup appfx.demo.dataset.csv | rename device_ip_latitude as lat, device_ip_longitude as lng | stats count by lat, lng "%} 
+
+{% search id="chart-search" search="| inputlookup appfx.demo.dataset.csv | chart count by artist_name | head 20" preview=False cache=True %}
+
+{% endblock contexts%}
+
+{% block js %}
+{{block.super}}
+
+<script type="text/javascript" src="{{STATIC_URL}}componentfx/prettify.js"></script>
+<script type="text/javascript" src="{{STATIC_URL}}componentfx/bootstrap-affix.js"></script>
+<script type="text/javascript">
+
+$(document).ready(function(){
+    prettyPrint();
+
+    $('#toc').affix({
+        offset: $('#toc').position()
+    });
+});
+
+
+AppFx.on("start",function() {
+    var table= AppFx.Components.getInstance("example-table");
+
+    var tb1 = AppFx.Components.getInstance("example-textbox1");
+    var tb2 = AppFx.Components.getInstance("example-textbox2");
+    tb1.on("change", function(){
+        tb2.val(tb1.val());
+    })
+    tb2.on("change", function(){
+        tb1.val(tb2.val());
+    })
+
+    var choices = [{label: " One", value: "One"},
+    {label:" Two", value: "Two"}, 
+    {label:" Three", value: "Three"}];
+
+    AppFx.Components.getInstance("example-radio").settings.set("choices", choices);
+    AppFx.Components.getInstance("example-select").settings.set("choices", choices);
+
+})
+</script>
+
+{% endblock js %}

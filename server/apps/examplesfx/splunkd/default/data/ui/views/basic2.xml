@@ -1,0 +1,26 @@
+<dashboard>
+  
+  <label>Basic SimpleXML Dashboard - 2</label>
+ 
+  <row>
+    
+    <single>
+      <title>Top sourcetypes over time</title>
+      <searchString>index=_internal | stats count</searchString>
+      <earliestTime>-1h</earliestTime>
+      <latestTime>now</latestTime>
+      <option name="height">400px</option>
+    </single>
+    
+    <table>
+      <title>Top sourcetypes</title>
+      <searchString>index=_internal | stats count by sourcetype</searchString>
+      <earliestTime>-1h</earliestTime>
+      <latestTime>now</latestTime>
+      <option name="height">400px</option>
+      <option name="displayRowNumbers">true</option>
+    </table>    
+  </row>
+
+
+</dashboard>

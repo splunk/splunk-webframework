@@ -1,0 +1,109 @@
+{% load url from future %}
+
+{% load splunkui %}
+
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Splunk App Framework Quick Start</title>
+		<!-- Bootstrap -->
+		<link href="{{STATIC_URL}}quickstartfx/css/bootstrap.css" rel="stylesheet" media="screen">
+		<link href="{{STATIC_URL}}quickstartfx/css/style.css" rel="stylesheet" type="text/css" media="screen">
+		<link href="{{STATIC_URL}}quickstartfx/css/prettify.css" rel="stylesheet" type="text/css" media="screen">
+		<script type="text/javascript" src="{{STATIC_URL}}quickstartfx/js/prettify.js"></script>
+		<script type="text/javascript" src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.min.js"></script>
+
+		<script>
+        	window.APPFX_STATIC_URL = "{{STATIC_URL}}";
+    	</script>
+	</head>
+	<body onload="prettyPrint();">
+		<div id="splunk-bar"></div>
+		<div id="container">
+			<div class="progress-buttons">
+				<a href="{% url 'quickstartfx:steps' id=4 %}" class="btn">Back</a>
+				<a href="{% url 'quickstartfx:steps' id=6 %}" class="btn btn-next btn-success">Next</a>
+			</div>
+			<h1>Splunk App Framework Quick Start</h1>
+			
+			
+			<div class="row" id="content-container">
+				<div class="span23" id="main">
+						<h2>Add search results to table</h2>
+						<p>Now that you have a search context, let's show the results in a table. To do that, we'll create a <b>ResultTable</b> control and bind it to the search context. If the search is modified (for example, by using a <b>SearchBar</b> control to change the search query, or a <b>TimePicker</b> control to change the time range), the <b>ResultTable</b> is notified and updated automatically.</p>
+						<!-- <ul class="nav nav-tabs" id="main-tabs">
+							<li class="active">
+								<a href="#">Regular</a>
+							</li>
+							<li>
+								<a href="#">splunkjs.Async</a>
+							</li>
+						</ul> -->
+						<div class="well well-white" id="well-main">
+							
+								
+							
+							<h3>Add a result table</h3>
+							<p>Like other controls we've looked at so far, you'll add the <b>ResultTable</b> control by using tags in your HTML templates. The control is bound to a search context by setting its <code>contextid</code> property to the name of the search context. Then, the table is populated with the results of that search.</p>
+							<p>Here's an example:</p>
+							
+							{% resulttable id="example-table" contextid="example-search" pageSize="5" %}
+							{% search id="example-search" search="| inputlookup appfx.demo.dataset.csv | fields artist_name bytes clientip | rename _time as download_time "%} 
+							
+							</br>
+							<p>Both the result table and the search context are declared in the app's HTML template using template tags:</p>
+
+
+<pre class="prettyprint linenums">
+&#123;% resulttable id="example-table" contextid="example-search" pageSize="5"%&#125;
+
+&#123;% search id="example-search" search="| inputlookup appfx.demo.dataset.csv | fields artist_name bytes clientip | rename _time as download_time"   %&#125; 
+</pre>
+				</br>
+	
+				<p>If a search bar and a result table are bound to the same search context, results of a searchs in the search bar will populate the result table. Here is a searchbar and table bound to the same search context. Try searching on your Splunk data and see how the result table updates.</p>
+
+				{% searchbar id="example-searchbar" contextid="example-search2" %}
+				{% resulttable id="example-table2" contextid="example-search2" pageSize="5" %}
+				{% search id="example-search2" search="search index=_internal | head 100"%}
+
+				</br>
+				<p>The code required to do this is simple:</p>
+
+<pre class="prettyprint linenums lang-js">
+&#123; % searchbar id="example-searchbar" contextid="example-search" % &#125;
+&#123; % resulttable id="example-table" contextid="example-search" pageSize="5" %&#125;
+&#123; % search id="example-search" search="search index=_internal | head 100"% &#125;
+</pre>
+					
+				</div>
+				<div class="span9 offset1" id="sidebar">
+					<div class="well well-white">
+						<ul class="nav nav-list ">
+							<li class="nav-header">Quick Start</li>
+							<li><a href="{% url 'quickstartfx:steps' id=3 %}">Create an app</a></li>
+							<li><a href="{% url 'quickstartfx:steps' id=4 %}">Add a search</a></li>
+							<li class="active"><a href="{% url 'quickstartfx:steps' id=5 %}">Add search results to table</a></li>
+							<li><a href="{% url 'quickstartfx:steps' id=6 %}">Map your results</a></li>
+							<li><a href="{% url 'quickstartfx:steps' id=7 %}">Add interactivity</a></li>
+							<!-- <li><a href="{% url 'quickstartfx:steps' id=8 %}">Deploy your app</a></li> -->
+							<li><a href="{% url 'quickstartfx:steps' id=9 %}">Next steps</a></li>
+						</ul>
+					</div>
+				</div>
+			</div>
+			
+			<div style="clear: both;"></div>
+		</div>
+		<div class="progress-buttons">
+				<a href="{% url 'quickstartfx:steps' id=4 %}" class="btn">Back</a>
+				<a href="{% url 'quickstartfx:steps' id=6 %}" class="btn btn-next btn-success">Next</a>
+			</div>
+		<script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.js"></script>
+	    <script src="{{STATIC_URL}}appfx/splunkjs/splunk.js"></script>
+	   
+	    {% component_loader %}
+		
+	</body>
+</html>

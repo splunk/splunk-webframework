@@ -1,0 +1,32 @@
+<dashboard>
+  
+  <label>Basic SimpleXML Dashboard</label>
+ 
+  <row>
+    
+    <chart>
+      <title>Top sourcetypes over time</title>
+      <searchString>index=_internal | timechart count by sourcetype</searchString>
+      <earliestTime>-1h</earliestTime>
+      <latestTime>now</latestTime>
+      <option name="height">400px</option>
+      <option name="charting.chart">line</option>
+      <option name="charting.primaryAxisTitle.text">Time</option>
+      <option name="charting.secondaryAxisTitle.text">Count</option>
+    </chart>
+    
+    <chart>
+      <title>Top sourcetypes</title>
+      <searchString>index=_internal | stats count by sourcetype</searchString>
+      <earliestTime>-1h</earliestTime>
+      <latestTime>now</latestTime>
+      <option name="height">400px</option>
+      <option name="charting.chart">bar</option>
+      <option name="charting.primaryAxisTitle.text">Sourcetype</option>
+      <option name="charting.secondaryAxisTitle.text">Count</option>
+    </chart>
+    
+  </row>
+
+
+</dashboard>

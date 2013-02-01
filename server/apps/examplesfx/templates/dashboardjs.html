@@ -1,0 +1,141 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+
+    <style>    
+    </style>
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Dashboards with JavaScript</h4>
+                </div>
+                <div class="panel-body">
+                    This example shows how to create a simple dashboard using JavaScript
+                    to create and connect the controls and contexts. You can see how
+                    we can also use plain old static HTML in the page.
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span4">
+            <div class="panel" id="panel0">
+                <div class="panel-head">
+                    <h4>A little table action.</h4>
+                </div>
+                <div class="panel-body">
+                    <div id="table1" class="appfx-control"></div>
+                </div>
+            </div>
+        </div>
+        <div class="span4">
+            <div class="panel" id="panel1">
+                <div class="panel-head">
+                    <h4>Singularity</h4>
+                </div>
+                <div class="panel-body">
+                    <div id="single1" class="appfx-control"></div>
+                </div>
+            </div>
+        </div>
+        <div class="span4">
+            <div class="panel" id="panel2">
+                <div class="panel-body">
+                    <p style="padding:0 15px;">
+                        <b>Lorem ipsum</b> dolor sit amet, consectetur adipiscing elit.
+                        Integer a ligula eu lectus tempor vulputate. Pellentesque porttitor eros nec elit
+                        tempus gravida. Nullam laoreet vestibulum nunc a vulputate. Ut erat dolor, mollis
+                        nec feugiat eget, congue placerat libero. Integer lacinia scelerisque orci, et
+                        euismod augue rutrum sed. Nunc tristique porttitor cursus. Pellentesque nec felis
+                        ut velit fringilla faucibus et vitae turpis. Vestibulum accumsan semper hendrerit.
+                        Duis commodo mattis laoreet. Ut sit amet mi diam. Donec ut risus at nulla imperdie
+                        luctus eget consequat leo. Sed id erat quis mauris consectetur interdum id id risus.
+                        Donec mattis gravida sodales. Proin ultricies sapien quis eros tincidunt porta.
+                        Vestibulum vitae nulla eu orci bibendum facilisis vel sed ligula. Curabitur consequat
+                        pulvinar nisl, ut tempus neque sagittis eu.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span12">
+            <div class="panel" id="panel3">
+                <div class="panel-head">
+                    <h4>Very timely chart</h4>
+                </div>
+                <div class="panel-body">
+                    <div id="chart1" class="appfx-control"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content%}
+
+{% block js %}
+<script>
+    // Because we didn't use the Django template tags, we have to load our
+    // dependencies manually.
+    var deps = [
+        "appfx/splunkui/chart",
+        "appfx/splunkui/resulttable",
+        "appfx/splunkui/searchcontext",
+        "appfx/splunkui/single",
+    ];
+    AppFx.load(deps, function() {
+        // Here we are creating the three controls we are going to be using:
+         
+        // Table
+        AppFx.Components.create("appfx-resulttable", "table1", {
+            contextid: "search1",
+            el: $("#table1")
+        }).render();
+        
+        // Single Value
+        // We also give it the 'beforeLabel' option
+        AppFx.Components.create("appfx-single", "single1", {
+            contextid: "search2",
+            beforeLabel: "Count of Events",
+            el: $("#single1")
+        }).render();
+        
+        // Chart
+        AppFx.Components.create("appfx-chart", "chart1", {
+            contextid: "search3",
+            type: "line",
+            el: $("#chart1")
+        }).render();
+        
+        
+        // Create the three search contexts that we need
+        AppFx.Components.create("appfx-searchcontext", "search1", {
+            earliest_time: "-24h@h",
+            latest_time: "now",
+            search: "search index=_internal | stats count by sourcetype" 
+        }).start();
+        AppFx.Components.create("appfx-searchcontext", "search2", {
+            earliest_time: "-15m",
+            latest_time: "now",
+            search: "search index=_internal | stats count" 
+        }).start();
+        AppFx.Components.create("appfx-searchcontext", "search3", {
+            earliest_time: "-24h@h",
+            latest_time: "now",
+            search: "search index=_internal | timechart count by sourcetype" 
+        }).start();
+    });
+</script>
+{% endblock js %}

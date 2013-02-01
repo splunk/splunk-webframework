@@ -1,0 +1,14 @@
+*.pyc
+*.swp
+*.DS_Store*
+*coverage_html_report*
+.coverage
+.coverage.*
+docs/_build
+*.sublime-project
+*.sublime-workspace
+server/static/*
+testdb
+contrib/django
+.appfxrc
+.splunkhome

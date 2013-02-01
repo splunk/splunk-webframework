@@ -1,0 +1,13 @@
+/* Copyright 2012 Splunk, Inc. */
+
+.appfx-radio input {
+    margin-left: 2px;
+    margin-right: 10px;
+}
+
+.appfx-select div.select2-container {
+    margin-bottom: 9px;
+    min-width: 200px;
+    max-width: 200px;
+}
+

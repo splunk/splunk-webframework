@@ -1,0 +1,92 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Custom Controls and Interactivity</h4>
+                </div>
+                <div class="panel-body">
+                    <p>
+                    Building on our example where we showed table row expansion,
+                    in this example we take that same code
+                    and put it in a custom, reusable control.
+                    </p>
+                    
+                    <p>
+                    This control is called <b>ExpandoTable</b>, you'll find it 
+                    <a href="{{STATIC_URL}}examplesfx/expandotable.js">here</a>.    
+                    </p>
+                    
+                    <p>
+                    This is actually a relatively complex control because it has an
+                    inner control that does most of the rendering. But, it also needs
+                    to handle events on that inner control (the table) and on 
+                    its own search context.
+                    </p>
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Table</h4>
+                </div>
+                <div class="panel-body">
+                    <div class="appfx-control" id="custom-table"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content%}
+
+{% block contexts %}
+    {% search id="simplesearch1" search="search index=_internal | stats count by sourcetype" 
+        preview=False cache=True autostart=True earliet_time="-1m" %}
+        
+    {% search id="simplesearch2" search="| metadata type=sourcetypes index=_internal | search sourcetype=$sourcetype$"
+        preview=False cache=True autostart=False %}
+{% endblock contexts %}
+
+{% block js %}
+<script>
+    var deps = [
+        "appfx/splunkui/resulttable",
+        "examplesfx/expandotable"
+    ];
+    AppFx.load(deps, function() {
+        var innerTable = AppFx.Components.create("appfx-resulttable", "table1", {
+            contextid: "simplesearch1"
+        }).render();
+        var customTable = AppFx.Components.create("examplesfx-expandotable", "custom-table", {
+            table: "table1",
+            contextid: "simplesearch2",
+            valueField: "sourcetype",
+            targetToken: "sourcetype",
+            el: $("#custom-table"),
+            template: "\
+<div><h4>Earliest Time:</h4> <%=firstTime%></div> \
+<div><h4>Latest Time:</h4> <%=lastTime%></div> \
+<div><h4>Total Count:</h4> <%=totalCount%></div> \
+"
+        }).render();
+    });
+</script>
+
+{% endblock js %}

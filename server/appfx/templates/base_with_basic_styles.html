@@ -1,0 +1,18 @@
+{% extends "appfx:base.html" %}
+
+{% load splunkui %}
+
+{% block splunkstyles %}splunk{% endblock splunkstyles %}
+
+{% block _css %}
+    {{block.super}}
+    <!-- BASIC STYLES FOR BOOTSTRAP + SPLUNK -->
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}appfx/css/splunkstrap.css" />
+{% endblock _css %}
+
+{% block _js %}
+    {{block.super}}
+    <script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.js" type="text/javascript"></script>
+    <script src="{{STATIC_URL}}appfx/splunkjs/splunk.js"></script>
+    {% component_loader %}
+{% endblock _js %}

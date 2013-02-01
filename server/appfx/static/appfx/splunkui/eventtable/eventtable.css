@@ -1,0 +1,303 @@
+.event-table-container .table-wrapper {
+    overflow-x: auto;
+}
+
+.event-table-container .add-fields {
+    padding-top: 3px;
+    padding-bottom: 4px;
+}
+
+
+.event-table-container .fields-container .dropdown-menu {
+    max-height: 450px;
+    width: 200px;
+    overflow: auto;
+}
+
+.event-table-container .fields-container .dropdown-menu div {
+    max-height: 364px;
+    overflow-y: auto;
+}
+
+.event-table-container .fields-container .field-label, a.field-action {
+    display: block;
+    padding: 0;
+    line-height: 21px;
+    color: white;
+    border: 1px solid #AEAEAE;
+    border-top-color: #B7B7B7;
+    border-bottom-color: #989898;
+    text-shadow: 0px -1px 0 rgba(0, 0, 0, 0.3);
+    box-shadow: 0px 1px 1px rgba(0,0,0,0.08);
+    font-weight: normal;
+    font-size: 13px;
+    background: #f5f5f5; /* Old browsers */
+    background: -moz-linear-gradient(top, #f5f5f5 0%, #dcdcdc 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#f5f5f5), color-stop(100%,#dcdcdc)); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top, #f5f5f5 0%,#dcdcdc 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top, #f5f5f5 0%,#dcdcdc 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top, #f5f5f5 0%,#dcdcdc 100%); /* IE10+ */
+    background: linear-gradient(to bottom, #f5f5f5 0%,#dcdcdc 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#f5f5f5', endColorstr='#dcdcdc',GradientType=0 ); /* IE6-9 */
+    color: #333;
+    text-shadow: 0px 1px 0 white;
+}
+
+.event-table-container .fields-container .field-label {
+    position: absolute;
+    padding-right: 28px;
+    padding-left: 8px;
+    text-overflow: ellipsis;
+    border-radius: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.event-table-container .fields-container div.field > .field-action {
+    display: block;
+    float: right;
+    position: absolute;
+    width: 20px;
+    margin-right: 0;
+    border-left: 1px solid #AEAEAE;
+    right: 0;
+    top: 0;
+    height: 20px;
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+    text-align: center;
+}
+
+.event-table-container .fields-container .field-label.reorderable:before {
+    content: "";
+    position: absolute;
+    height: 14px;
+    width: 7px;
+    background: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAG0lEQVQIW2M0Njb+f/bsWUYYzciABuAyOFUAAKKMEAXhn6ySAAAAAElFTkSuQmCC) repeat;
+    top: 3px;
+    left: 4px;
+    opacity: 0.5;
+    cursor: move;
+}
+
+.event-table-container .fields-container th > div.field {
+    float: none;
+    width: auto;
+    margin: -3px -3px 0 -3px;
+}
+.event-table-container .fields-container div.field {
+    position: relative;
+    border-collapse: separate;
+    width: 160px;
+    height: 22px;
+    float: left;
+    margin: 0 3px 0 0;
+    min-width: 30px;
+}
+
+.event-table-container .fields-container div.field .field-label.reorderable {
+    padding-left: 15px;
+    cursor: move;
+}
+
+.event-table-container .fields-container div.field > .field-action + .field-action {
+    right: 21px;
+    border-radius: 0;
+}
+
+.event-table-container .fields-container .field-label.reorderable:hover,
+.event-table-container .fields-container .field-action:hover {
+    background: #ffffff; /* Old browsers */
+    background: -moz-linear-gradient(top, #ffffff 30%, #e5e5e5 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(30%,#ffffff), color-stop(100%,#e5e5e5)); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top, #ffffff 30%,#e5e5e5 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top, #ffffff 30%,#e5e5e5 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top, #ffffff 30%,#e5e5e5 100%); /* IE10+ */
+    background: linear-gradient(to bottom, #ffffff 30%,#e5e5e5 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#ffffff', endColorstr='#e5e5e5',GradientType=0 ); /* IE6-9 */
+    text-decoration: none;
+}
+
+
+.event-table-container .fields-container .field-label .remove-field {
+    border-left: 1px solid #AEAEAE;
+    padding-left: 3px;
+    padding-right: 6px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+}
+
+.event-table-container .fields-container .field-label a.remove-field {
+    color: black;
+}
+
+.event-table-container .options-container {
+    margin-left: 20px;
+    margin-right: 20px;
+    margin-bottom: 10px;
+    margin-top: 10px;
+    height: 22px;
+}
+
+.event-table-container .options-container .dropdown {
+    line-height: 20px;
+    margin-right: 20px;
+}
+
+.event-table-container .options-container .dropdown .caret {
+}
+
+.event-table-container .pagination {
+    height: 22px;
+    margin: 0px;
+}
+
+.event-table-container .pagination a {
+    border: 0px;
+    padding: 3px 6px;
+    display: inline-block;
+    _display: inline;
+    line-height: 12px;
+}
+
+.event-table-container .pagination ul {
+    border: 0px;
+    box-shadow: none;
+    border-radius: 0px;
+}
+
+.event-table-container .pagination ul li {
+    line-height: 100%;
+}
+
+.event-table-container .pagination-container li.active a {
+    background-color: whiteSmoke;
+    cursor: default;
+    
+    background-color: #999;
+    border-color: #999;
+    color: white;
+    font-weight: bold;
+    background-color: #8F8F8F;
+    background-image: -moz-linear-gradient(top, #888, #999);
+    background-image: -ms-linear-gradient(top, #888, #999);
+    background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#888), to(#999));
+    background-image: -webkit-linear-gradient(top, #888, #999);
+    background-image: -o-linear-gradient(top, #888, #999);
+    background-image: linear-gradient(top, #888, #999);
+    background-repeat: repeat-x;
+    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#888888', endColorstr='#999999', GradientType=0);
+    -webkit-box-shadow: inset 1px 1px 2px #666666;
+    -moz-box-shadow: inset 1px 1px 2px #666666;
+    box-shadow: inset 1px 1px 2px #666666;
+    border-radius: 2px 2px 2px 2px;
+    border-style: solid;
+    border-width: 1px;
+}
+
+.event-table-container .pagination-container {
+    margin-right: 10px;
+}
+
+.event-table-container .pagination-container li.disabled a {
+    color: #999;
+    cursor: default;
+    background-color: transparent;
+}
+
+table.event-list {
+    table-layout: fixed;
+    color: #333;
+    font-family: Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 20px;
+}
+
+table.event-list td:first-child {
+    padding-left: 20px;
+}
+
+table.event-list td.row-number {
+    width: 7%;
+    font-size: 11px;
+    color: #888;
+    font-weight: normal;
+    text-align: right;
+}
+
+table.event-list td.event-dropdown {
+    width: 3%;
+}
+
+table.event-list td.event-dropdown span.caret {
+    opacity: 1.0;
+}
+
+table.event-list td.date-content {
+    width: 8%;
+}
+
+table.event-list td.raw-content {
+    word-wrap: break-word;
+    width: 82%;
+}
+
+table.event-list td.raw-content .content {
+    font-family: 'Droid Sans Mono', Consolas, Monaco, 'Courier New', Courier, mono;
+}
+
+table.event-list td.raw-content .event-field-info {    
+    font-family: Roboto, Helvetica Neue, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #333;
+}
+
+table.event-list td.raw-content .event-field-info .event-field-name:first-child {
+    margin-top: 20px;
+}
+
+table.event-list td.raw-content .event-field-info .event-field-name {
+    color: #888;
+    display: inline-block;
+}
+
+table.event-table {
+    color: #333;
+    font-family: Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 20px;
+}
+
+table.event-table td:first-child,
+table.event-table th:first-child {
+    padding-left: 20px;
+}
+
+table.event-table td.row-number {
+    width: 50px;
+    font-size: 11px;
+    color: #888;
+    font-weight: normal;
+    text-align: right;
+}
+
+table.event-table td.event-dropdown {
+    width: 20px;
+}
+
+table.event-table td.event-dropdown .btn {
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+table.event-table td.event-dropdown span.caret {
+    opacity: 1.0;
+}
+
+table.event-table td.date-content {
+    width: 150px;
+}

@@ -1,0 +1,170 @@
+{% load url from future %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <title>Example: Custom Styles</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="listen to your data">
+    <meta name="author" content="Splunk Inc.">
+    
+    <link rel="stylesheet" href="{{STATIC_URL}}appfx/contrib/bootstrap.css">
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+    
+    <style>
+        body {
+            /* 60px to make the container start at bottom of topbar */
+            padding-top: 60px; 
+            background: #eee;
+        }
+    </style>
+    <script>
+        window.APPFX_STATIC_URL = "{{STATIC_URL}}";
+    </script>
+</head>
+
+<body>
+    <div class="navbar navbar-fixed-top">
+      <div class="navbar-inner">
+        <div class="container-fluid" style="margin-left:auto; margin-right:auto; max-width:940px;">
+          <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </a>
+          <a class="brand" href="{% url 'examplesfx:home'%}">Examples</a>
+          <div class="nav-collapse">
+            <ul class="nav">
+              <li id="splunkui"><a href="{% url 'examplesfx:home'%}">Go Back to Splunk UI</a></li>
+            </ul>
+            <ul class="nav pull-right">
+              <li><a href="{% url 'logout'%}">Logout</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="container">
+        <div class="row">
+            <div class="span12">
+                <div class="panel" id="panel3">
+                    <div class="panel-head">
+                        <h4>Custom Styles</h4>
+                    </div>
+                    <div class="panel-body">
+                        <p style="padding:0 15px;">
+                            
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="span4">
+                <div class="panel" id="panel0">
+                    <div class="panel-head">
+                        <h4>A little table action.</h4>
+                    </div>
+                    <div class="panel-body">
+                        <div class="appfx-control" id="resulttable1"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="span4">
+                <div class="panel" id="panel1">
+                    <div class="panel-head">
+                        <h4>Singularity</h4>
+                    </div>
+                    <div class="panel-body">
+                        <div class="appfx-control" id="singlevalue1"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="span4">
+                <div class="panel" id="panel2">
+                    <div class="panel-body">
+                        <p style="padding:0 15px;">
+                            <b>Lorem ipsum</b> dolor sit amet, consectetur adipiscing elit.
+                            Integer a ligula eu lectus tempor vulputate. Pellentesque porttitor eros nec elit
+                            tempus gravida. Nullam laoreet vestibulum nunc a vulputate. Ut erat dolor, mollis
+                            nec feugiat eget, congue placerat libero. Integer lacinia scelerisque orci, et
+                            euismod augue rutrum sed. Nunc tristique porttitor cursus. Pellentesque nec felis
+                            ut velit fringilla faucibus et vitae turpis. Vestibulum accumsan semper hendrerit.
+                            Duis commodo mattis laoreet. Ut sit amet mi diam. Donec ut risus at nulla imperdie
+                            luctus eget consequat leo. Sed id erat quis mauris consectetur interdum id id risus.
+                            Donec mattis gravida sodales. Proin ultricies sapien quis eros tincidunt porta.
+                            Vestibulum vitae nulla eu orci bibendum facilisis vel sed ligula. Curabitur consequat
+                            pulvinar nisl, ut tempus neque sagittis eu.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="span12">
+                <div class="panel" id="panel3">
+                    <div class="panel-head">
+                        <h4>Very timely chart</h4>
+                    </div>
+                    <div class="panel-body">
+                        <div class="appfx-control" id="chart1"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.js"></script>
+    <script src="{{STATIC_URL}}appfx/splunkjs/splunk.js"></script>
+    <script src="{{STATIC_URL}}appfx/contrib/require.js"></script>
+    <script src="{{STATIC_URL}}appfx/splunkui/appfx.bootstrap.js"></script>
+    <script>
+        var deps = [
+            "appfx/splunkui/chart",
+            "appfx/splunkui/resulttable",
+            "appfx/splunkui/searchcontext",
+            "appfx/splunkui/single",
+        ];
+        AppFx.load(deps, function(AppFx) {
+            // Create the controls            
+            AppFx.Components.create("appfx-resulttable", "resulttable1", {
+                contextid: "search1",
+                el: $("#resulttable1")
+            }).render();
+            AppFx.Components.create("appfx-single", "singlevalue1", {
+                contextid: "search2",
+                el: $("#singlevalue1")
+            }).render();
+            AppFx.Components.create("appfx-chart", "chart1", {
+                contextid: "search3",
+                type: "line",
+                el: $("#chart1")
+            }).render();
+            
+            // Create the contexts
+            AppFx.Components.create("appfx-searchcontext", "search1", {
+                earliest_time: "-24h@h",
+                latest_time: "now",
+                search: "search index=_internal | stats count by sourcetype",
+                cache: true
+            }).start();
+            AppFx.Components.create("appfx-searchcontext", "search2", {
+                earliest_time: "-15m",
+                latest_time: "now",
+                search: "search index=_internal | stats count" ,
+                cache: true
+            }).start();
+            AppFx.Components.create("appfx-searchcontext", "search3", {
+                earliest_time: "-24h@h",
+                latest_time: "now",
+                search: "search index=_internal | timechart count by sourcetype",
+                cache: true
+            }).start();
+        });
+    </script>
+</body>
+
+</html>

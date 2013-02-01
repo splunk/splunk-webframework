@@ -1,0 +1,44 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+
+    <style>    
+    </style>
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2>Examples</h4>
+                </div>
+                <div class="panel-body">
+                    <p>
+                    This app has multiple examples. Each one
+                    illustrates one task that is possible in the Application
+                    Framework. You can see how the examples behave, and then
+                    look at the underlying code for each example.
+                    </p>
+                    
+                    <p>
+                    You'll find the code at <code>$APPFX_HOME/server/apps/examples/templates</code>.
+                    </p>
+                    <p>To try the examples, choose options from the menus at the top of this page.</p>
+                </div>
+            </div>   
+        </div>
+    </div>
+<div>
+
+{% endblock content%}
+
+{% block js %}    
+{% endblock js %}

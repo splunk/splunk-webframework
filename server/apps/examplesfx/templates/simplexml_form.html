@@ -1,0 +1,37 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+{% load url from future %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+
+    <style>    
+    </style>
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>SimpleXML Forms</h4>
+                </div>
+                <div class="panel-body">
+                    The SimpleXML component also supports form dashboards,
+                    so you can easily embed a form-controlled dashboard on your
+                    page.
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {% url "render_simplexml" app="examplesfx" path="form" as url1 %}
+    {% simplexml id="simplexml1" contextid="" app="examplesfx" url=url1 %}
+</div>
+
+{% endblock content%}

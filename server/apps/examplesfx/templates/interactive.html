@@ -1,0 +1,92 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Control Interactivity</h4>
+                </div>
+                <div class="panel-body">
+                    <p>
+                    Much like form controls, other controls also support 
+                    interactivity (in this preview release, only the result table
+                    and chart controls do). When a row is clicked, for example, an
+                    event is generated that we can listen for.
+                    </p>
+                    
+                    <p>
+                    In this example, when a table row is clicked, we update
+                    the second search on the page, which updates
+                    the single value control.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Table</h4>
+                </div>
+                <div class="panel-body">
+                    {% resulttable id="table" contextid="simplesearch1" %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Value for clicked on sourcetype</h4>
+                </div>
+                <div class="panel-body">
+                    {% single id="single1" contextid="simplesearch2" beforeLabel="Event Count: " %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+    </div>
+    </div>
+</div>
+
+{% endblock content%}
+
+{% block contexts %}
+    {% search id="simplesearch1" search="| eventcount summarize=false index=* OR index=_* | table index count" 
+        preview=True cache=True autostart=True %}
+        
+    {% search id="simplesearch2" search="search index=$index$ earliest=-1h | stats count" 
+        preview=True cache=True autostart=False %}
+{% endblock contexts %}
+
+{% block js %}
+<script>
+    AppFx.on("start", function() {
+        var table = AppFx.Components.getInstance("table");
+        var simpleSearch2 = AppFx.Components.getInstance("simplesearch2");
+        
+        // Set the index whenever the table is clicked
+        table.on("clicked:row", function(e) {
+            var index = e.model.get("index");
+            
+            simpleSearch2.query.set("index", index);
+            simpleSearch2.startSearch();
+        });
+    });
+</script>
+
+{% endblock js %}

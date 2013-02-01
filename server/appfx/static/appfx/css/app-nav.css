@@ -1,0 +1,124 @@
+.splunk .navbar .aux-nav > li.divider {
+  margin: 0px;
+  padding: 0px;
+  margin-left: 1px;
+  margin-right: 9px;
+}
+.splunk .app-navbar {
+  z-index: 1000;
+}
+.splunk .app-navbar .navbar-inner {
+  min-height: 28px;
+}
+.splunk .navbar .app-nav {
+  margin-right: -15px;
+  margin-left: -20px;
+  color: #CCC;
+  font-weight: bold;
+}
+.splunk .navbar .app-nav > li {
+  font-size: 11px;
+  line-height: 28px;
+  font-family: Arial, Helvetica, sans-serif;
+  height: 28px;
+  padding: 0px;
+  margin: 0px;
+}
+.splunk .navbar .app-nav > li > a {
+  padding: 0px;
+  line-height: 28px;
+  color: #CCC;
+  position: relative;
+  padding: 0px 10px;
+  height: 28px;
+}
+.splunk .navbar .app-nav > li a.dropdown-toggle {
+  padding-right: 23px;
+}
+.splunk .navbar .app-nav > li .dropdown-caret {
+  width: 5px;
+  height: 5px;
+  background-color: transparent;
+  background-image: url(../img/splIcons.gif);
+  background-position: -27px -367px;
+  background-repeat: no-repeat;
+  position: absolute;
+  display: block;
+  top: 13px;
+  right: 11px;
+}
+.splunk .navbar .app-nav > li > a,
+.splunk .navbar .app-nav > li > a:hover {
+  color: #ccc;
+}
+.splunk .navbar .app-nav > li:hover,
+.splunk .navbar .app-nav > li.open {
+  background: #3a3a3a;
+}
+.splunk .navbar .app-nav .dropdown-menu {
+  z-index: 9999;
+  border-color: #CCC;
+  border-width: 1px;
+  border-radius: 0px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  margin-top: 0px;
+  left: auto;
+  right: auto;
+  width: 160px;
+}
+.splunk .navbar .app-nav .dropdown-menu::before {
+  border: 0px;
+}
+.splunk .navbar .app-nav .dropdown-menu::after {
+  border: 0px;
+}
+.splunk .navbar .app-nav .dropdown-menu li a {
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  line-height: 12px;
+  width: 140px;
+  *width: auto;
+  word-wrap: break-word;
+  overflow: hidden;
+  white-space: normal;
+}
+.splunk .navbar .app-nav .dropdown-menu li a:hover {
+  background: #f3ecbb;
+  color: #333;
+}
+.splunk .navbar .app-nav .dropdown-menu li.divider {
+  padding: 0px;
+  margin: 0px;
+  border-color: #CCC;
+  height: 0px;
+  margin-top: 3px;
+  margin-bottom: 3px;
+}
+.splunk .navbar .app-nav li.dropdown ul.dropdown-menu li:hover ul {
+  display: block;
+  position: absolute;
+  left: 100%;
+}
+.splunk .navbar .app-nav li.dropdown ul.dropdown-menu ul {
+  display: none;
+  float: right;
+  position: relative;
+  top: auto;
+  margin-top: -22px;
+  box-shadow: none;
+  padding-bottom: 15px;
+}
+.splunk .navbar .app-nav li.dropdown ul.dropdown-menu .dropdown-caret {
+  background-image: url(../img/splIcons.gif);
+  background-position: -67px -407px;
+  position: absolute;
+  right: 6px;
+  top: 15px;
+}
+.splunk .aux-nav > li a.help {
+  padding-left: 16px;
+  background: url(../img/icon-help.png) no-repeat left center;
+}

@@ -1,0 +1,85 @@
+/* Copyright 2012 Splunk, Inc. */
+
+.gridster {
+    margin-bottom: 10px;
+}
+
+.gridster > ul {
+    list-style-type: none;
+    margin: 0;
+    margin-left: -5px;
+}
+
+.appfx-panel {
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0px 1px 1px rgba(0,0,0,0.08);
+    margin: 0 0 20px 0;
+    overflow: auto;
+}
+
+.simplexml .panel {
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0px 1px 1px rgba(0,0,0,0.08);
+    margin: 0 0 20px 0;
+    overflow: auto;
+}
+
+.simplexml .panel-head {
+    padding: 10px 20px 0px 20px;
+}
+
+.simplexml .panel-body {
+    min-height: 100px;
+    overflow: auto;
+    padding: 10px 20px 20px 20px;
+}
+
+.simplexml .input {
+    float: left;
+    margin-right: 10px;
+}
+
+.simplexml .input .appfx-radio {
+    margin-bottom: 9px;
+}
+
+.simplexml .input .submit {
+    margin-top: 23px;
+    margin-bottom: 9px;
+}
+
+.simplexml .input .unknown {
+    border: solid;
+    border-color: #aaa;
+    border-radius: 4px;
+    border-width: 1px;
+    padding: 4px 10px 4px;
+    margin-bottom: 9px;
+}
+
+/* DataVew */
+
+.simplexml table.dataview {
+    border: 2px solid #888;
+    border-collapse: collapse;
+}
+.simplexml td.dataview {
+    border: 1px solid #888;
+    padding: 4px 6px;
+    vertical-align: top;
+}
+
+.simplexml table.dataview-list {
+    border: 2px;
+    border-collapse: collapse;
+    margin: 0;
+}
+.simplexml td.dataview-list {
+    border: 1px;
+    padding: 4px 6px;
+    vertical-align: top;
+}

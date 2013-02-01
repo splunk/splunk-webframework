@@ -1,0 +1,94 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+
+    <style>    
+    </style>
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Drilldown</h4>
+                </div>
+                <div class="panel-body">
+                    Drilldown is one of the most common operations for Splunk applications.
+                    In this example, notice that when you click on the table, we navigate you
+                    to another page. That page has two searches that are
+                    parameterized for <code>sourcetype</code> and <code>source</code>,
+                    whose values we get from the table row you clicked on.
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>My Table</h4>
+                </div>
+                <div class="panel-body">
+                    <div class="pull-right">
+                        {% paginator id="table-paginator" %}
+                    </div>
+                    {% resulttable id="table1" contextid="simplesearch1" paginator="table-paginator" %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content%}
+
+{% block contexts %}
+    {% search id="simplesearch1" search="search index=_internal | head 1000 | stats count by sourcetype, source" 
+        preview=True cache=60 status_buckets=300 %}
+{% endblock contexts %}
+
+{% block js %}
+<script>
+    AppFx.on("start", function() {
+        var table = AppFx.Components.getInstance("table1");
+        
+        table.on("clicked:row", function(e) {
+            // Get the drilldown values
+            var sourcetype = e.model.get("sourcetype");
+            var source = e.model.get("source");
+            
+            // We use reverse to be able to refer to our target without hard-coding
+            // a URL. This is equivalent to Django's `reverse` function.
+            var target = AppFx.reverse("examplesfx:tmpl_render", {tmpl: "drilldown_target"});
+            var drilldown = {
+                // We set various query and search properties on two target contexts: 'search1'
+                // and 'search2'. We use the values from the row we clicked on.
+                "search1": {
+                    query: {
+                        sourcetype: sourcetype
+                    },
+                    search: {
+                        earliest_time: "-1h"
+                    }
+                },
+                "search2": {
+                    query: {
+                        source: source
+                    }
+                }
+            };
+            
+            // Now we can use the drilldown helper, passing in our target URL,
+            // and our drilldown options.
+            AppFx.drilldown(target, drilldown);
+        });
+    });
+</script>
+{% endblock js %}

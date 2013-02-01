@@ -1,0 +1,96 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+
+    <style>    
+    </style>
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Search Properties</h4>
+                </div>
+                <div class="panel-body">
+                    <p>
+                    Just as we control search tokens and the search query, we are
+                    able to control the search properties, such as time, required
+                    fields, status buckets, etc.
+                    </p>
+                    
+                    <p>
+                    In this example, we provide a choice of whether to
+                    enable the timeline for the underlying search (which is equivalent
+                    to setting <code>status_buckets</code> to 0 or a positive number).
+                    When a choice is made, we update the search, which then runs again.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span6">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Property Choice</h4>
+                </div>
+                <div class="panel-body">
+                    Enable timeline for the search?
+                    {% radio id="timeline-radio" default="yes" %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-body">
+                    {% timeline id="timeline1" contextid="simplesearch1" %}
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+</div>
+
+{% endblock content%}
+
+{% block contexts %}
+    {% search id="simplesearch1" search="search index=_internal earliest=-10m" 
+        preview=True cache=60 status_buckets=300 autostart=True %}
+{% endblock contexts %}
+
+{% block js %}
+<script>
+    AppFx.on("start", function() {
+        // Fetch a reference to the control and contexts
+        var radio = AppFx.Components.getInstance("timeline-radio");
+        var simpleSearch1 = AppFx.Components.getInstance("simplesearch1");
+        
+        // Add our static choices
+        radio.settings.set("choices", [
+            {value: "yes", label: "Yes"},    
+            {value: "no", label: "No"},
+        ]);
+        
+        // Set up a handler for when the selection changes
+        radio.on("change", function() {            
+            // Set status buckets for the search
+            simpleSearch1.search.set("status_buckets", radio.val() === "yes" ? 300 : 0);
+            
+            // Start the search
+            simpleSearch1.startSearch();
+        });
+    });
+</script>
+
+{% endblock js %}

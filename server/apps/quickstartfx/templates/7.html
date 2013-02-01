@@ -1,0 +1,146 @@
+{% load url from future %}
+
+{% load splunkui %}
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Splunk App Framework Quick Start</title>
+		<!-- Bootstrap -->
+		<link href="{{STATIC_URL}}quickstartfx/css/bootstrap.css" rel="stylesheet" media="screen">
+		<link href="{{STATIC_URL}}quickstartfx/css/style.css" rel="stylesheet" type="text/css" media="screen">
+		<link href="{{STATIC_URL}}quickstartfx/css/prettify.css" rel="stylesheet" type="text/css" media="screen">
+		<script type="text/javascript" src="{{STATIC_URL}}quickstartfx/js/prettify.js"></script>
+		<script type="text/javascript" src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.min.js"></script>
+
+		<script>
+        	window.APPFX_STATIC_URL = "{{STATIC_URL}}";
+    	</script>
+    	<style type="text/css">
+    		#example-map{
+
+    			height:400px;
+    			width:600px;
+    			margin-top: 40px;
+    			margin-bottom: 10px; 
+    		}
+
+    	</style>
+	</head>
+	<body onload="prettyPrint();">
+		<div id="splunk-bar"></div>
+		<div id="container">
+			<div class="progress-buttons">
+				<a href="{% url 'quickstartfx:steps' id=6 %}" class="btn">Back</a>
+				<a href="{% url 'quickstartfx:steps' id=9 %}" class="btn btn-next btn-success">Next</a>
+			</div>
+			<h1>Splunk App Framework Quick Start</h1>
+			
+			
+			<div class="row" id="content-container">
+				<div class="span23" id="main">
+						<h2>Add interactivity</h2>
+						<p>The Splunk App Framework makes it easy to add interactivity to an app using JavaScript. Web developers who are familiar with JavaScript programming will feel right at home.</p>
+						<!-- <ul class="nav nav-tabs" id="main-tabs">
+							<li class="active">
+								<a href="#">Regular</a>
+							</li>
+							<li>
+								<a href="#">splunkjs.Async</a>
+							</li>
+						</ul> -->
+						<div class="well well-white" id="well-main">
+							
+							<h3>Make an interactive map and table</h3>
+							<p>The following example creates a <b>GoogleMap</b> and a <b>ResultTable</b> control, binds them to the same search context, and uses JavaScript to listen to click events on the table. When a row is clicked, a pin is placed on the map corresponding to the clicked row's location. Map interaction is handled through the Google Maps API.</p>
+
+							{% googlemap id="example-map" %}
+
+							<h4>Count of downloads by location (click a row):</h4>
+							{% resulttable id="example-table" contextid="example-search" pageSize="5" %}
+							{% search id="example-search" search="| inputlookup appfx.demo.dataset.csv | rename _time as download_time, device_ip_latitude as lat, device_ip_longitude as lng | stats count by lat, lng " %}
+							</br>
+							</br>
+							<p>This map, table, and search are declared with template tags:</p>
+
+<pre class="prettyprint linenums">
+&#123;% googlemap id="example-map" %&#125;
+
+&#123;% resulttable id="example-table" contextid="example-search" pageSize="5" %&#125;
+
+&#123;% search id="example-search" search="| inputlookup appfx.demo.dataset.csv | rename _time as download_time, device_ip_latitude as lat, device_ip_longitude as lng | stats count by lat, lng" %&#125; 
+</pre>
+						<p>With JavaScript, the map and table are selected through the <b>AppFx</b> object and a click handler is attached to the table. When a row in the table is clicked, the previous selection is cleared and a new marker is added to the map.</p>
+<pre class="prettyprint linenums">
+var table= AppFx.Components.getInstance("example-table");
+var exampleMap= AppFx.Components.getInstance("example-map");
+
+var marker = null;
+table.on("clicked:row", function(e){
+    var lng = parseFloat(e.model.get("lng"));
+    var lat = parseFloat(e.model.get("lat"));
+    var latlng = new google.maps.LatLng(lat, lng);
+    if(marker) marker.setMap(null);
+    marker = new google.maps.Marker({
+        position: latlng,
+        map: exampleMap.map
+    }); 
+})
+</pre>
+						</div>
+
+					
+				</div>
+				<div class="span9 offset1" id="sidebar">
+					<div class="well well-white">
+						<ul class="nav nav-list ">
+							<li class="nav-header">Quick Start</li>
+							<li><a href="{% url 'quickstartfx:steps' id=3 %}">Create an app</a></li>
+							<li><a href="{% url 'quickstartfx:steps' id=4 %}">Add a search</a></li>
+							<li><a href="{% url 'quickstartfx:steps' id=5 %}">Add search results to table</a></li>
+							<li><a href="{% url 'quickstartfx:steps' id=6 %}">Map your results</a></li>
+							<li class="active"><a href="{% url 'quickstartfx:steps' id=7 %}">Add interactivity</a></li>
+							<!-- <li><a href="{% url 'quickstartfx:steps' id=8 %}">Deploy your app</a></li> -->
+							<li><a href="{% url 'quickstartfx:steps' id=9 %}">Next steps</a></li>
+						</ul>
+					</div>
+				</div>
+			</div>
+			<div class="progress-buttons">
+				<a href="{% url 'quickstartfx:steps' id=6 %}" class="btn">Back</a>
+				<a href="{% url 'quickstartfx:steps' id=9 %}" class="btn btn-next btn-success">Next</a>
+			</div>
+			<div style="clear: both;"></div>
+		</div>
+		<script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.js"></script>
+	    <script src="{{STATIC_URL}}appfx/splunkjs/splunk.js"></script>
+
+		{% component_loader %}
+
+	    <script type="text/javascript">
+
+	    		AppFx.on("start",function() {
+		            	var table= AppFx.Components.getInstance("example-table");
+		            	var exampleMap= AppFx.Components.getInstance("example-map");
+
+		            	var marker = null;
+		          		table.on("clicked:row", function(e){
+		          			if(marker) marker.setMap(null);
+		          			var lat = parseFloat(e.model.get("lat"));
+			                var lng = parseFloat(e.model.get("lng"));
+			                var latlng = new google.maps.LatLng(lat, lng);
+			                marker = new google.maps.Marker({
+			                    position: latlng,
+			                    map: exampleMap.map
+			                }); 
+		          		})
+		           
+		        	})
+
+	    </script>
+	
+		
+		
+		
+	</body>
+</html>

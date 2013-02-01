@@ -1,0 +1,220 @@
+/*!
+ * Timeline bootstrap
+ */
+/*!
+ * Splunk shoestrap 
+ * import and override bootstrap vars & mixins
+ */
+.clearfix {
+  *zoom: 1;
+}
+.clearfix:before,
+.clearfix:after {
+  display: table;
+  content: "";
+}
+.clearfix:after {
+  clear: both;
+}
+.hide-text {
+  font: 0/0 a;
+  color: transparent;
+  text-shadow: none;
+  background-color: transparent;
+  border: 0;
+}
+.input-block-level {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  -ms-box-sizing: border-box;
+  box-sizing: border-box;
+}
+.splunk {
+  /*!
+ * Component: SearchBar
+ */
+
+  /** @group $search-bar */
+
+  /* @end **/
+
+  /* FIXME: TMP: SEARCH ASSISTANT */
+
+  /* COMPONENT: Job Status */
+
+}
+.splunk .search-form {
+  margin-bottom: 0;
+}
+.splunk .search-bar td {
+  padding: 0;
+  vertical-align: top;
+}
+.splunk .search-bar label {
+  display: none !important;
+}
+.splunk .search-bar .searchFieldWrapperInner {
+  background-color: #76a853;
+  background-image: -moz-linear-gradient(top, #83b560, #639540);
+  background-image: -ms-linear-gradient(top, #83b560, #639540);
+  background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#83b560), to(#639540));
+  background-image: -webkit-linear-gradient(top, #83b560, #639540);
+  background-image: -o-linear-gradient(top, #83b560, #639540);
+  background-image: linear-gradient(top, #83b560, #639540);
+  background-repeat: repeat-x;
+  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#83b560', endColorstr='#639540', GradientType=0);
+  padding: 3px;
+  height: 30px;
+  border: 1px solid #487f22;
+  border-top-color: #61923f;
+  border-bottom-color: #41721e;
+  border-top-left-radius: 5px;
+  border-bottom-left-radius: 5px;
+  border-right: none;
+  box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.08);
+}
+.splunk .search-bar input,
+.splunk .search-bar textarea {
+  width: 100%;
+  display: block;
+  height: 30px;
+  line-height: 20px;
+  margin: 0;
+  overflow: hidden;
+  color: #999;
+  resize: none;
+  -moz-box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  border: 1px solid #487f22;
+  border-top-color: #41721e;
+  border-bottom-color: #61923f;
+  box-shadow: inset 1px 1px 5px rgba(0, 0, 0, 0.35);
+}
+.splunk .search-bar .search-input {
+  width: 100%;
+}
+.splunk .search-bar .search-input .inner,
+.splunk .search-bar .search-input .searchFieldWrapperInner {
+  background-color: #76a853;
+  background-image: -moz-linear-gradient(top, #83b560, #639540);
+  background-image: -ms-linear-gradient(top, #83b560, #639540);
+  background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#83b560), to(#639540));
+  background-image: -webkit-linear-gradient(top, #83b560, #639540);
+  background-image: -o-linear-gradient(top, #83b560, #639540);
+  background-image: linear-gradient(top, #83b560, #639540);
+  background-repeat: repeat-x;
+  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#83b560', endColorstr='#639540', GradientType=0);
+  padding: 3px;
+  height: 30px;
+  border: 1px solid #487f22;
+  border-top-color: #61923f;
+  border-bottom-color: #41721e;
+  border-top-left-radius: 5px;
+  border-bottom-left-radius: 5px;
+  border-right: none;
+  box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.08);
+}
+.splunk .search-bar .search-timerange .btn {
+  line-height: 28px;
+  white-space: nowrap;
+  border-radius: 0;
+}
+.splunk .search-bar .search-timerange .caret {
+  margin-top: 12px;
+  margin-left: 5px;
+}
+.splunk .search-bar .search-button .btn {
+  line-height: 28px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: -1px;
+}
+.splunk .assistantWrapper {
+  position: relative;
+}
+.splunk .assistantContainer {
+  display: none;
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  background-color: #ffffff;
+  border: 1px solid #000000;
+  overflow: auto;
+}
+.splunk .timeRangeActivatorWrapper {
+  white-space: nowrap;
+  margin: 0;
+  padding-left: 20px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.splunk .assTab {
+  background-color: #65a637;
+  position: absolute;
+  top: -3px;
+  left: 0;
+  cursor: pointer;
+  border-radius: 5px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  padding: 0 5px;
+  border: 1px solid #487f22;
+  border-top: none;
+}
+.splunk .assTab .splIcon {
+  background-position: 0px -580px;
+}
+.splunk .assistantContainer {
+  width: 100%;
+}
+.splunk .assistantInner {
+  padding: 1em;
+}
+.splunk .assistantInner > div {
+  float: left;
+  clear: none;
+  width: 30%;
+}
+.splunk .assistantInner h4 {
+  margin-bottom: 1em;
+}
+.splunk a.sakeyword {
+  display: block;
+  margin-bottom: 0.5em;
+}
+.splunk a.sakeyword:focus,
+.splunk a.sakeyword:hover {
+  background-color: #F9F3AA;
+  cursor: pointer;
+}
+.splunk .search-controls {
+  *zoom: 1;
+  clear: both;
+  margin: 10px -25px;
+  margin-bottom: 0px;
+  padding: 0px 25px;
+  min-height: 25px;
+  border-top: 1px solid #d6d6d6;
+  border-bottom: 1px solid #f5f5f5;
+  box-shadow: 0px -1px 0px #d6d6d6 inset, 0px 1px 0px #f5f5f5 inset;
+}
+.splunk .search-controls:before,
+.splunk .search-controls:after {
+  display: table;
+  content: "";
+}
+.splunk .search-controls:after {
+  clear: both;
+}
+.splunk .search-controls .loader {
+  float: left;
+  margin-right: 5px;
+}
+.splunk .search-controls .status {
+  margin-top: 6px;
+  margin-right: 6px;
+}

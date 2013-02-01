@@ -1,0 +1,124 @@
+{% extends "appfx:base_with_app_bar.html" %}
+
+{% load splunkui %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+
+    <style>    
+    </style>
+{% endblock css %}
+
+{% block content %}
+
+<div class="container">
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Cascading Forms</h4>
+                </div>
+                <div class="panel-body">
+                    <p>
+                    In this case, we have two form controls, and the choice of
+                    one cascades into the other. When you select an index, we run 
+                    a search to find which sourcetypes are available
+                    on that index. Finally, when you click the Search button, we
+                    use both selections to run the final search.
+                    </p>
+                    
+                    <p>
+                    Note how we are using the same approach as when we had form
+                    inputs feeding into searches directly: there is no difference
+                    between a search that populates a form and a search that
+                    populates a control.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span6">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4>Input</h4>
+                </div>
+                <div class="panel-body">
+                    Which index should we find sourcetypes for?
+                    {% select id="indexes" contextid="indexsearch" default="*" valueField="index" %}
+                    Which sourcetype should we use?
+                    {% select id="sourcetypes" contextid="sourcetypesearch" valueField="sourcetype" %}
+                    <button id="searchbutton" class="btn btn-primary">Search</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="span12">
+            <div class="panel">
+                <div class="panel-head">
+                    <h4></h4>
+                </div>
+                <div class="panel-body">
+                    {% single id="singlevalue" contextid="simplesearch1" beforeLabel="Event Count: " %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content%}
+
+{% block contexts %}        
+    {% search id="indexsearch" search="| eventcount summarize=false index=* OR index=_*" cache=True preview=False %}
+    
+    {% search id="sourcetypesearch" search="| metadata index=$index$ type=sourcetypes" cache=True preview=True autostart=False %}
+    
+    {% search id="simplesearch1" search="search index=$index$ sourcetype=$sourcetype$ earliest=-5m | stats count" 
+        preview=True cache=60 status_buckets=300 autostart=False %}
+{% endblock contexts %}
+
+{% block js %}
+<script>
+    AppFx.on("start", function() {
+        // Fetch a reference to the control and contexts
+        var indexes = AppFx.Components.getInstance("indexes");
+        var sourcetypes = AppFx.Components.getInstance("sourcetypes");
+        var simpleSearch1 = AppFx.Components.getInstance("simplesearch1");
+        var sourcetypeSearch = AppFx.Components.getInstance("sourcetypesearch");
+        
+        // Add "all" choices to
+        indexes.settings.set("choices", [
+            {value: "*", label: "(all)"}    
+        ]);
+        sourcetypes.settings.set("choices", [
+            {value: "*", label: "(all)"}    
+        ]);
+        
+        // Set up a handler for when the selection changes
+        indexes.on("change", function() {
+            if (!indexes.val()) {
+                return;   
+            }
+            
+            // Set the tokens for both contexts
+            sourcetypeSearch.query.set("index", indexes.val());
+            
+            // Start the searches
+            sourcetypeSearch.startSearch();
+        });
+        
+        $("#searchbutton").on("click", function() {
+            simpleSearch1.query.set({
+                index: indexes.val(),
+                sourcetype: sourcetypes.val()
+            });
+            
+            simpleSearch1.startSearch();
+        });
+    });
+</script>
+
+{% endblock js %}
