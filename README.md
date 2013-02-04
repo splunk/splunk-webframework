@@ -4,8 +4,7 @@
 
 The Splunk Application Framework Preview lets developers quickly create custom Splunk apps by using prebuilt components, styles, templates, and reusable samples, and by adding custom logic, interactions, and UI.  Applications developed with the Framework Preview will work seamlessly side-by-side with the current simple and advanced XML applications and users will be able to switch between apps without issue.
 
-The framework will make use of the Django web framework on the
-middle-tier and will build on the [Splunk SDK for Python](https://github.com/splunk/splunk-sdk-python) and the [Splunk SDK for JavaScript](https://github.com/splunk/splunk-sdk-javascript). The Splunk Application Framework Preview also depends on a few JavaScript libraries for the client-side of code, such as Backbone.js for eventing, and jQuery for working with the document object model (DOM).
+The Splunk Application Framework Preview uses the Django web framework, the [Splunk SDK for Python](https://github.com/splunk/splunk-sdk-python), and the [Splunk SDK for JavaScript](https://github.com/splunk/splunk-sdk-javascript). The framework also depends on a few JavaScript libraries for the client-side of code, such as Backbone.js for eventing, and jQuery for working with the document object model (DOM).
 
 If you have any questions please contact *devinfo@splunk.com*.
 
