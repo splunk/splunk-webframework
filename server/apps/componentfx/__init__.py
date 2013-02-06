@@ -12,11 +12,11 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-"""An interactive reference of all of the contexts and controls in the Splunk 
+"""An interactive reference of the components (the contexts and controls) of the Splunk 
 Application Framework."""
 
 __author__ = "Splunk, Inc"
-__label__ = "ComponentFx"
+__label__ = "Components"
 __license__ = "http://www.apache.org/licenses/LICENSE-2.0"
 __version_info__ = (0, 1, 0)
 __version__ = ".".join(map(str, __version_info__))

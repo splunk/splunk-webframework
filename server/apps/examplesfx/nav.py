@@ -122,7 +122,7 @@ NAV = [
         "link": reverse("quickstartfx:home")
     },
     {
-        "name": "ComponentFx",
+        "name": "Components",
         "link": reverse("componentfx:home")
     },
 ]
