@@ -4,7 +4,7 @@
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('./appfx');
+    var AppFx = require('splunkui');
     var BaseControl = require("./basecontrol");
 
     // jQuery 1.8 broke select2.js < v3.2, fix is in select2 master branch

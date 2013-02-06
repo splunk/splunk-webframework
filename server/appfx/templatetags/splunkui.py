@@ -10,7 +10,7 @@ from tagutils import add_statics, component_context, include
 register = template.Library()
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='chart')
-@include("appfx/splunkui/chart.js")
+@include("splunkui/chart.js")
 def chart(context, id, **kwargs):        
     return component_context(context, "appfx-chart", id, "control", kwargs)
 
@@ -25,27 +25,27 @@ def component_loader(context):
     return context
     
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='d3chart')
-@include("appfx/splunkui/d3chart/d3chart.js")
+@include("splunkui/d3chart/d3chart.js")
 def d3chart(context, id, *args, **kwargs):
     return component_context(context, "appfx-d3chart", id, "control", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='dataview')
-@include('appfx/splunkui/dataview.js')
+@include('splunkui/dataview.js')
 def dataview(context, id, **kwargs):
     return component_context(context, "appfx-dataview", id, "control", kwargs)
         
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='eventtable')
-@include("appfx/splunkui/eventtable/eventtable.js")
+@include("splunkui/eventtable/eventtable.js")
 def eventtable(context, id, **kwargs):
     return component_context(context, "appfx-eventtable", id, "control", kwargs)
     
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='googlemap')
-@include("appfx/splunkui/googlemap.js")
+@include("splunkui/googlemap.js")
 def googlemap(context, id, **kwargs):
     return component_context(context, "appfx-googlemap", id, "control", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='jobstatus')
-@include("appfx/splunkui/jobstatus.js")
+@include("splunkui/jobstatus.js")
 def jobstatus(context, id, **kwargs):
     return component_context(context, "appfx-jobstatus", id, "control", kwargs)
 
@@ -55,7 +55,7 @@ def group(context, *args, **kwargs):
         raise Exception("Must supply an id for 'groupcontext'")
     id = kwargs['id']
     
-    add_statics(context, js=["appfx/splunkui/groupcontext.js"])
+    add_statics(context, js=["splunkui/groupcontext.js"])
     options = { 
         'app': context['app_name'],
         'contexts': args
@@ -65,17 +65,17 @@ def group(context, *args, **kwargs):
     return component_context(context, "appfx-groupcontext", id, "context", options)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='paginator')
-@include("appfx/splunkui/paginator.js")
+@include("splunkui/paginator.js")
 def paginator(context, id, **kwargs):
     return component_context(context, "appfx-paginator", id, "control", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='radio')
-@include('appfx/splunkui/forms.js')
+@include('splunkui/forms.js')
 def radio(context, id, **kwargs):
     return component_context(context, "appfx-radio", id, "control", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='resulttable')
-@include("appfx/splunkui/resulttable.js")
+@include("splunkui/resulttable.js")
 def resulttable(context, id, **kwargs):    
     return component_context(context, "appfx-resulttable", id, "control", kwargs)
 
@@ -87,57 +87,57 @@ def require(context, *args, **kwargs):
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='savedsearch')
 def savedsearch(context, id, **kwargs):
-    add_statics(context, js=["appfx/splunkui/savedsearchcontext.js"])
+    add_statics(context, js=["splunkui/savedsearchcontext.js"])
     options = { 'app': context['app_name'] }
     options.update(kwargs)
     return component_context(context, "appfx-savedsearchcontext", id, "context", options)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='search')
 def search(context, id, **kwargs):
-    add_statics(context, js=["appfx/splunkui/searchcontext.js"])
+    add_statics(context, js=["splunkui/searchcontext.js"])
     options = { 'app': context['app_name'] }
     options.update(kwargs)
     return component_context(context, "appfx-searchcontext", id, "context", options)
     
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='searchbar')
-@include("appfx/splunkui/searchbar.js")
+@include("splunkui/searchbar.js")
 def searchbar(context, id, include_timepicker=True, **kwargs):
     if include_timepicker:
         kwargs["timepicker"] = "1"
     return component_context(context, "appfx-searchbar", id, "control", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='searchcontrols')
-@include("appfx/splunkui/searchcontrols/searchcontrols.js")
+@include("splunkui/searchcontrols/searchcontrols.js")
 def searchcontrols(context, id, **kwargs):
     return component_context(context, "appfx-searchcontrols", id, "control", kwargs)
     
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='select')
-@include('appfx/splunkui/forms.js')
+@include('splunkui/forms.js')
 def select(context, id, **kwargs):
     return component_context(context, "appfx-select", id, "control", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='simplexml')
-@include("appfx/splunkui/dashboard/simplexml.js")
+@include("splunkui/dashboard/simplexml.js")
 def simplexml(context, id, **kwargs):
     return component_context(context, "simplexml", id, "control", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='single')
-@include("appfx/splunkui/single.js")
+@include("splunkui/single.js")
 def single(context, id, **kwargs):
     return component_context(context, "appfx-single", id, "control", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='textbox')
-@include('appfx/splunkui/forms.js')
+@include('splunkui/forms.js')
 def textbox(context, id, **kwargs):
     return component_context(context, "appfx-textbox", id, "control", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='timeline')
-@include("appfx/splunkui/timeline.js")
+@include("splunkui/timeline.js")
 def timeline(context, id, **kwargs):
     return component_context(context, "appfx-timeline", id, "control", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='timepicker')
-@include("appfx/splunkui/timepicker.js")
+@include("splunkui/timepicker.js")
 def timepicker(context, id, **kwargs):
     return component_context(context, "appfx-timepicker", id, "control", kwargs)
     

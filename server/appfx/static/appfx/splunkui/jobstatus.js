@@ -9,7 +9,7 @@ require.config({
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('./appfx');
+    var AppFx = require('splunkui');
     var BaseControl = require("./basecontrol");
     var Spinner = require('appfx/contrib/spin');
 

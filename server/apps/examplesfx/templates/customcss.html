@@ -123,12 +123,13 @@
     <script src="{{STATIC_URL}}appfx/splunkui/appfx.bootstrap.js"></script>
     <script>
         var deps = [
-            "appfx/splunkui/chart",
-            "appfx/splunkui/resulttable",
-            "appfx/splunkui/searchcontext",
-            "appfx/splunkui/single",
+            "splunkui/chart",
+            "splunkui/resulttable",
+            "splunkui/searchcontext",
+            "splunkui/single",
         ];
-        AppFx.load(deps, function(AppFx) {
+        
+        AppFx.load(deps, function() {
             // Create the controls            
             AppFx.Components.create("appfx-resulttable", "resulttable1", {
                 contextid: "search1",

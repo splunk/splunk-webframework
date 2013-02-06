@@ -12,7 +12,6 @@
         paths: {
             "backbone": "appfx/contrib/backbone",
             "underscore": "appfx/contrib/underscore",
-            "bootstrap": "appfx/contrib/bootstrap",
             "async": "appfx/contrib/requirejs-plugins/async"
         },
         shim: {
@@ -31,16 +30,12 @@
                 }
             }
         },
-        /*packages: [
+        packages: [
             {
                 name: "splunkui",
                 location: "appfx/splunkui",
-                main: "appfx/splunkui/appfx"
+                main: "appfx"
             }
-        ],*/
-        deps: [
-            "bootstrap",
-            "underscore"
         ]
     });
 
@@ -51,33 +46,43 @@
         load: function(deps, cb) {
             cb = cb || function() {};
             deps = (deps || []).slice();
-            deps.unshift("appfx/splunkui/appfx");
             
-            require(
-                deps,
-                function(AppFx) {
-                    var _ = require("underscore");
-                    
-                    if (!AppFx.started) {
-                        // Register the start callbacks
-                        _.each(_callbacks, function(handler) {
-                            AppFx.on(handler.event, handler.fn, handler.context);
-                        });
-                        _callbacks = null;
-                    
-                        // Load all pre-existing components.
-                        AppFx._loadDOMComponents();
-                    }
-                    
-                    AppFx.started = true;
-                    
-                    // Trigger any events
-                    AppFx.trigger("load start", AppFx);
-                    
-                    // Call any callback
-                    cb.apply(null, arguments);
+            // We push two new dependencies, to make sure that splunkui and
+            // underscore are loaded. However, these go at the end, to not
+            // interfere with the ordering of dependencies that the user
+            // passed in.
+            deps.push("splunkui");
+            deps.push("underscore");
+            
+            // UNDONE: we need to remove this "implicit" dependency on bootstrap.js
+            // Whatever components require it should do so manually. The problem
+            // is that currently the nav bars require it and they are not componentized
+            // Note that we use the full path, so that we don't have to define it
+            // in require.config
+            deps.push("appfx/contrib/bootstrap");            
+            
+            require(deps, function() {
+                var _ = require("underscore");
+                
+                if (!AppFx.started) {
+                    // Register the start callbacks
+                    _.each(_callbacks, function(handler) {
+                        AppFx.on(handler.event, handler.fn, handler.context);
+                    });
+                    _callbacks = null;
+                
+                    // Load all pre-existing components.
+                    AppFx._loadDOMComponents();
                 }
-            );
+                
+                AppFx.started = true;
+                
+                // Trigger any events
+                AppFx.trigger("load start", AppFx);
+                
+                // Call any callback
+                cb.apply(null, arguments);
+            });
         },
         
         on: function(event, cb, context) {

@@ -1,8 +1,8 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require("appfx.main");
-    var assert = require("testfx/chai").assert;
-    var testutil = require("testfx/testutil");
+    var AppFx = require("splunkui");
+    var assert = require("../chai").assert;
+    var testutil = require("../testutil");
     
     var tests = {
         before: function(done) {

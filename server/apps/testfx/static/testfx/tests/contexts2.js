@@ -5,13 +5,13 @@
 //       Both files should be diffed, and common logic deduplicated. (DVPL-1609)
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require("appfx.main");
-    var assert = require("testfx/chai").assert;
-    var testutil = require("testfx/testutil");
+    var AppFx = require("splunkui");
+    var assert = require("../chai").assert;
+    var testutil = require("../testutil");
     
     // Load (and register) components that will be tested
     // (even if the associated module object is not referenced by tests).
-    var SavedSearchContext = require("appfx/splunkui/savedsearchcontext");
+    var SavedSearchContext = require("splunkui/savedsearchcontext");
     
     // Minimize irrelevant diffs.
     var SearchContext = SavedSearchContext;

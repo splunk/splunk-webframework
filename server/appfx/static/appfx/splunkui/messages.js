@@ -2,7 +2,7 @@
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('./appfx');
+    var AppFx = require('splunkui');
 
     require("css!./messages.css");
     require("css!appfx/css/sprites.css");

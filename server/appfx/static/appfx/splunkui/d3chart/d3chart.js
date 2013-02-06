@@ -19,7 +19,7 @@ require.config({
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('../appfx');
+    var AppFx = require('splunkui');
     var BaseControl = require("../basecontrol");
     var d3 = require("./d3/d3.v2");
     var Messages = require("../messages");

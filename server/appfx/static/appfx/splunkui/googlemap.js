@@ -1,7 +1,7 @@
 // Copyright 2012 Splunk, Inc.
 
 define(function(require, exports, module) {
-    var AppFx = require('./appfx');
+    var AppFx = require('splunkui');
     var BaseControl = require("./basecontrol");
     var Messages = require("./messages");
     

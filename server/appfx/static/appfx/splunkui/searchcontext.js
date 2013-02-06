@@ -2,7 +2,7 @@
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('./appfx');
+    var AppFx = require('splunkui');
     var BaseContext = require('./basecontext');
     var DataSource = require('./datasource');
     var SearchModels = require('./searchmodel');

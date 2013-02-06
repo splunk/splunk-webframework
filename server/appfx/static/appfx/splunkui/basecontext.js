@@ -1,7 +1,7 @@
 // Copyright 2012 Splunk, Inc.
 
 define(function(require, exports, module) {
-    var ns = require('./appfx');
+    var ns = require('splunkui');
     var Backbone = require('backbone');
     
     var BaseContext = Backbone.Model.extend({
