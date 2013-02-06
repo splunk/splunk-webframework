@@ -17,7 +17,7 @@ def create_config():
     filepath = path.join(settings.STATIC_ROOT, settings.JS_CACHE_DIR, "config.js")
     
     tmpl = loader.get_template('appfx:config.html')
-    ctx = Context({ "config": settings.CLIENT_CONFIG })
+    ctx = Context({ "config": json.dumps(settings.CLIENT_CONFIG) })
     rendered = tmpl.render(ctx)
     
     if not path.exists(dirpath):

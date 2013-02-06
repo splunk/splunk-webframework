@@ -16,6 +16,7 @@ define(function(require, exports, module) {
     var Resolver = require("JS_CACHE/urlresolver");
     var config = require("JS_CACHE/config");
     var deparam = require("appfx/contrib/jquery.deparam");
+    var protections = require("./protections");
 
     var DEBUG = false;
     
@@ -156,6 +157,11 @@ define(function(require, exports, module) {
     // Create AppFx
     var AppFx = new AppFxConstructor();
     var ns = window.AppFx = AppFx;
+    
+    if (config.ENABLE_PROTECTIONS) {
+        protections.enableCSRFProtection($);
+        protections.enableUnauthorizationRedirection($, AppFx.reverse(":login"), AppFx.reverse(":logout"));
+    }
     
     return AppFx;
 });
