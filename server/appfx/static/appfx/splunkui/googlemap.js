@@ -1,12 +1,12 @@
 // Copyright 2012 Splunk, Inc.
 
 define(function(require, exports, module) {
-    var AppFx = require('appfx.main');
-    var BaseControl = require("appfx/splunkui/basecontrol");
-    var Messages = require("appfx/splunkui/messages");
+    var AppFx = require('./appfx');
+    var BaseControl = require("./basecontrol");
+    var Messages = require("./messages");
     
     require("async!http://maps.googleapis.com/maps/api/js?sensor=false");
-    require("css!appfx/splunkui/googlemap.css");
+    require("css!./googlemap.css");
 
     var GoogleMap = BaseControl.extend({
         className: "appfx-googlemap",

@@ -2,7 +2,7 @@
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var BaseModel = require('appfx/splunkui/basemodel')
+    var BaseModel = require('./basemodel')
     
     var SearchQueryModel = BaseModel.extend({
         resolve: function(args) {

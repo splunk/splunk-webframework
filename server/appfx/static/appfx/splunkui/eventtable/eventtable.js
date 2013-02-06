@@ -1,6 +1,6 @@
 require.config({
     shim: {
-        "appfx/splunkui/eventtable/jquery.dragdrop": {
+        "./jquery.dragdrop": {
             deps: [],
             exports: "jQuery.fn.sortable"
         }
@@ -9,13 +9,13 @@ require.config({
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('appfx.main');
+    var AppFx = require('../appfx');
     var Backbone = require("backbone");
-    var BaseControl = require("appfx/splunkui/basecontrol");
-    var DragDrop = require("appfx/splunkui/eventtable/jquery.dragdrop");
-    var Messages = require("appfx/splunkui/messages");
+    var BaseControl = require("../basecontrol");
+    var DragDrop = require("./jquery.dragdrop");
+    var Messages = require("../messages");
 
-    require("css!appfx/splunkui/eventtable/eventtable.css");
+    require("css!./eventtable.css");
 
     var FIXED_PAGE_WINDOW_SIZE = 11;
             

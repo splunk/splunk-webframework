@@ -1,9 +1,9 @@
 // Copyright 2012 Splunk, Inc.
 
-define(function(require, exports, module) {
+define(function(require, exports, module) {    
     var _ = require("underscore");
     var Backbone = require("backbone");
-    var Registry = require("appfx/splunkui/registry");
+    var Registry = require("./registry");
     var Resolver = require("appfx.urlresolver");
     var config = require("appfx.config");
     var deparam = require("jquery.deparam");
@@ -34,7 +34,7 @@ define(function(require, exports, module) {
         load: function(deps, cb) {
             cb = cb || function() {};
             deps = (deps || []).slice();
-            deps.unshift("appfx.main");
+            //deps.unshift("./");
             
             require(deps, cb);  
         },

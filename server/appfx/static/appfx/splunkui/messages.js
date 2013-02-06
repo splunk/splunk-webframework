@@ -2,9 +2,9 @@
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require("appfx.main");
+    var AppFx = require('./appfx');
 
-    require("css!appfx/splunkui/messages.css");
+    require("css!./messages.css");
     require("css!appfx/css/sprites.css");
 
     // Predefined control messages

@@ -1,13 +1,13 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('appfx.main');
-    var BaseControl = require("appfx/splunkui/basecontrol");
+    var AppFx = require('./appfx');
+    var BaseControl = require("./basecontrol");
 
     // Let's load the timeline script
     var timelinePrefix = AppFx.STATIC_PREFIX + "appfx/splunkjs/splunk.ui.timeline.min.js";
     var timelineToken = splunkjs.UI.loadTimeline(timelinePrefix);
 
-    require("css!appfx/splunkui/timeline.css");
+    require("css!./timeline.css");
     
     var EPS = 0.001;
     var ZOOM_PRESETS = {

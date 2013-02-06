@@ -1,11 +1,11 @@
 // Copyright 2012 Splunk, Inc.
 
 define(function(require, exports, module) {
-    var AppFx = require("appfx.main");
-    var BaseControl = require("appfx/splunkui/basecontrol");
+    var AppFx = require('./appfx');
+    var BaseControl = require("./basecontrol");
     var _ = require("underscore");
 
-    require("css!appfx/splunkui/single.css");
+    require("css!./single.css");
 
     //
     // options:

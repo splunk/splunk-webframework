@@ -1,10 +1,10 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('appfx.main');
-    var BaseControl = require("appfx/splunkui/basecontrol");
+    var AppFx = require('../appfx');
+    var BaseControl = require("../basecontrol");
     var Spinner = require('appfx/contrib/spin');
 
-    require("css!appfx/splunkui/searchcontrols/searchcontrols.css");
+    require("css!./searchcontrols.css");
     
     var SearchControls = BaseControl.extend(
         // Instance

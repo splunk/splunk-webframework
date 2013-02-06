@@ -2,9 +2,9 @@
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require("appfx.main");
+    var AppFx = require('./appfx');
     var Backbone = require("backbone");
-    var Settings = require("appfx/splunkui/settings");
+    var Settings = require("./settings");
 
     var BaseControl = Backbone.View.extend({
         constructor: function(options) {

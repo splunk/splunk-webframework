@@ -2,16 +2,16 @@
 
 require.config({
     shim: {
-        "appfx/splunkui/d3chart/d3/d3.v2": {
+        "./d3/d3.v2": {
             deps: [],
             exports: "d3"
         },
-        "appfx/splunkui/d3chart/d3/fisheye": {
-            deps: ["appfx/splunkui/d3chart/d3/d3.v2"],
+        "./d3/fisheye": {
+            deps: ["./d3/d3.v2"],
             exports: "d3.fisheye"
         },
-        "appfx/splunkui/d3chart/d3/nv.d3": {
-            deps: ["appfx/splunkui/d3chart/d3/d3.v2", "appfx/splunkui/d3chart/d3/fisheye"],
+        "./d3/nv.d3": {
+            deps: ["./d3/d3.v2", "./d3/fisheye"],
             exports: "nv"
         }
     }
@@ -19,14 +19,14 @@ require.config({
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('appfx.main');
-    var BaseControl = require("appfx/splunkui/basecontrol");
-    var d3 = require("appfx/splunkui/d3chart/d3/d3.v2");
-    var Messages = require("appfx/splunkui/messages");
-    var nv = require("appfx/splunkui/d3chart/d3/nv.d3");
+    var AppFx = require('../appfx');
+    var BaseControl = require("../basecontrol");
+    var d3 = require("./d3/d3.v2");
+    var Messages = require("../messages");
+    var nv = require("./d3/nv.d3");
     
-    require("css!appfx/splunkui/d3chart/d3chart.css");
-    require("css!appfx/splunkui/d3chart/d3/nv.d3.css");
+    require("css!./d3chart.css");
+    require("css!./d3/nv.d3.css");
 
     var D3ChartClass = {
         template: '<svg></svg>'

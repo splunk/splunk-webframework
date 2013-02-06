@@ -5,27 +5,27 @@
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('appfx.main');
+    var AppFx = require('../appfx');
     var Backbone = require("backbone");
-    var BaseControl = require("appfx/splunkui/basecontrol");
+    var BaseControl = require("../basecontrol");
 
     // Require the controls
-    require("appfx/splunkui/chart");
-    require("appfx/splunkui/resulttable");
-    require("appfx/splunkui/eventtable/eventtable");
-    require("appfx/splunkui/forms");
-    require("appfx/splunkui/single");
-    require("appfx/splunkui/timepicker");
+    require("../chart");
+    require("../resulttable");
+    require("../eventtable/eventtable");
+    require("../forms");
+    require("../single");
+    require("../timepicker");
 
     // Require the contexts
-    require("appfx/splunkui/searchcontext");
-    require("appfx/splunkui/savedsearchcontext");
+    require("../searchcontext");
+    require("../savedsearchcontext");
 
     // Require 3rd part libs
-    require("appfx/splunkui/dashboard/gridster/jquery.gridster");
+    require("./gridster/jquery.gridster");
 
-    require("css!appfx/splunkui/dashboard/simplexml.css");
-    require("css!appfx/splunkui/dashboard/gridster/jquery.gridster.css");
+    require("css!./simplexml.css");
+    require("css!./gridster/jquery.gridster.css");
 
     // UNDONE: searchString/searchTemplate/... should be choices
     var schema = (function() {

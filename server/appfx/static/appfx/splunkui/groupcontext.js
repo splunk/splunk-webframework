@@ -2,9 +2,9 @@
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('appfx.main');
-    var BaseContext = require('appfx/splunkui/basecontext');
-    var SearchModels = require('appfx/splunkui/searchmodel');
+    var AppFx = require('./appfx');
+    var BaseContext = require('./basecontext');
+    var SearchModels = require('./searchmodel');
     
     var SENTINEL = "____SENTINEL____";
     

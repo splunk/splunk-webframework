@@ -1,8 +1,8 @@
 // Copyright 2012 Splunk, Inc.
 
 define(function(require, exports, module) {
-    var AppFx = require('appfx.main');
-    var SearchContext = require('appfx/splunkui/searchcontext');
+    var AppFx = require('./appfx');
+    var SearchContext = require('./searchcontext');
     var _ = require("underscore");
     
     var SavedSearchContext = SearchContext.extend({         

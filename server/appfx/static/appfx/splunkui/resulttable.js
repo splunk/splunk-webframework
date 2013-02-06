@@ -2,12 +2,12 @@
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('appfx.main');
+    var AppFx = require('./appfx');
     var Backbone = require('backbone');
-    var BaseControl = require("appfx/splunkui/basecontrol");
-    var Messages = require("appfx/splunkui/messages");
+    var BaseControl = require("./basecontrol");
+    var Messages = require("./messages");
 
-    require("css!appfx/splunkui/resulttable.css");
+    require("css!./resulttable.css");
         
     var allowedKey = function(key) {
         return !(key[0] === "_" && key !== "_time");

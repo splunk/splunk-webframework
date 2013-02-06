@@ -2,10 +2,10 @@
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('appfx.main');
-    var BaseContext = require('appfx/splunkui/basecontext');
-    var DataSource = require('appfx/splunkui/datasource');
-    var SearchModels = require('appfx/splunkui/searchmodel');
+    var AppFx = require('./appfx');
+    var BaseContext = require('./basecontext');
+    var DataSource = require('./datasource');
+    var SearchModels = require('./searchmodel');
     
     var SearchContext = BaseContext.extend({
         defaults: {

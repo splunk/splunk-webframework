@@ -4,14 +4,14 @@
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('appfx.main');
-    var BaseControl = require("appfx/splunkui/basecontrol");
+    var AppFx = require('./appfx');
+    var BaseControl = require("./basecontrol");
 
     // jQuery 1.8 broke select2.js < v3.2, fix is in select2 master branch
     var Select2 = require("appfx/contrib/select2-3.3-2012.11.02/select2");
 
     // The inputs all share a single stylesheet
-    require("css!appfx/splunkui/forms.css");
+    require("css!./forms.css");
 
     // Private abstract base class for form input controls.
     var Input = BaseControl.extend({

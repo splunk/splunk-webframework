@@ -2,9 +2,9 @@
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('appfx.main');
-    var BaseControl = require("appfx/splunkui/basecontrol");
-    var Messages = require("appfx/splunkui/messages");
+    var AppFx = require('./appfx');
+    var BaseControl = require("./basecontrol");
+    var Messages = require("./messages");
     
     var DataView = BaseControl.extend({
         className: "appfx-dataview",

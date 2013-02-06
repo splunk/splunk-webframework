@@ -1,14 +1,14 @@
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('appfx.main');
-    var BaseControl = require("appfx/splunkui/basecontrol");
-    var Messages = require("appfx/splunkui/messages");
+    var AppFx = require('./appfx');
+    var BaseControl = require("./basecontrol");
+    var Messages = require("./messages");
 
     // Let's load the charting script
     var chartingPrefix = AppFx.STATIC_PREFIX + "appfx/splunkjs/splunk.ui.charting.min.js";
     var chartingToken = splunkjs.UI.loadCharting(chartingPrefix);
 
-    require("css!appfx/splunkui/chart.css");
+    require("css!./chart.css");
         
     var Chart = BaseControl.extend({
         className: "appfx-chart",

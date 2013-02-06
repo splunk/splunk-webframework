@@ -1,9 +1,9 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('appfx.main');
-    var BaseControl = require("appfx/splunkui/basecontrol");
+    var AppFx = require('./appfx');
+    var BaseControl = require("./basecontrol");
 
-    require("css!appfx/splunkui/timepicker");
+    require("css!./timepicker");
 
     TIME_PRESETS = {
         'rt-30s'      : { earliest_time: 'rt-30s', latest_time: 'rt' },

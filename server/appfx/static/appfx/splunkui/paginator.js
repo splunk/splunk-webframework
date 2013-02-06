@@ -1,14 +1,14 @@
 // Copyright 2012 Splunk, Inc.
 
 define(function(require, exports, module) {
-    var AppFx = require('appfx.main');
-    var BaseControl = require("appfx/splunkui/basecontrol");
+    var AppFx = require('./appfx');
+    var BaseControl = require("./basecontrol");
     var _ = require("underscore");
 
     var DEFAULT_PAGE = 0;
     var DEFAULT_PAGE_SIZE = 10;
     
-    require("css!appfx/splunkui/paginator.css");
+    require("css!./paginator.css");
 
     var Paginator = BaseControl.extend({
         className: "appfx-paginator",

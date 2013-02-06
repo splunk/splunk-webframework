@@ -72,7 +72,6 @@
             "jquery.deparam": "appfx/contrib/jquery.deparam",
             "appfx.urlresolver": "JS_CACHE/urlresolver",
             "backbone.nested": "appfx/contrib/backbone.nested",
-            "appfx.main": "appfx/splunkui/appfx",
             "appfx.config": "JS_CACHE/config",
             "async": "appfx/contrib/requirejs-plugins/async"
         },
@@ -112,6 +111,13 @@
                 exports: "Backbone.NestedModel"
             }
         },
+        /*packages: [
+            {
+                name: "splunkui",
+                location: "appfx/splunkui",
+                main: "appfx/splunkui/appfx"
+            }
+        ],*/
         deps: [
             "jquery.attributes",
             "bootstrap",
@@ -128,7 +134,7 @@
         load: function(deps, cb) {
             cb = cb || function() {};
             deps = (deps || []).slice();
-            deps.unshift("appfx.main");
+            deps.unshift("appfx/splunkui/appfx");
             
             require(
                 deps,

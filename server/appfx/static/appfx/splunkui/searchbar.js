@@ -1,8 +1,8 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('appfx.main');
-    var BaseControl = require("appfx/splunkui/basecontrol");
-    var Timepicker = require('appfx/splunkui/timepicker');
+    var AppFx = require('./appfx');
+    var BaseControl = require("./basecontrol");
+    var Timepicker = require('./timepicker');
     
     KEYCODES = {
         ENTER : 13,
