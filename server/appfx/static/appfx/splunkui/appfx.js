@@ -1,12 +1,21 @@
 // Copyright 2012 Splunk, Inc.
 
+require.config({
+    shim: {
+        "jquery.deparam": {
+            deps: [],
+            exports: "jQuery.fn.deparam"
+        }
+    }
+});
+
 define(function(require, exports, module) {    
     var _ = require("underscore");
     var Backbone = require("backbone");
     var Registry = require("./registry");
-    var Resolver = require("appfx.urlresolver");
-    var config = require("appfx.config");
-    var deparam = require("jquery.deparam");
+    var Resolver = require("JS_CACHE/urlresolver");
+    var config = require("JS_CACHE/config");
+    var deparam = require("appfx/contrib/jquery.deparam");
 
     var DEBUG = false;
     

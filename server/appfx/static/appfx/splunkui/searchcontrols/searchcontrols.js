@@ -1,3 +1,12 @@
+require.config({
+    shim: {
+        "appfx/contrib/spin": {
+            deps: [],
+            exports: "Spinner"
+        },
+    }
+});
+
 define(function(require, exports, module) {
     var _ = require("underscore");
     var AppFx = require('../appfx');

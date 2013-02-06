@@ -66,13 +66,6 @@
             "backbone": "appfx/contrib/backbone",
             "underscore": "appfx/contrib/underscore",
             "bootstrap": "appfx/contrib/bootstrap",
-            "jquery.attributes": "appfx/contrib/jquery.attributes",
-            "jquery.spin": "appfx/contrib/jquery.spin",
-            "jquery.sparkline": "appfx/contrib/jquery.sparkline",
-            "jquery.deparam": "appfx/contrib/jquery.deparam",
-            "appfx.urlresolver": "JS_CACHE/urlresolver",
-            "backbone.nested": "appfx/contrib/backbone.nested",
-            "appfx.config": "JS_CACHE/config",
             "async": "appfx/contrib/requirejs-plugins/async"
         },
         shim: {
@@ -89,26 +82,6 @@
                 init: function() {
                     return this.Backbone.noConflict();
                 }
-            },
-            "appfx/contrib/spin": {
-                deps: [],
-                exports: "Spinner"
-            },
-            "jquery.spin": {
-                deps: ["appfx/contrib/spin"],
-                exports: "jQuery.fn.spin"
-            },
-            "jquery.attributes": {
-                deps: [],
-                exports: "jQuery.fn.attributes"
-            },
-            "jquery.deparam": {
-                deps: [],
-                exports: "jQuery.fn.deparam"
-            },
-            "backbone.nested": {
-                deps: ["backbone"],
-                exports: "Backbone.NestedModel"
             }
         },
         /*packages: [
@@ -119,11 +92,8 @@
             }
         ],*/
         deps: [
-            "jquery.attributes",
             "bootstrap",
-            "appfx/splunkui/appfx.utils",
-            "underscore",
-            "appfx.config"
+            "underscore"
         ]
     });
 
