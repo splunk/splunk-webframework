@@ -19,7 +19,7 @@ require.config({
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var mvc = require('splunkjs.mvc');
+    var mvc = require('splunk.mvc');
     var BaseControl = require("../basecontrol");
     var d3 = require("./d3/d3.v2");
     var Messages = require("../messages");

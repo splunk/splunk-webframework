@@ -32,7 +32,7 @@
         },
         packages: [
             {
-                name: "splunkjs.mvc",
+                name: "splunk.mvc",
                 location: "splunk/mvc",
                 main: "mvc"
             }
@@ -59,7 +59,7 @@
             // underscore are loaded. However, these go at the end, to not
             // interfere with the ordering of dependencies that the user
             // passed in.
-            deps.push("splunkjs.mvc");
+            deps.push("splunk.mvc");
             deps.push("underscore");
             
             // UNDONE: we need to remove this "implicit" dependency on bootstrap.js

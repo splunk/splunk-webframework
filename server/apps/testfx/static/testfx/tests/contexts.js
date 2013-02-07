@@ -1,13 +1,13 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var mvc = require("splunkjs.mvc");
+    var mvc = require("splunk.mvc");
     var assert = require("../chai").assert;
     var testutil = require("../testutil");
     
     // Load (and register) components that will be tested
     // (even if the associated module object is not referenced by tests).
-    var SearchContext = require("splunkjs.mvc/searchcontext");
-    var SavedSearchContext = require("splunkjs.mvc/savedsearchcontext");
+    var SearchContext = require("splunk.mvc/searchcontext");
+    var SavedSearchContext = require("splunk.mvc/savedsearchcontext");
     
     var TEST_QUERY = "search index=_internal | head 10";
     

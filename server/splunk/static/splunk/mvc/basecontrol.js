@@ -2,7 +2,7 @@
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var mvc = require('splunkjs.mvc');
+    var mvc = require('splunk.mvc');
     var Backbone = require("backbone");
     var Settings = require("./settings");
 

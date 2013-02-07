@@ -1,8 +1,8 @@
 // Copyright 2012 Splunk, Inc.
 
 define(function(require, exports, module) {
-    var mvc = require('splunkjs.mvc');
-    var BaseControl = require("splunkjs.mvc/basecontrol");
+    var mvc = require('splunk.mvc');
+    var BaseControl = require("splunk.mvc/basecontrol");
     var _ = require("underscore");
 
     var ExpandoTable = BaseControl.extend({

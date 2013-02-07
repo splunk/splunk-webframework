@@ -1,7 +1,7 @@
 // Copyright 2012 Splunk, Inc.
 
 define(function(require, exports, module) {
-    var mvc = require('splunkjs.mvc');
+    var mvc = require('splunk.mvc');
     var SearchContext = require('./searchcontext');
     var _ = require("underscore");
     

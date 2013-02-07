@@ -1,9 +1,9 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var mvc = require("splunkjs.mvc");
+    var mvc = require("splunk.mvc");
     var assert = require("../chai").assert;
-    var BaseContext = require("splunkjs.mvc/basecontext");
-    var BaseControl = require("splunkjs.mvc/basecontrol");
+    var BaseContext = require("splunk.mvc/basecontext");
+    var BaseControl = require("splunk.mvc/basecontrol");
     var testutil = require("../testutil");
     
     var R = splunkjs.mvc.Components;
