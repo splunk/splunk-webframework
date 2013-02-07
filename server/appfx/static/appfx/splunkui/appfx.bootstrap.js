@@ -59,9 +59,16 @@
             // is that currently the nav bars require it and they are not componentized
             // Note that we use the full path, so that we don't have to define it
             // in require.config
-            deps.push("appfx/contrib/bootstrap");            
+            deps.push("appfx/contrib/bootstrap");     
             
-            require(deps, function() {
+            // Find all the components that were existent as DOM elements,
+            // and require their dependencies
+            $("body div[data-require]").each(function() {
+                var $this = $(this);
+                deps.push($this.attr("data-require"));
+            });
+            
+            require(deps, function() {                
                 var _ = require("underscore");
                 
                 if (!AppFx.started) {
@@ -71,7 +78,8 @@
                     });
                     _callbacks = null;
                 
-                    // Load all pre-existing components.
+                    // Load all pre-existing components, and we know we required
+                    // them
                     AppFx._loadDOMComponents();
                 }
                 

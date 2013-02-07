@@ -100,9 +100,9 @@ define(function(require, exports, module) {
         },
         
         _loadDOMComponents: function() {            
-            // Instantiate all controls 
-            var controls = $(".appfx-control");
-            for(var i = 0; i < controls.length; i++) {
+            // Instantiate all controls that we haven't instantiated yet
+            var controls = $(".appfx-control:not([data-initialized])");
+            for(var i = 0; i < controls.length; i++) {                
                 var site = $(controls[i]);
                 var name = site.attr('id');
                 var typeName = site.data("type");
@@ -121,10 +121,12 @@ define(function(require, exports, module) {
                 var control = this.Components.create(
                     typeName, name, options);
                 control.render();
+                
+                site.attr("data-initialized", "");
             }
             
-            // Instantiate all components 
-            var contexts = $(".appfx-context");
+            // Instantiate all components that we haven't instantiated yet
+            var contexts = $(".appfx-context:not([data-initialized])");
             for(var i = 0; i < contexts.length; i++) {
                 var site = $(contexts[i]);
                 var name = site.attr('id');
@@ -139,17 +141,10 @@ define(function(require, exports, module) {
                 if (optionsString && optionsString.length > 0)
                     options = JSON.parse(optionsString);
 
-                this.Components.create(typeName, name, options);
-            }
-
-            // Start all the contexts
-            var contexts = this.Components.getInstances();
-            for (var i = 0; i < contexts.length; ++i) {
-                var context = contexts[i];
+                var context = this.Components.create(typeName, name, options);
+                context.start();
                 
-                if (context.start) {
-                    context.start();
-                }
+                site.attr("data-initialized", "");
             }
         },
     });

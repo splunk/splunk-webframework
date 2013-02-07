@@ -1,10 +1,5 @@
 <script src="{{STATIC_URL}}appfx/contrib/require.js"></script>
 <script src="{{STATIC_URL}}appfx/splunkui/appfx.bootstrap.js"></script>
 <script>
-    var deps = [
-        {% for js_static in js_statics %}
-        "{{ js_static }}",
-        {% endfor %}
-    ];
-    AppFx.load(deps);
+    AppFx.load();
 </script>
