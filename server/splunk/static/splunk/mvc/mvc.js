@@ -15,7 +15,7 @@ define(function(require, exports, module) {
     var Registry = require("./registry");
     var Resolver = require("JS_CACHE/urlresolver");
     var config = require("JS_CACHE/config");
-    var deparam = require("appfx/contrib/jquery.deparam");
+    var deparam = require("splunk/contrib/jquery.deparam");
     var protections = require("./protections");
 
     var DEBUG = false;

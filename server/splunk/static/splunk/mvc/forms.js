@@ -8,7 +8,7 @@ define(function(require, exports, module) {
     var BaseControl = require("./basecontrol");
 
     // jQuery 1.8 broke select2.js < v3.2, fix is in select2 master branch
-    var Select2 = require("appfx/contrib/select2-3.3-2012.11.02/select2");
+    var Select2 = require("splunk/contrib/select2-3.3-2012.11.02/select2");
 
     // The inputs all share a single stylesheet
     require("css!./forms.css");
@@ -214,7 +214,7 @@ define(function(require, exports, module) {
     // CONSIDER: Overrides for rendering `Loading` and `No results` so the code
     //   can be shared in the base class and can be subclassed.
     //
-    require("css!appfx/contrib/select2-3.3-2012.11.02/select2.css");
+    require("css!splunk/contrib/select2-3.3-2012.11.02/select2.css");
 
     var Select = BaseControl.extend({
         className: "appfx-select",

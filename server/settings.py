@@ -193,6 +193,7 @@ INSTALLED_APPS = (
     'django.contrib.staticfiles',
     'debug_toolbar',
     'appfx',
+    'splunk',
 )
 
 # Auto-discover all user applications from the apps/ directory

@@ -6,13 +6,13 @@
         baseUrl: window.SPLUNKJS_STATIC_URL,
         map: {
             "*": {
-                css: "appfx/contrib/require-css/css"
+                css: "splunk/contrib/require-css/css"
             }  
         },
         paths: {
-            "backbone": "appfx/contrib/backbone",
-            "underscore": "appfx/contrib/underscore",
-            "async": "appfx/contrib/requirejs-plugins/async"
+            "backbone": "splunk/contrib/backbone",
+            "underscore": "splunk/contrib/underscore",
+            "async": "splunk/contrib/requirejs-plugins/async"
         },
         shim: {
             "underscore": {
@@ -33,7 +33,7 @@
         packages: [
             {
                 name: "splunkjs.mvc",
-                location: "appfx/splunk/mvc",
+                location: "splunk/mvc",
                 main: "mvc"
             }
         ]
@@ -67,7 +67,7 @@
             // is that currently the nav bars require it and they are not componentized
             // Note that we use the full path, so that we don't have to define it
             // in require.config
-            deps.push("appfx/contrib/bootstrap");     
+            deps.push("splunk/contrib/bootstrap");     
             
             // Find all the components that were existent as DOM elements,
             // and require their dependencies

@@ -5,7 +5,7 @@ define(function(require, exports, module) {
     var mvc = require('splunkjs.mvc');
 
     require("css!./messages.css");
-    require("css!appfx/css/sprites.css");
+    require("css!splunk/css/sprites.css");
 
     // Predefined control messages
     var messages = {
