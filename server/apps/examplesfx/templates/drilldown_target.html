@@ -1,6 +1,6 @@
 {% extends "appfx:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
@@ -23,7 +23,7 @@
                 <div class="panel-body">
                     This page is the target of the drilldown example. When you
                     clicked on the table, we navigated here. You can see in the
-                    code how we use the <code>AppFx.loadDrilldown</code> helper
+                    code how we use the <code>splunkjs.mvc.loadDrilldown</code> helper
                     to load the drilldown parameters, and then we start the searches.
                     At this point, everything is operating as it normally would,
                     and you can interact with the components as you would normally.
@@ -82,13 +82,13 @@
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
+    splunkjs.mvc.on("start", function() {
         // Since we know this page is the target of a drilldown, we can just use the
         // drilldown helper to load the information that is encoded in the URL.
-        AppFx.loadDrilldown(); 
+        splunkjs.mvc.loadDrilldown(); 
         
-        var search1 = AppFx.Components.getInstance("search1");
-        var search2 = AppFx.Components.getInstance("search2");
+        var search1 = splunkjs.mvc.Components.getInstance("search1");
+        var search2 = splunkjs.mvc.Components.getInstance("search2");
         
         // Since we told the contexts to not autostart, after the drilldown,
         // we need to start them.

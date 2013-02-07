@@ -5,13 +5,13 @@
 //       Both files should be diffed, and common logic deduplicated. (DVPL-1609)
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require("splunkui");
+    var mvc = require("splunkjs.mvc");
     var assert = require("../chai").assert;
     var testutil = require("../testutil");
     
     // Load (and register) components that will be tested
     // (even if the associated module object is not referenced by tests).
-    var SavedSearchContext = require("splunkui/savedsearchcontext");
+    var SavedSearchContext = require("splunkjs.mvc/savedsearchcontext");
     
     // Minimize irrelevant diffs.
     var SearchContext = SavedSearchContext;
@@ -46,7 +46,7 @@ define(function(require, exports, module) {
                 // constructor, initialize
                 "is instantiable": function(done) {
                     var name = testutil.getUniqueName();
-                    var context = AppFx.Components.create("appfx-savedsearchcontext", name, {});
+                    var context = splunkjs.mvc.Components.create("appfx-savedsearchcontext", name, {});
                     assert.isNotNull(context);
                     assert.strictEqual(context.get("name"), name);
                     
@@ -338,7 +338,7 @@ define(function(require, exports, module) {
     // Test Helpers
     
     var createSearchContext = function(options_opt) {
-        return AppFx.Components.create(
+        return splunkjs.mvc.Components.create(
             "appfx-savedsearchcontext",
             testutil.getUniqueName(),
             options_opt || {});

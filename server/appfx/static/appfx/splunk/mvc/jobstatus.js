@@ -9,7 +9,7 @@ require.config({
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var BaseControl = require("./basecontrol");
     var Spinner = require('appfx/contrib/spin');
 
@@ -170,7 +170,7 @@ define(function(require, exports, module) {
         }
     );
 
-    AppFx.Components.registerType('appfx-jobstatus', JobStatus);
+    splunkjs.mvc.Components.registerType('appfx-jobstatus', JobStatus);
     
     return JobStatus;
 });

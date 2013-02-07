@@ -1,6 +1,6 @@
 {% extends "appfx:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
@@ -56,8 +56,8 @@
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
-        var table = AppFx.Components.getInstance("table1");
+    splunkjs.mvc.on("start", function() {
+        var table = splunkjs.mvc.Components.getInstance("table1");
         
         table.on("clicked:row", function(e) {
             // Get the drilldown values
@@ -66,7 +66,7 @@
             
             // We use reverse to be able to refer to our target without hard-coding
             // a URL. This is equivalent to Django's `reverse` function.
-            var target = AppFx.reverse("examplesfx:tmpl_render", {tmpl: "drilldown_target"});
+            var target = splunkjs.mvc.reverse("examplesfx:tmpl_render", {tmpl: "drilldown_target"});
             var drilldown = {
                 // We set various query and search properties on two target contexts: 'search1'
                 // and 'search2'. We use the values from the row we clicked on.
@@ -87,7 +87,7 @@
             
             // Now we can use the drilldown helper, passing in our target URL,
             // and our drilldown options.
-            AppFx.drilldown(target, drilldown);
+            splunkjs.mvc.drilldown(target, drilldown);
         });
     });
 </script>

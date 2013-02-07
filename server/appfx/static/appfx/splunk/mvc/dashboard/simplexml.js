@@ -5,7 +5,7 @@
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var Backbone = require("backbone");
     var BaseControl = require("../basecontrol");
 
@@ -952,7 +952,7 @@ define(function(require, exports, module) {
         },
 
         _createControl: function(kind, name, options) {
-            var control = AppFx.Components.create(kind, name, options);
+            var control = splunkjs.mvc.Components.create(kind, name, options);
             this.controls.push(control);
             return control;
         },
@@ -960,7 +960,7 @@ define(function(require, exports, module) {
         // Create a search based on the given name and `searchInfo` and return
         // the name of the created search.
         _createSearch: function(name, searchInfo) {
-            // NOTE: AppFx still requires that contexts be created *before*
+            // NOTE: MVC still requires that contexts be created *before*
             // any components that reference them, so we create them here
             // although we dont dispatch them until the view is fully rendered
             var options = {
@@ -969,7 +969,7 @@ define(function(require, exports, module) {
                 preview: true
             };
             searchInfo.options = _.extend(options, searchInfo.options);
-            searchInfo.context = AppFx.Components.create(
+            searchInfo.context = splunkjs.mvc.Components.create(
                 searchInfo.kind, name, searchInfo.options);
 
             this.searches[name] = searchInfo;
@@ -1084,12 +1084,12 @@ define(function(require, exports, module) {
 
             // Cancel searches and remove context instances from registry
             _.each(this.searches, function(value, key) {
-                AppFx.Components.revokeInstance(key);
+                splunkjs.mvc.Components.revokeInstance(key);
             });
 
             // Remove control instances from registry
             _.each(this.controls, function(control) {
-                AppFx.Components.revokeInstance(control.name);
+                splunkjs.mvc.Components.revokeInstance(control.name);
             });
 
             this.data = null;
@@ -1117,7 +1117,7 @@ define(function(require, exports, module) {
         },
     });
 
-    AppFx.Components.registerType('simplexml', SimpleXml);
+    splunkjs.mvc.Components.registerType('simplexml', SimpleXml);
 
     return SimpleXml;
 });

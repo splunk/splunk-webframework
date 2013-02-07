@@ -1,6 +1,6 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require("splunkui");
+    var mvc = require("splunkjs.mvc");
     var assert = require("../chai").assert;
     var testutil = require("../testutil");
     
@@ -22,7 +22,7 @@ define(function(require, exports, module) {
         },
         
         /*
-         * AppFx API
+         * splunkjs.mvc API
          * 
          * Non-Private Fields
          *  + STATIC_PREFIX
@@ -41,17 +41,17 @@ define(function(require, exports, module) {
          *  + drilldown, loadDrilldown
          *      > (API in flux)
          */
-        "AppFx Namespace Tests": {
+        "splunkjs.mvc Namespace Tests": {
             "STATIC_PREFIX": {
                 "is defined": function(done) {
-                    assert.ok(AppFx.STATIC_PREFIX);
+                    assert.ok(splunkjs.mvc.STATIC_PREFIX);
                     done();
                 }
             },
             
             "createService": {
                 "should create usable Service when called without arguments": function(done) {
-                    var service = AppFx.createService();
+                    var service = splunkjs.mvc.createService();
                     assert.ok(service);
                     
                     service.indexes().fetch(function(err, indexes) {
@@ -74,7 +74,7 @@ define(function(require, exports, module) {
                 },
                 
                 "should create usable Service when called with arguments": function(done) {
-                    var service = AppFx.createService({app: "search"});
+                    var service = splunkjs.mvc.createService({app: "search"});
                     assert.ok(service);
                     assert.equal(service.app, "search");
                     
@@ -86,7 +86,7 @@ define(function(require, exports, module) {
                 "should return a URL": function(done) {
                     var URL_RE = /^(http:\/)?\//;
                     
-                    var reverseResult = AppFx.reverse(":login");
+                    var reverseResult = splunkjs.mvc.reverse(":login");
                     assert.isTrue(
                         URL_RE.test(reverseResult),
                         "Doesn't look like a URL: " + reverseResult)

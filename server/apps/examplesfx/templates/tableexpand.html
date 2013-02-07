@@ -1,6 +1,6 @@
 {% extends "appfx:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
@@ -71,11 +71,11 @@
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
+    splunkjs.mvc.on("start", function() {
         var _ = require('underscore');
         
-        var table = AppFx.Components.getInstance("table");
-        var sourcetypeSearch = AppFx.Components.getInstance("expandsearch");
+        var table = splunkjs.mvc.Components.getInstance("table");
+        var sourcetypeSearch = splunkjs.mvc.Components.getInstance("expandsearch");
         
         // Let's get a reference to it's data
         var sourcetypeData = sourcetypeSearch.data("results", {

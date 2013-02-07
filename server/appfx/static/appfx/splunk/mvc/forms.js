@@ -4,7 +4,7 @@
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var BaseControl = require("./basecontrol");
 
     // jQuery 1.8 broke select2.js < v3.2, fix is in select2 master branch
@@ -189,7 +189,7 @@ define(function(require, exports, module) {
         }
     });
 
-    AppFx.Components.registerType("appfx-radio", Radio);
+    splunkjs.mvc.Components.registerType("appfx-radio", Radio);
 
     //
     // A select box whose contents is populated by the results of a search.
@@ -364,7 +364,7 @@ define(function(require, exports, module) {
         }
     });
     
-    AppFx.Components.registerType("appfx-select", Select);
+    splunkjs.mvc.Components.registerType("appfx-select", Select);
 
     var TextBox = Input.extend({
         className: "appfx-textbox",
@@ -410,7 +410,7 @@ define(function(require, exports, module) {
         },
     });
 
-    AppFx.Components.registerType("appfx-textbox", TextBox);
+    splunkjs.mvc.Components.registerType("appfx-textbox", TextBox);
     
     return {
         Radio: Radio,

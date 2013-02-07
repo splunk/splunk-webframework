@@ -2,7 +2,7 @@
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var Backbone = require("backbone");
     var Settings = require("./settings");
 
@@ -57,13 +57,13 @@ define(function(require, exports, module) {
             
             // We register on the "change:{name}" event
             var ev = "change:" + name;
-            AppFx.Components.bind(ev, fn, fnContext);
+            splunkjs.mvc.Components.bind(ev, fn, fnContext);
             
             // However, it could be that the component already exists,
             // in which case, we will invoke the callback manually
-            if (AppFx.Components.has(name)) {
-                var ctx = AppFx.Components.get(name);
-                fn.apply(fnContext, [AppFx.Components, ctx, {}]);
+            if (splunkjs.mvc.Components.has(name)) {
+                var ctx = splunkjs.mvc.Components.get(name);
+                fn.apply(fnContext, [splunkjs.mvc.Components, ctx, {}]);
             }
             
             return this;
@@ -77,7 +77,7 @@ define(function(require, exports, module) {
             
             // We register on the "change:{name}" event
             var ev = "change:" + name;
-            AppFx.Components.off(ev, fn, fnContext);
+            splunkjs.mvc.Components.off(ev, fn, fnContext);
             
             return this;
         },
@@ -94,7 +94,7 @@ define(function(require, exports, module) {
         }
     });
 
-    AppFx.Components.registerType('appfx-basecontrol', BaseControl);
+    splunkjs.mvc.Components.registerType('appfx-basecontrol', BaseControl);
     
     return BaseControl;
 });

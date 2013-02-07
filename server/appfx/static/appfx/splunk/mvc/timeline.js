@@ -1,10 +1,10 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var BaseControl = require("./basecontrol");
 
     // Let's load the timeline script
-    var timelinePrefix = AppFx.STATIC_PREFIX + "appfx/splunk/splunk.ui.timeline.min.js";
+    var timelinePrefix = splunkjs.mvc.STATIC_PREFIX + "appfx/splunk/splunk.ui.timeline.min.js";
     var timelineToken = splunkjs.UI.loadTimeline(timelinePrefix);
 
     require("css!./timeline.css");
@@ -275,7 +275,7 @@ define(function(require, exports, module) {
         }
     );
     
-    AppFx.Components.registerType('appfx-timeline', Timeline);
+    splunkjs.mvc.Components.registerType('appfx-timeline', Timeline);
     
     return Timeline;
 });

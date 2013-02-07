@@ -3,7 +3,7 @@
 (function() {
         
     require.config({
-        baseUrl: window.APPFX_STATIC_URL,
+        baseUrl: window.SPLUNKJS_STATIC_URL,
         map: {
             "*": {
                 css: "appfx/contrib/require-css/css"
@@ -32,7 +32,7 @@
         },
         packages: [
             {
-                name: "splunkui",
+                name: "splunkjs.mvc",
                 location: "appfx/splunk/mvc",
                 main: "mvc"
             }
@@ -41,17 +41,25 @@
 
     var _callbacks = [];
 
-    // Get a bootstrap AppFx object, but also the 
-    window.AppFx = {
+    // Bootstrap onto the 'splunkjs' object if one exists, or create a new
+    // one. 
+    // TOOD: what if one already exists with the '.mvc' namespace? Should
+    // we noConflict() it?
+    if (!window.splunkjs) {
+        window.splunkjs = {};
+    }
+    
+    // Get a bootstrap splunkjs.mvc object, but also the 
+    window.splunkjs.mvc = {
         load: function(deps, cb) {
             cb = cb || function() {};
             deps = (deps || []).slice();
             
-            // We push two new dependencies, to make sure that splunkui and
+            // We push two new dependencies, to make sure that splunkjs.mvc and
             // underscore are loaded. However, these go at the end, to not
             // interfere with the ordering of dependencies that the user
             // passed in.
-            deps.push("splunkui");
+            deps.push("splunkjs.mvc");
             deps.push("underscore");
             
             // UNDONE: we need to remove this "implicit" dependency on bootstrap.js
@@ -71,22 +79,22 @@
             require(deps, function() {                
                 var _ = require("underscore");
                 
-                if (!AppFx.started) {
+                if (!splunkjs.mvc.started) {
                     // Register the start callbacks
                     _.each(_callbacks, function(handler) {
-                        AppFx.on(handler.event, handler.fn, handler.context);
+                        splunkjs.mvc.on(handler.event, handler.fn, handler.context);
                     });
                     _callbacks = null;
                 
                     // Load all pre-existing components, and we know we required
                     // them
-                    AppFx._loadDOMComponents();
+                    splunkjs.mvc._loadDOMComponents();
                 }
                 
-                AppFx.started = true;
+                splunkjs.mvc.started = true;
                 
                 // Trigger any events
-                AppFx.trigger("load start", AppFx);
+                splunkjs.mvc.trigger("load start", splunkjs.mvc);
                 
                 // Call any callback
                 cb.apply(null, arguments);

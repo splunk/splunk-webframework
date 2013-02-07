@@ -2,7 +2,7 @@
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var BaseContext = require('./basecontext');
     var SearchModels = require('./searchmodel');
     
@@ -16,11 +16,11 @@ define(function(require, exports, module) {
             
             var that = this;
             _.each(this.get("contexts"), function(contextName) {
-                AppFx.Components.bind("change:" + contextName, function() {
+                splunkjs.mvc.Components.bind("change:" + contextName, function() {
                     that.onContextChanged(contextName);
                 });
                 
-                if (AppFx.Components.hasInstance(contextName)) {
+                if (splunkjs.mvc.Components.hasInstance(contextName)) {
                     that.onContextChanged(contextName);
                 }
             });
@@ -31,8 +31,8 @@ define(function(require, exports, module) {
         },
         
         onContextChanged: function(contextName) {
-            var context = (AppFx.Components.hasInstance(contextName)
-                ? AppFx.Components.getInstance(contextName) : null);
+            var context = (splunkjs.mvc.Components.hasInstance(contextName)
+                ? splunkjs.mvc.Components.getInstance(contextName) : null);
             
             // Unlisten to old context
             var oldContext = this.contexts[contextName];
@@ -145,7 +145,7 @@ define(function(require, exports, module) {
         },
     });
 
-    AppFx.Components.registerType('appfx-groupcontext', GroupContext);
+    splunkjs.mvc.Components.registerType('appfx-groupcontext', GroupContext);
     
     return GroupContext;
 });

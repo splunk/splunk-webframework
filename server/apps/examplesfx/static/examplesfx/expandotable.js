@@ -1,8 +1,8 @@
 // Copyright 2012 Splunk, Inc.
 
 define(function(require, exports, module) {
-    var AppFx = require('splunkui');
-    var BaseControl = require("splunkui/basecontrol");
+    var mvc = require('splunkjs.mvc');
+    var BaseControl = require("splunkjs.mvc/basecontrol");
     var _ = require("underscore");
 
     var ExpandoTable = BaseControl.extend({
@@ -127,7 +127,7 @@ define(function(require, exports, module) {
     });
     
     // We prefix with our app name to make sure there are no collisions.
-    AppFx.Components.registerType('examplesfx-expandotable', ExpandoTable);
+    splunkjs.mvc.Components.registerType('examplesfx-expandotable', ExpandoTable);
     
     return ExpandoTable;
 });

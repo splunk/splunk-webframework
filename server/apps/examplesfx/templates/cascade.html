@@ -1,6 +1,6 @@
 {% extends "appfx:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
@@ -82,12 +82,12 @@
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
+    splunkjs.mvc.on("start", function() {
         // Fetch a reference to the control and contexts
-        var indexes = AppFx.Components.getInstance("indexes");
-        var sourcetypes = AppFx.Components.getInstance("sourcetypes");
-        var simpleSearch1 = AppFx.Components.getInstance("simplesearch1");
-        var sourcetypeSearch = AppFx.Components.getInstance("sourcetypesearch");
+        var indexes = splunkjs.mvc.Components.getInstance("indexes");
+        var sourcetypes = splunkjs.mvc.Components.getInstance("sourcetypes");
+        var simpleSearch1 = splunkjs.mvc.Components.getInstance("simplesearch1");
+        var sourcetypeSearch = splunkjs.mvc.Components.getInstance("sourcetypesearch");
         
         // Add "all" choices to
         indexes.settings.set("choices", [

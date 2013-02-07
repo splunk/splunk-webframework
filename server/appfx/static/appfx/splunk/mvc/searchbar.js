@@ -1,6 +1,6 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var BaseControl = require("./basecontrol");
     var Timepicker = require('./timepicker');
     
@@ -142,7 +142,7 @@ define(function(require, exports, module) {
         }
     );
 
-    AppFx.Components.registerType('appfx-searchbar', SearchBar);
+    splunkjs.mvc.Components.registerType('appfx-searchbar', SearchBar);
     
     return SearchBar;
 });

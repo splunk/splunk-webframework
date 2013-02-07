@@ -1,7 +1,7 @@
 // Copyright 2012 Splunk, Inc.
 
 define(function(require, exports, module) {
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var BaseControl = require("./basecontrol");
     var Messages = require("./messages");
     
@@ -131,7 +131,7 @@ define(function(require, exports, module) {
         }
     });
     
-    AppFx.Components.registerType('appfx-googlemap', GoogleMap);
+    splunkjs.mvc.Components.registerType('appfx-googlemap', GoogleMap);
     
     return GoogleMap;
 });

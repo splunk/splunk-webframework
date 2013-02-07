@@ -19,7 +19,7 @@ require.config({
 
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var BaseControl = require("../basecontrol");
     var d3 = require("./d3/d3.v2");
     var Messages = require("../messages");
@@ -224,7 +224,7 @@ define(function(require, exports, module) {
     },
     D3ChartClass);
     
-    AppFx.Components.registerType('appfx-d3chart', D3Chart);
+    splunkjs.mvc.Components.registerType('appfx-d3chart', D3Chart);
     
     return D3Chart;
 });

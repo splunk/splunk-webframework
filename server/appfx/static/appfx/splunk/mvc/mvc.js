@@ -20,13 +20,13 @@ define(function(require, exports, module) {
 
     var DEBUG = false;
     
-    var AppFxConstructor = function(options) {
+    var MVCConstructor = function(options) {
         this.Components = new Registry("Components");
         
         this.initialize.apply(this, arguments);
         this.STATIC_PREFIX = config.STATIC_URL;
     };
-    _.extend(AppFxConstructor.prototype, Backbone.Events, {
+    _.extend(MVCConstructor.prototype, Backbone.Events, {
         started: false,
         
         initialize: function() {},
@@ -149,14 +149,14 @@ define(function(require, exports, module) {
         },
     });
     
-    // Create AppFx
-    var AppFx = new AppFxConstructor();
-    var ns = window.AppFx = AppFx;
+    // Create splunkjs.mvc
+    var mvc = new MVCConstructor();
+    var ns = window.splunkjs.mvc = mvc;
     
     if (config.ENABLE_PROTECTIONS) {
         protections.enableCSRFProtection($);
-        protections.enableUnauthorizationRedirection($, AppFx.reverse(":login"), AppFx.reverse(":logout"));
+        protections.enableUnauthorizationRedirection($, mvc.reverse(":login"), mvc.reverse(":logout"));
     }
     
-    return AppFx;
+    return mvc;
 });

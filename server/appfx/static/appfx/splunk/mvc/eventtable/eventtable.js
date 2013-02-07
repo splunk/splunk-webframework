@@ -9,7 +9,7 @@ require.config({
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var Backbone = require("backbone");
     var BaseControl = require("../basecontrol");
     var DragDrop = require("./jquery.dragdrop");
@@ -962,7 +962,7 @@ define(function(require, exports, module) {
         }
     );
 
-    AppFx.Components.registerType('appfx-eventtable', EventTable);
+    splunkjs.mvc.Components.registerType('appfx-eventtable', EventTable);
     
     return EventTable;
 });

@@ -1,6 +1,6 @@
 {% extends "appfx:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
@@ -67,14 +67,14 @@
 {% block js %}
 <script>
     var deps = [
-        "splunkui/resulttable",
+        "splunkjs.mvc/resulttable",
         "examplesfx/expandotable"
     ];
-    AppFx.load(deps, function() {
-        var innerTable = AppFx.Components.create("appfx-resulttable", "table1", {
+    splunkjs.mvc.load(deps, function() {
+        var innerTable = splunkjs.mvc.Components.create("appfx-resulttable", "table1", {
             contextid: "simplesearch1"
         }).render();
-        var customTable = AppFx.Components.create("examplesfx-expandotable", "custom-table", {
+        var customTable = splunkjs.mvc.Components.create("examplesfx-expandotable", "custom-table", {
             table: "table1",
             contextid: "simplesearch2",
             valueField: "sourcetype",

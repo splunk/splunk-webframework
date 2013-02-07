@@ -1,6 +1,6 @@
 {% extends 'appfx:base_with_basic_styles.html' %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block splunkstyles %}{% endblock splunkstyles %}
 
@@ -136,39 +136,39 @@ body .container p{
 <pre class="prettyprint linenums lang-js">
 //define dependencies
 var deps = [
-    "splunkui/chart",
-    "splunkui/resulttable",
-    "splunkui/searchcontext",            
+    "splunkjs.mvc/chart",
+    "splunkjs.mvc/resulttable",
+    "splunkjs.mvc/searchcontext",            
 ];
 
 //load requirements and define a callback
-AppFx.load(deps,function() {
+splunkjs.mvc.load(deps,function() {
     //here the chart, resulttable and searchcontext are ready
 })
 </pre>   
 
-        <p>Once the required elements are loaded, use the <code>AppFx.Components.create</code> method to create components, providing the component type, a unique ID for the component, and a dictionary of component options as arguments. To display UI controls on the page, call <code>render</code>. For contexts, call <code>start</code> to start the search. Note that UI controls require a <code>&lt;div&gt;</code> tag, which is a jQuery selector that corresponds to a location (element ID) on the page for the control. This element ID is passed in with the <code>el</code> parameter (see below). The component type begins with <code>"appfx-"</code> (see the <a href="http://docs.splunk.com/Documentation:AppFramework" target="_blank">Component Reference</a> here for a complete reference).</p>
+        <p>Once the required elements are loaded, use the <code>splunkjs.mvc.Components.create</code> method to create components, providing the component type, a unique ID for the component, and a dictionary of component options as arguments. To display UI controls on the page, call <code>render</code>. For contexts, call <code>start</code> to start the search. Note that UI controls require a <code>&lt;div&gt;</code> tag, which is a jQuery selector that corresponds to a location (element ID) on the page for the control. This element ID is passed in with the <code>el</code> parameter (see below). The component type begins with <code>"appfx-"</code> (see the <a href="http://docs.splunk.com/Documentation:AppFramework" target="_blank">Component Reference</a> here for a complete reference).</p>
         <p>Here is an example that continues the previous code snippet by adding a <code>resulttable</code> and a <code>searchcontext</code> once components are loaded:</p>
 
 <pre class="prettyprint linenums lang-js">
 //define dependencies
 var deps = [
-    "splunkui/chart",
-    "splunkui/resulttable",
-    "splunkui/searchcontext",            
+    "splunkjs.mvc/chart",
+    "splunkjs.mvc/resulttable",
+    "splunkjs.mvc/searchcontext",            
 ];
 
 //load requirements and define a callback
-AppFx.load(deps,function() {
+splunkjs.mvc.load(deps,function() {
     
     //create a resulttable. Note the appfx- prefix
-    AppFx.Components.create("appfx-resulttable", "resulttable1", {
+    splunkjs.mvc.Components.create("appfx-resulttable", "resulttable1", {
         contextid: "search1",
         el: $("#divToHangOn")   //name the div to add this component to
     }).render();                //call render                
 
     //create a searchcontext. Note the appfx- prefix
-    AppFx.Components.create("appfx-searchcontext", "search1", {
+    splunkjs.mvc.Components.create("appfx-searchcontext", "search1", {
         earliest_time: "-24h@h",
         latest_time: "now",
         search: "search index=_internal | stats count by sourcetype" 
@@ -182,7 +182,7 @@ AppFx.load(deps,function() {
         <p>You can listen to and respond to click events on all controls in javascript as follows:</p>
 
 <pre class="prettyprint linenums lang-js">
-AppFx.Components.getInstance("example-chart")
+splunkjs.mvc.Components.getInstance("example-chart")
     .on("clicked:chart", function (e) {
         // your code here
     })
@@ -206,7 +206,7 @@ AppFx.Components.getInstance("example-chart")
 &#123;% search id="example-search" search="search index=_internal | stats count" %&#125;
 
 //javascript
-AppFx.Components.create("appfx-searchcontext", "search1", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "search1", {
     search: "search index=_internal | stats count by sourcetype" 
 }).start();
 </pre>
@@ -216,7 +216,7 @@ AppFx.Components.create("appfx-searchcontext", "search1", {
 &#123;% chart id="example-chart" contextid="example-search" type="line" %&#125;
 
 //javascript
-AppFx.Components.create("appfx-chart", "example-chart", {
+splunkjs.mvc.Components.create("appfx-chart", "example-chart", {
     contextid: "example-search",
     el: $("#divToHangOn")
 }).render();
@@ -239,7 +239,7 @@ AppFx.Components.create("appfx-chart", "example-chart", {
 &#123;% search id="example-search" search="search index=_internal | stats count" latest_time="now" %&#125;
 
 //javascript
-AppFx.Components.create("appfx-searchcontext", "search1", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "search1", {
     latest_time: "now",
     search: "search index=_internal | stats count by sourcetype" 
 }).start();
@@ -267,11 +267,11 @@ AppFx.Components.create("appfx-searchcontext", "search1", {
 &#123;% savedsearchcontext id="saved-search" searchname="example-saved-search" %&#125;
 
 //javascript
-AppFx.Components.create("appfx-chart", "example-chart", {
+splunkjs.mvc.Components.create("appfx-chart", "example-chart", {
     contextid: "example-saved-search",
     el: $("#divToHangOn")
 }).render();
-AppFx.Components.create("appfx-savedsearchcontext", "example-saved-search", {
+splunkjs.mvc.Components.create("appfx-savedsearchcontext", "example-saved-search", {
     searchname: "all100",
 }).start();
 </pre>
@@ -309,16 +309,16 @@ AppFx.Components.create("appfx-savedsearchcontext", "example-saved-search", {
 &#123;% group "example-search1" "example-search2" "example-search3" id="search-group" %&#125;
 
 //javascript
-AppFx.Components.create("appfx-searchcontext", "example-search1", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "example-search1", {
     search: "search index=_internal | stats count by sourcetype" 
 }).start();
-AppFx.Components.create("appfx-searchcontext", "example-search2", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "example-search2", {
     search: "search index=_internal | stats avg by sourcetype" 
 }).start();
-AppFx.Components.create("appfx-searchcontext", "example-search3", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "example-search3", {
     search: "search index=_internal | stats max by sourcetype" 
 }).start();
-AppFx.Components.create("appfx-groupcontext", "example-group", {
+splunkjs.mvc.Components.create("appfx-groupcontext", "example-group", {
     contexts:["example-search1" , "example-search2", "example-search3" ]
 }).start();
 </pre>
@@ -344,7 +344,7 @@ AppFx.Components.create("appfx-groupcontext", "example-group", {
 &#123;% chart id="example-chart" contextid="example-search" type="line" %&#125;
 
 //javascript
-AppFx.Components.create("appfx-chart", "example-chart", {
+splunkjs.mvc.Components.create("appfx-chart", "example-chart", {
     contextid: "example-search",
     type: "line",
     el: $("#divToHangOn")
@@ -442,7 +442,7 @@ AppFx.Components.create("appfx-chart", "example-chart", {
         <p>These properties must be set in JavaScript, for example:</p>
 
 <pre class="prettyprint linenums lang-js">
-AppFx.Components.getInstance("example-chart").settings.set({
+splunkjs.mvc.Components.getInstance("example-chart").settings.set({
     "axisTitleX.text": " x-axis title ",
     "axisTitleY.text": " y-axis title ",
     "legend.placement": "none",
@@ -488,11 +488,11 @@ AppFx.Components.getInstance("example-chart").settings.set({
 &#123;% endblock contexts%&#125;
 
 //javascript
-AppFx.Components.create("appfx-eventtable", "example-eventtable", {
+splunkjs.mvc.Components.create("appfx-eventtable", "example-eventtable", {
     contextid: "example-search",
     el: $("#divToHangOn")
 }).render();
-AppFx.Components.create("appfx-searchcontext", "example-search", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "example-search", {
     search: "search index=_internal | head 3" 
 }).start();   
 </pre> 
@@ -513,7 +513,7 @@ AppFx.Components.create("appfx-searchcontext", "example-search", {
     <p>The form controls (<b>Radio</b>, <b>Select</b>, and <b>TextBox</b>) display common elements of web forms (a group of radio buttons, a drop-down list, and a text box). All of these controls have a <code>val</code> method that can be used to retrieve their current value. For example:</p>
 
 <pre class="prettyprint linenums lang-js">
-AppFx.Components.getInstance("example-textbox").val();
+splunkjs.mvc.Components.getInstance("example-textbox").val();
 </pre>
 
     <h3>Events</h3>
@@ -535,7 +535,7 @@ AppFx.Components.getInstance("example-textbox").val();
 &#123;% radio id="example-radio" default="One"%&#125;
 
 //javascript
-AppFx.Components.create("appfx-radio", "example-radio", {
+splunkjs.mvc.Components.create("appfx-radio", "example-radio", {
     default: "One",
     el: $("#divToHangOn")
 }).render();
@@ -552,7 +552,7 @@ var choices = [{label: " One", value: "One"},
 {label:" Three", value: "Three"}];
 
 // assign them to the button group
-AppFx.Components.getInstance("example-radio").settings.set("choices", choices);      
+splunkjs.mvc.Components.getInstance("example-radio").settings.set("choices", choices);      
 </pre>
         </p>
             <p><code>search</code>: The context that specifies the search to populate the radio button group. For this to be very useful, set <code>valueField</code>, <code>labelField</code>, or both to specify which fields in the search results to use for values and labels. See the example below for more on this.</p>
@@ -579,14 +579,14 @@ AppFx.Components.getInstance("example-radio").settings.set("choices", choices);
 &#123;% endblock contexts%&#125;
 
 //javascript
-AppFx.Components.create("appfx-radio", "example-radio", {
+splunkjs.mvc.Components.create("appfx-radio", "example-radio", {
     default: "One",
     contextid: "indexes-search",
     labelField: "index",
     valueField: "index",
     el: $("#divToHangOn")
 }).render();
-AppFx.Components.create("appfx-searchcontext", "indexes-search", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "indexes-search", {
     search: "| eventcount summarize=false index=* index=_* | dedup index | fields index",
 }).start();   
 </pre>  
@@ -603,7 +603,7 @@ AppFx.Components.create("appfx-searchcontext", "indexes-search", {
 &#123;% select id="example-select" default="One"%&#125;
 
 //javascript
-AppFx.Components.create("appfx-select", "example-select", {
+splunkjs.mvc.Components.create("appfx-select", "example-select", {
     default: "One",
     el: $("#divToHangOn")
 }).render();
@@ -620,7 +620,7 @@ var choices = [{label: " One", value: "One"},
 {label:" Three", value: "Three"}];
 
 // assign them to the button group
-AppFx.Components.getInstance("example-select").settings.set("choices", choices);      
+splunkjs.mvc.Components.getInstance("example-select").settings.set("choices", choices);      
 </pre>
             </p>
                 <p><code>valueField</code>: The search field to use for list options. If no <code>labelField</code> is set, the select options will default to the <code>valueField</code> values.</p>
@@ -646,14 +646,14 @@ AppFx.Components.getInstance("example-select").settings.set("choices", choices);
 &#123;% endblock contexts%&#125; 
 
 //javascript
-AppFx.Components.create("appfx-select", "example-select", {
+splunkjs.mvc.Components.create("appfx-select", "example-select", {
     default: "One",
     contextid: "indexes-search",
     labelField: "index",
     valueField: "index",
     el: $("#divToHangOn")
 }).render();
-AppFx.Components.create("appfx-searchcontext", "indexes-search", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "indexes-search", {
     search: "| eventcount summarize=false index=* index=_* | dedup index | fields index",
 }).start();   
 </pre>    
@@ -687,8 +687,8 @@ AppFx.Components.create("appfx-searchcontext", "indexes-search", {
         <p>In JavaScript:</p>
 <pre class="prettyprint linenums lang-js">
 //get textbox elements
-var tb1 = AppFx.Components.getInstance("example-textbox1");
-var tb2 = AppFx.Components.getInstance("example-textbox2");
+var tb1 = splunkjs.mvc.Components.getInstance("example-textbox1");
+var tb2 = splunkjs.mvc.Components.getInstance("example-textbox2");
 
 //attach change events
 tb1.on("change", function(){
@@ -725,11 +725,11 @@ tb2.on("change", function(){
 &#123;% endblock contexts%&#125;
 
 //javascript
-AppFx.Components.create("appfx-googlemap", "example-googlemap", {
+splunkjs.mvc.Components.create("appfx-googlemap", "example-googlemap", {
     contextid: "example-map-search",
     el: $("#divToHangOn")
 }).render();
-AppFx.Components.create("appfx-searchcontext", "example-map-search", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "example-map-search", {
     search: "| inputlookup appfx.demo.dataset.csv | rename device_ip_latitude as lat, device_ip_longitude as lng | stats count by lat, lng ",
 }).start();    
 </pre>   
@@ -756,7 +756,7 @@ AppFx.Components.create("appfx-searchcontext", "example-map-search", {
 &#123;% resulttable id="example-table" contextid="example-search" pageSize="5"%&#125;
 
 //javascript
-AppFx.Components.create("appfx-resulttable", "example-resulttable", {
+splunkjs.mvc.Components.create("appfx-resulttable", "example-resulttable", {
     contextid: "example-search",
     el: $("#divToHangOn")
 }).render();
@@ -777,7 +777,7 @@ AppFx.Components.create("appfx-resulttable", "example-resulttable", {
     </ul>
 
 <pre class="prettyprint linenums lang-js">
-var table= AppFx.Components.getInstance("example-table");
+var table= splunkjs.mvc.Components.getInstance("example-table");
 table.settings.set("fields", ["_time", "splunkd"]);
 </pre>
 
@@ -804,13 +804,13 @@ table.settings.set("fields", ["_time", "splunkd"]);
 &#123;% paginator id="paginator" %&#125;
 
 //javascript
-AppFx.Components.create("appfx-resulttable", "example-resulttable", {
+splunkjs.mvc.Components.create("appfx-resulttable", "example-resulttable", {
     contextid: "example-search",
     pageSize: "5",
     paginator: "paginator",
     el: $("#divToHangOn")
 }).render();
-AppFx.Components.create("appfx-paginator", "paginator", {
+splunkjs.mvc.Components.create("appfx-paginator", "paginator", {
     el: $("#paginatorDiv") //needs it's own div
 }).render();
 </pre>
@@ -852,16 +852,16 @@ AppFx.Components.create("appfx-paginator", "paginator", {
 &#123;% endblock contexts%&#125;
 
 //javascript
-AppFx.Components.create("appfx-searchbar", "example-searchbar", {
+splunkjs.mvc.Components.create("appfx-searchbar", "example-searchbar", {
     contextid: "example-bar-search",
     el: $("#divToHangOn")
 }).render();
-AppFx.Components.create("appfx-resulttable", "example-resulttable", {
+splunkjs.mvc.Components.create("appfx-resulttable", "example-resulttable", {
     contextid: "example-bar-search",
     pageSize: "5",
     el: $("#divToHangOn2") // seperate div
 }).render();
-AppFx.Components.create("appfx-searchcontext", "example-bar-search", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "example-bar-search", {
     search: "search index=_internal | head 100 | timechart count by sourcetype span=100s",
 }).start();    
 </pre> 
@@ -890,11 +890,11 @@ AppFx.Components.create("appfx-searchcontext", "example-bar-search", {
 &#123;% endblock contexts%&#125;
 
 //javascript
-AppFx.Components.create("appfx-single", "example-single", {
+splunkjs.mvc.Components.create("appfx-single", "example-single", {
     contextid: "example-single-search",
     el: $("#divToHangOn")
 }).render();
-AppFx.Components.create("appfx-searchcontext", "example-single-search", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "example-single-search", {
     search: "search index=_internal | stats count",
 }).start();    
 </pre> 
@@ -964,21 +964,21 @@ AppFx.Components.create("appfx-searchcontext", "example-single-search", {
 &#123;% endblock contexts%&#125;
 
 //javascript
-AppFx.Components.create("appfx-timepicker", "example-timepicker", {
+splunkjs.mvc.Components.create("appfx-timepicker", "example-timepicker", {
     contextid: "example-timeline-search",
     preset: "today",
     el: $("#divToHangOn")
 }).render();
-AppFx.Components.create("appfx-timeline", "example-timeline", {
+splunkjs.mvc.Components.create("appfx-timeline", "example-timeline", {
     contextid: "example-timeline-search",
     el: $("#divToHangOn2")
 }).render();
-AppFx.Components.create("appfx-resulttable", "example-resulttable", {
+splunkjs.mvc.Components.create("appfx-resulttable", "example-resulttable", {
     contextid: "example-timeline-search",
     pageSize: "5",
     el: $("#divToHangOn3")
 }).render();
-AppFx.Components.create("appfx-searchcontext", "example-timeline-search", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "example-timeline-search", {
     search: "search index=_internal",
     preview: "True",
     status_buckets: 300
@@ -1046,17 +1046,17 @@ AppFx.Components.create("appfx-searchcontext", "example-timeline-search", {
 &#123;% endblock contexts%&#125;    
 
 //javascript
-AppFx.Components.create("appfx-timepicker", "example-timepicker", {
+splunkjs.mvc.Components.create("appfx-timepicker", "example-timepicker", {
     contextid: "timepicker-search",
     preset: "today",
     el: $("#divToHangOn")
 }).render();
-AppFx.Components.create("appfx-single", "example-single", {
+splunkjs.mvc.Components.create("appfx-single", "example-single", {
     contextid: "timepicker-search",
     afterLabel: "events",
     el: $("#divToHangOn2")
 }).render();
-AppFx.Components.create("appfx-searchcontext", "timepicker-search", {
+splunkjs.mvc.Components.create("appfx-searchcontext", "timepicker-search", {
     search: "search index=_internal | stats count",
     preview: "True",
     status_buckets: 300
@@ -1122,11 +1122,11 @@ $(document).ready(function(){
 });
 
 
-AppFx.on("start",function() {
-    var table= AppFx.Components.getInstance("example-table");
+splunkjs.mvc.on("start",function() {
+    var table= splunkjs.mvc.Components.getInstance("example-table");
 
-    var tb1 = AppFx.Components.getInstance("example-textbox1");
-    var tb2 = AppFx.Components.getInstance("example-textbox2");
+    var tb1 = splunkjs.mvc.Components.getInstance("example-textbox1");
+    var tb2 = splunkjs.mvc.Components.getInstance("example-textbox2");
     tb1.on("change", function(){
         tb2.val(tb1.val());
     })
@@ -1138,8 +1138,8 @@ AppFx.on("start",function() {
     {label:" Two", value: "Two"}, 
     {label:" Three", value: "Three"}];
 
-    AppFx.Components.getInstance("example-radio").settings.set("choices", choices);
-    AppFx.Components.getInstance("example-select").settings.set("choices", choices);
+    splunkjs.mvc.Components.getInstance("example-radio").settings.set("choices", choices);
+    splunkjs.mvc.Components.getInstance("example-select").settings.set("choices", choices);
 
 })
 </script>

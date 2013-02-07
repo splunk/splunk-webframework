@@ -2,7 +2,7 @@
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var Backbone = require('backbone');
     var BaseControl = require("./basecontrol");
     var Messages = require("./messages");
@@ -323,7 +323,7 @@ define(function(require, exports, module) {
 </table>'
     });
     
-    AppFx.Components.registerType('appfx-resulttable', ResultTable);
+    splunkjs.mvc.Components.registerType('appfx-resulttable', ResultTable);
     
     return ResultTable;
 });

@@ -1,6 +1,6 @@
 {% extends "appfx:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
@@ -91,7 +91,7 @@
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
+    splunkjs.mvc.on("start", function() {
         var queryArgs = window.location.search.substr(1) || "";
         var params = $.deparam(queryArgs) || {};
         
@@ -100,8 +100,8 @@
         
         console.log(params);
         
-        var search1 = AppFx.Components.getInstance("search1");
-        var search2 = AppFx.Components.getInstance("search2");
+        var search1 = splunkjs.mvc.Components.getInstance("search1");
+        var search2 = splunkjs.mvc.Components.getInstance("search2");
         
         // Set the values on the searches, and since we told the contexts to 
         // not autostart, we need to start them.

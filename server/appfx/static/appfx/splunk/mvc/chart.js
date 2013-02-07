@@ -1,11 +1,11 @@
 define(function(require, exports, module) {
     var _ = require('underscore');
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var BaseControl = require("./basecontrol");
     var Messages = require("./messages");
 
     // Let's load the charting script
-    var chartingPrefix = AppFx.STATIC_PREFIX + "appfx/splunk/splunk.ui.charting.min.js";
+    var chartingPrefix = splunkjs.mvc.STATIC_PREFIX + "appfx/splunk/splunk.ui.charting.min.js";
     var chartingToken = splunkjs.UI.loadCharting(chartingPrefix);
 
     require("css!./chart.css");
@@ -162,7 +162,7 @@ define(function(require, exports, module) {
         }
     });
     
-    AppFx.Components.registerType('appfx-chart', Chart); 
+    splunkjs.mvc.Components.registerType('appfx-chart', Chart); 
     
     return Chart;
 });

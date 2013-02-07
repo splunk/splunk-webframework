@@ -13,16 +13,16 @@
 		<style>
 		</style>
 		<script>
-			window.APPFX_STATIC_URL = "{{STATIC_URL}}";
+			window.SPLUNKJS_STATIC_URL = "{{STATIC_URL}}";
 			
 			/*
-			 * Collapse the Django debug toolbar (DjDT) by default in AppFx.
+			 * Collapse the Django debug toolbar (DjDT) by default in splunkjs.mvc.
 			 * 
 			 * DjDT by itself defaults to being maximized, which it undesirable
-			 * for AppFx because it obscures elements on the page behind it.
+			 * for the App Framework because it obscures elements on the page behind it.
 			 * There is no documented configuration in DjDT to disable this
 			 * behavior so we manually collapse the DjDT toolbar (and remember
-			 * this setting) upon the first launch of AppFx.
+			 * this setting) upon the first launch of splunkjs.mvc.
 			 */
 			$(document).ready(function() {
 			    var LAUNCHED_COOKIE_NAME = 'splunk_appfx_launched';

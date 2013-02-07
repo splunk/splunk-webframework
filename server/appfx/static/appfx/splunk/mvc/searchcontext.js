@@ -2,7 +2,7 @@
 
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var BaseContext = require('./basecontext');
     var DataSource = require('./datasource');
     var SearchModels = require('./searchmodel');
@@ -27,7 +27,7 @@ define(function(require, exports, module) {
         },
         
         initialize: function(options) {
-            this.service = AppFx.createService({app: options.app, owner: options.owner});
+            this.service = splunkjs.mvc.createService({app: options.app, owner: options.owner});
             
             if (!this.search.has("label")) {
                 this.search.set("label", options.name);
@@ -297,7 +297,7 @@ define(function(require, exports, module) {
         }
     });
 
-    AppFx.Components.registerType('appfx-searchcontext', SearchContext);
+    splunkjs.mvc.Components.registerType('appfx-searchcontext', SearchContext);
     
     return SearchContext;
 });

@@ -21,7 +21,7 @@
         }
     </style>
     <script>
-        window.APPFX_STATIC_URL = "{{STATIC_URL}}";
+        window.SPLUNKJS_STATIC_URL = "{{STATIC_URL}}";
     </script>
 </head>
 
@@ -37,7 +37,7 @@
           <a class="brand" href="{% url 'examplesfx:home'%}">Examples</a>
           <div class="nav-collapse">
             <ul class="nav">
-              <li id="splunkui"><a href="{% url 'examplesfx:home'%}">Go Back to Splunk UI</a></li>
+              <li><a href="{% url 'examplesfx:home'%}">Go Back to Splunk UI</a></li>
             </ul>
             <ul class="nav pull-right">
               <li><a href="{% url 'logout'%}">Logout</a></li>
@@ -123,42 +123,42 @@
     <script src="{{STATIC_URL}}appfx/splunk/mvc/mvc.config.js"></script>
     <script>
         var deps = [
-            "splunkui/chart",
-            "splunkui/resulttable",
-            "splunkui/searchcontext",
-            "splunkui/single",
+            "splunkjs.mvc/chart",
+            "splunkjs.mvc/resulttable",
+            "splunkjs.mvc/searchcontext",
+            "splunkjs.mvc/single",
         ];
         
-        AppFx.load(deps, function() {
+        splunkjs.mvc.load(deps, function() {
             // Create the controls            
-            AppFx.Components.create("appfx-resulttable", "resulttable1", {
+            splunkjs.mvc.Components.create("appfx-resulttable", "resulttable1", {
                 contextid: "search1",
                 el: $("#resulttable1")
             }).render();
-            AppFx.Components.create("appfx-single", "singlevalue1", {
+            splunkjs.mvc.Components.create("appfx-single", "singlevalue1", {
                 contextid: "search2",
                 el: $("#singlevalue1")
             }).render();
-            AppFx.Components.create("appfx-chart", "chart1", {
+            splunkjs.mvc.Components.create("appfx-chart", "chart1", {
                 contextid: "search3",
                 type: "line",
                 el: $("#chart1")
             }).render();
             
             // Create the contexts
-            AppFx.Components.create("appfx-searchcontext", "search1", {
+            splunkjs.mvc.Components.create("appfx-searchcontext", "search1", {
                 earliest_time: "-24h@h",
                 latest_time: "now",
                 search: "search index=_internal | stats count by sourcetype",
                 cache: true
             }).start();
-            AppFx.Components.create("appfx-searchcontext", "search2", {
+            splunkjs.mvc.Components.create("appfx-searchcontext", "search2", {
                 earliest_time: "-15m",
                 latest_time: "now",
                 search: "search index=_internal | stats count" ,
                 cache: true
             }).start();
-            AppFx.Components.create("appfx-searchcontext", "search3", {
+            splunkjs.mvc.Components.create("appfx-searchcontext", "search3", {
                 earliest_time: "-24h@h",
                 latest_time: "now",
                 search: "search index=_internal | timechart count by sourcetype",

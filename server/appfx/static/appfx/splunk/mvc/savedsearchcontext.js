@@ -1,7 +1,7 @@
 // Copyright 2012 Splunk, Inc.
 
 define(function(require, exports, module) {
-    var AppFx = require('splunkui');
+    var mvc = require('splunkjs.mvc');
     var SearchContext = require('./searchcontext');
     var _ = require("underscore");
     
@@ -109,7 +109,7 @@ define(function(require, exports, module) {
         }
     });
 
-    AppFx.Components.registerType('appfx-savedsearchcontext', SavedSearchContext);
+    splunkjs.mvc.Components.registerType('appfx-savedsearchcontext', SavedSearchContext);
     
     return SavedSearchContext;
 });

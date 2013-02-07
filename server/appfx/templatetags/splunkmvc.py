@@ -11,7 +11,7 @@ register = template.Library()
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='chart')
 def chart(context, id, **kwargs):        
-    return component_context(context, "appfx-chart", id, "control", "splunkui/chart", kwargs)
+    return component_context(context, "appfx-chart", id, "control", "splunkjs.mvc/chart", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='control')
 def control(context, type=None, id=None, require='', **kwargs):
@@ -25,23 +25,23 @@ def component_loader(context):
     
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='d3chart')
 def d3chart(context, id, *args, **kwargs):
-    return component_context(context, "appfx-d3chart", id, "control", "splunkui/d3chart/d3chart", kwargs)
+    return component_context(context, "appfx-d3chart", id, "control", "splunkjs.mvc/d3chart/d3chart", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='dataview')
 def dataview(context, id, **kwargs):
-    return component_context(context, "appfx-dataview", id, "control", "splunkui/dataview", kwargs)
+    return component_context(context, "appfx-dataview", id, "control", "splunkjs.mvc/dataview", kwargs)
         
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='eventtable')
 def eventtable(context, id, **kwargs):
-    return component_context(context, "appfx-eventtable", id, "control", "splunkui/eventtable/eventtable", kwargs)
+    return component_context(context, "appfx-eventtable", id, "control", "splunkjs.mvc/eventtable/eventtable", kwargs)
     
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='googlemap')
 def googlemap(context, id, **kwargs):
-    return component_context(context, "appfx-googlemap", id, "control", "splunkui/googlemap", kwargs)
+    return component_context(context, "appfx-googlemap", id, "control", "splunkjs.mvc/googlemap", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='jobstatus')
 def jobstatus(context, id, **kwargs):
-    return component_context(context, "appfx-jobstatus", id, "control", "splunkui/jobstatus", kwargs)
+    return component_context(context, "appfx-jobstatus", id, "control", "splunkjs.mvc/jobstatus", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='group')
 def group(context, *args, **kwargs):
@@ -55,19 +55,19 @@ def group(context, *args, **kwargs):
     }
     options.update(kwargs) 
     
-    return component_context(context, "appfx-groupcontext", id, "context", "splunkui/groupcontext", options)
+    return component_context(context, "appfx-groupcontext", id, "context", "splunkjs.mvc/groupcontext", options)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='paginator')
 def paginator(context, id, **kwargs):
-    return component_context(context, "appfx-paginator", id, "control", "splunkui/paginator", kwargs)
+    return component_context(context, "appfx-paginator", id, "control", "splunkjs.mvc/paginator", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='radio')
 def radio(context, id, **kwargs):
-    return component_context(context, "appfx-radio", id, "control", "splunkui/forms", kwargs)
+    return component_context(context, "appfx-radio", id, "control", "splunkjs.mvc/forms", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='resulttable')
 def resulttable(context, id, **kwargs):    
-    return component_context(context, "appfx-resulttable", id, "control", "splunkui/resulttable", kwargs)
+    return component_context(context, "appfx-resulttable", id, "control", "splunkjs.mvc/resulttable", kwargs)
 
 @register.simple_tag(takes_context=True, name='require')
 def require(context, *args, **kwargs):
@@ -78,45 +78,45 @@ def require(context, *args, **kwargs):
 def savedsearch(context, id, **kwargs):
     options = { 'app': context['app_name'] }
     options.update(kwargs)
-    return component_context(context, "appfx-savedsearchcontext", id, "context", "splunkui/savedsearchcontext", options)
+    return component_context(context, "appfx-savedsearchcontext", id, "context", "splunkjs.mvc/savedsearchcontext", options)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='search')
 def search(context, id, **kwargs):
     options = { 'app': context['app_name'] }
     options.update(kwargs)
-    return component_context(context, "appfx-searchcontext", id, "context", "splunkui/searchcontext", options)
+    return component_context(context, "appfx-searchcontext", id, "context", "splunkjs.mvc/searchcontext", options)
     
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='searchbar')
 def searchbar(context, id, include_timepicker=True, **kwargs):
     if include_timepicker:
         kwargs["timepicker"] = "1"
-    return component_context(context, "appfx-searchbar", id, "control", "splunkui/searchbar", kwargs)
+    return component_context(context, "appfx-searchbar", id, "control", "splunkjs.mvc/searchbar", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='searchcontrols')
 def searchcontrols(context, id, **kwargs):
-    return component_context(context, "appfx-searchcontrols", id, "control", "splunkui/searchcontrols/searchcontrols", kwargs)
+    return component_context(context, "appfx-searchcontrols", id, "control", "splunkjs.mvc/searchcontrols/searchcontrols", kwargs)
     
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='select')
 def select(context, id, **kwargs):
-    return component_context(context, "appfx-select", id, "control", "splunkui/forms", kwargs)
+    return component_context(context, "appfx-select", id, "control", "splunkjs.mvc/forms", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='simplexml')
 def simplexml(context, id, **kwargs):
-    return component_context(context, "simplexml", id, "control", "splunkui/dashboard/simplexml", kwargs)
+    return component_context(context, "simplexml", id, "control", "splunkjs.mvc/dashboard/simplexml", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='single')
 def single(context, id, **kwargs):
-    return component_context(context, "appfx-single", id, "control", "splunkui/single", kwargs)
+    return component_context(context, "appfx-single", id, "control", "splunkjs.mvc/single", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='textbox')
 def textbox(context, id, **kwargs):
-    return component_context(context, "appfx-textbox", id, "control", "splunkui/forms", kwargs)
+    return component_context(context, "appfx-textbox", id, "control", "splunkjs.mvc/forms", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='timeline')
 def timeline(context, id, **kwargs):
-    return component_context(context, "appfx-timeline", id, "control", "splunkui/timeline", kwargs)
+    return component_context(context, "appfx-timeline", id, "control", "splunkjs.mvc/timeline", kwargs)
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='timepicker')
 def timepicker(context, id, **kwargs):
-    return component_context(context, "appfx-timepicker", id, "control", "splunkui/timepicker", kwargs)
+    return component_context(context, "appfx-timepicker", id, "control", "splunkjs.mvc/timepicker", kwargs)
     
