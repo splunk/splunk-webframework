@@ -34,7 +34,7 @@
             {
                 name: "splunkui",
                 location: "appfx/splunk/mvc",
-                main: "appfx"
+                main: "mvc"
             }
         ]
     });
