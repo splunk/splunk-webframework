@@ -94,7 +94,7 @@ def searchbar(context, id, include_timepicker=True, **kwargs):
 
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='searchcontrols')
 def searchcontrols(context, id, **kwargs):
-    return component_context(context, "appfx-searchcontrols", id, "control", "splunkui/searchcontrols", kwargs)
+    return component_context(context, "appfx-searchcontrols", id, "control", "splunkui/searchcontrols/searchcontrols", kwargs)
     
 @register.inclusion_tag('appfx:components/component.html', takes_context=True, name='select')
 def select(context, id, **kwargs):
