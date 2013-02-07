@@ -4,7 +4,7 @@ define(function(require, exports, module) {
     var BaseControl = require("./basecontrol");
 
     // Let's load the timeline script
-    var timelinePrefix = AppFx.STATIC_PREFIX + "appfx/splunkjs/splunk.ui.timeline.min.js";
+    var timelinePrefix = AppFx.STATIC_PREFIX + "appfx/splunk/splunk.ui.timeline.min.js";
     var timelineToken = splunkjs.UI.loadTimeline(timelinePrefix);
 
     require("css!./timeline.css");

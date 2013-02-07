@@ -5,7 +5,7 @@ define(function(require, exports, module) {
     var Messages = require("./messages");
 
     // Let's load the charting script
-    var chartingPrefix = AppFx.STATIC_PREFIX + "appfx/splunkjs/splunk.ui.charting.min.js";
+    var chartingPrefix = AppFx.STATIC_PREFIX + "appfx/splunk/splunk.ui.charting.min.js";
     var chartingToken = splunkjs.UI.loadCharting(chartingPrefix);
 
     require("css!./chart.css");

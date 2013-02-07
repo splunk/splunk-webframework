@@ -33,7 +33,7 @@
         packages: [
             {
                 name: "splunkui",
-                location: "appfx/splunkui",
+                location: "appfx/splunk/mvc",
                 main: "appfx"
             }
         ]
