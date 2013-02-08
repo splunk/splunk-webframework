@@ -102,7 +102,7 @@ define(function(require, exports, module) {
             var afterLabel = this.settings.get("afterLabel");
             if (afterLabel) {
                 $("<span>")
-                    .addClass("appfx-single-label)")
+                    .addClass("appfx-single-label")
                     .addClass("appfx-single-label-after")
                     .html(afterLabel)
                     .appendTo(content);

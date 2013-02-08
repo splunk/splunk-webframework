@@ -1,0 +1,48 @@
+{% load url from future %}
+
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>searchbar test</title>
+  <link rel="stylesheet" href="{{STATIC_URL}}testfx/mocha.css" />
+  <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}appfx/contrib/bootstrap.css" />
+</head>
+<body>
+  <script>window.APPFX_STATIC_URL = "{{STATIC_URL}}";</script>
+  
+  <script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.min.js"></script>
+  <script src="{{STATIC_URL}}appfx/splunkjs/splunk.js"></script>
+  <script src="{{STATIC_URL}}appfx/contrib/require.js"></script>
+  <script src="{{STATIC_URL}}appfx/splunkui/appfx.bootstrap.js"></script>
+  <style type="text/css">
+    #content{
+      width: 600px;
+    }
+  </style>
+  <div id="content">
+    <h3>searchbar</h3>
+    <p>Should be a searchbar</p>
+
+    <div id="hook" class="splunk"></div>
+
+     <a href="{% url 'testfx:next' id='searchbar' %}">Next</a>
+  </div>
+  <script>  
+    var deps = ["appfx/splunkui/searchbar",
+                "appfx/splunkui/searchcontext",
+    ];
+      AppFx.load(deps,function(AppFx) {
+          AppFx.Components.create("appfx-searchbar", "example-searchbar", {
+            timepicker : true,
+          contextid: "test-search",
+          el: $("#hook") 
+      }).render();
+      AppFx.Components.create("appfx-searchcontext", "test-search", {
+          search: "| inputlookup testdata.csv",
+          preview: "True",
+          status_buckets: 300
+      }).start();   
+    });
+  </script>
+</body>
+</html>

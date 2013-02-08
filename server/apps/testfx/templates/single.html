@@ -1,0 +1,68 @@
+{% load url from future %}
+
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>single test</title>
+  <link rel="stylesheet" href="{{STATIC_URL}}testfx/mocha.css" />
+  <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}appfx/contrib/bootstrap.css" />
+</head>
+<body>
+  <script>window.APPFX_STATIC_URL = "{{STATIC_URL}}";</script>
+  
+  <script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.min.js"></script>
+  <script src="{{STATIC_URL}}testfx/mocha.js"></script>
+  <script src="{{STATIC_URL}}appfx/splunkjs/splunk.js"></script>
+  <script src="{{STATIC_URL}}appfx/contrib/require.js"></script>
+  <script src="{{STATIC_URL}}appfx/splunkui/appfx.bootstrap.js"></script>
+  <style type="text/css">
+  
+  </style>
+  <div id="content">
+    <div class="row">
+      <div class="span4">
+      <h3>single</h3>
+      <p>Should be a single control</p>
+      </div>
+      <a class="btn btn-primary span1 offset2" href="{% url 'testfx:next' id='single' %}">Next</a>
+    </div>
+    <div class="row">
+      <div clas="span4">
+        <div id="hook" class="splunk"></div>
+      </div>
+      <div class="span4 offset4" >
+        <div id="mocha"></div>
+        
+      </div>
+    </div>
+  </div>
+  <script>  
+    var deps = ["appfx/splunkui/single",
+                "appfx/splunkui/searchcontext",
+    ];
+      AppFx.load(deps,function(AppFx) {
+          
+        mocha.globals(['djdt']);
+        mocha.add = function(suite) {
+          mocha.suite.emit('require', suite);
+        };
+
+        var _ = require('underscore');
+        mocha.setup('exports');
+
+        require(
+          [
+            "testfx/tests/single", 
+          ], 
+          function() {
+            _.each(arguments, function(suite) {
+              mocha.add(suite);
+            });
+          
+            mocha.run();
+          }
+        );
+    });
+  </script>
+</body>
+</html>
