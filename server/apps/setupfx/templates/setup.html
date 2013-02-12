@@ -1,0 +1,29 @@
+{% extends "appfx:base_with_account_bar.html" %}
+
+{% load splunkui %}
+{% load url from future %}
+
+{% block title %}{{app_name}}Setup MyApp{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}appfx/contrib/bootstrap.css" />
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/custom.css" />
+{% endblock css %}
+
+{% block content %}
+    <div class="entityEditForm">
+        <h1>Welcome to the Flurry App</h1>
+        <p>
+            To start indexing Flurry event logs:
+        </p>
+        <ol>
+            <li>Provide Flurry credentials below.</li>
+            <li>For the "Extraction Position", enter the earliest date containing events you wish to download.</li>
+            <li>Enable the Flurry scripted input below.</li>
+        </ol>
+    </div>
+{% endblock content%}
+
+{% block js %}
+    <!-- No JS yet -->
+{% endblock js %}

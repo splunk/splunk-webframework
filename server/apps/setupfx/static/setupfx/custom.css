@@ -1,0 +1,33 @@
+/*
+ * entityEditForm rules are mostly copied from Splunk's admin.css
+ */
+
+.entityEditForm {
+	padding-top: 15px;
+	min-width:500px;
+    max-width: 940px;
+    _width:940px;
+    background: white;
+    _border: 1px solid #ccc;
+    *border: 1px solid #ccc;
+    -webkit-box-shadow: #999 0px 0px 5px;
+    -moz-box-shadow: #999 0px 0px 5px;
+    box-shadow: #999 0px 0px 5px;
+    margin: 30px auto 0px auto;
+    -webkit-border-radius: 5px;
+	-moz-border-radius: 5px;
+	border-radius: 5px;
+}
+.hasTabs .entityEditForm {
+    padding: 10px;
+}
+
+/* CUSTOM */
+.entityEditForm {
+    padding-left: 10px; padding-right: 10px;
+    padding-bottom: 15px;
+    margin-bottom: 30px;
+}
+.entityEditForm h1 {
+    margin-bottom: .3em;
+}
