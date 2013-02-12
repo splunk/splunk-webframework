@@ -2,8 +2,7 @@
 from django import forms
 
 class AppSettingsForm(forms.Form):
-    # TODO: Use specialized email field to perform extra validation
-    email = forms.CharField(max_length=100)
+    email = forms.EmailField(max_length=100)
 
 # ------------------------------------------------------------------------------
 

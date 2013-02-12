@@ -1,7 +1,4 @@
-/*
- * entityEditForm rules are mostly copied from Splunk's admin.css
- */
-
+/* Copied from Splunk's admin.css */
 .entityEditForm {
 	padding-top: 15px;
 	min-width:500px;
@@ -22,7 +19,7 @@
     padding: 10px;
 }
 
-/* CUSTOM */
+/* Custom extensions to entityEditForm */
 .entityEditForm {
     padding-left: 10px; padding-right: 10px;
     padding-bottom: 15px;
@@ -30,4 +27,33 @@
 }
 .entityEditForm h1 {
     margin-bottom: .3em;
+}
+
+/* Copied from Bootstrap's 'alert' rule.
+ * Renamed to 'errorlist' to be used by Django.
+ * 
+ * Marked a few items as !important to override splunkstrap.
+ */
+.errorlist {
+    padding: 8px 35px 8px 14px !important;
+    margin-bottom: 20px;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+    background-color: #fcf8e3;
+    border: 1px solid #fbeed5;
+    -webkit-border-radius: 4px;
+       -moz-border-radius: 4px;
+            border-radius: 4px;
+}
+
+/* Copied from Bootstrap's 'alert-error' rule.
+ * Renamed to 'errorlist' to be used by Django. */
+.errorlist {
+    color: #b94a48;
+    background-color: #f2dede;
+    border-color: #eed3d7;
+}
+
+/* Custom extensions to errorlist */
+.errorlist li {
+    list-style: none; /* remove bullets */
 }
