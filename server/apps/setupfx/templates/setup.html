@@ -11,7 +11,7 @@
 {% endblock css %}
 
 {% block content %}
-    <div class="entityEditForm">
+    <form class="entityEditForm" method="post" action="">
         <h1>Welcome to the Flurry App</h1>
         <p>
             To start indexing Flurry event logs:
@@ -21,6 +21,9 @@
             <li>For the "Extraction Position", enter the earliest date containing events you wish to download.</li>
             <li>Enable the Flurry scripted input below.</li>
         </ol>
+        {{ form.as_p }}
+        {% csrf_token %}
+        <input type="submit" value="Submit" />
     </div>
 {% endblock content%}
 
