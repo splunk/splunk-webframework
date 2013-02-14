@@ -27,6 +27,7 @@ class AppSettingsForm(forms.Form):
 
 from appfx.decorators.render import render_to
 from django.contrib.auth.decorators import login_required
+from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect
 from splunklib.binding import namespace
 from splunklib.client import Service
@@ -37,8 +38,7 @@ def home(request):
     # Redirect to setup screen if not configured
     service = _create_service()
     if not _get_configured(service):
-        # TODO: Use reverse function to get correct URL
-        return HttpResponseRedirect('/appfx/setupfx/setup/')
+        return HttpResponseRedirect(reverse('setupfx:setup'))
     
     return {
         "app_name": "setupfx",
@@ -54,8 +54,7 @@ def setup(request):
             _save_settings(service, form.cleaned_data)
             _set_configured(service, True)
             
-            # TODO: Use reverse function to get correct URL
-            return HttpResponseRedirect('/appfx/setupfx/home/')
+            return HttpResponseRedirect(reverse('setupfx:home'))
     else:
         form = AppSettingsForm()
         # TODO: If already configured, bind the form with the preexisting settings
@@ -69,8 +68,7 @@ def unconfigure(request):
     service = _create_service()
     _set_configured(service, False)
     
-    # TODO: Use reverse function to get correct URL
-    return HttpResponseRedirect('/appfx/setupfx/home/')
+    return HttpResponseRedirect(reverse('setupfx:home'))
 
 # ------------------------------------------------------------------------------
 
