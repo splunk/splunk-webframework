@@ -54,7 +54,6 @@ def setup(request):
             _save_settings(service, form.cleaned_data)
             _set_configured(service, True)
             
-            # Return to home page
             # TODO: Use reverse function to get correct URL
             return HttpResponseRedirect('/appfx/setupfx/home/')
     else:
@@ -64,6 +63,14 @@ def setup(request):
     return {
         'form': form,
     }
+
+@login_required
+def unconfigure(request):
+    service = _create_service()
+    _set_configured(service, False)
+    
+    # TODO: Use reverse function to get correct URL
+    return HttpResponseRedirect('/appfx/setupfx/home/')
 
 # ------------------------------------------------------------------------------
 
