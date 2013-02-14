@@ -9,12 +9,6 @@ def appfx(request):
         # Add common names used by various templates
         'app_name': match.app_name,
         'url_name': match.url_name,
-
-        # Add storage for static CSS and script files imported by components 
-        'js_statics': {},
-        'css_statics': {},
-        'shim_storage': {},
-        'options_storage': {},
         
         # This is a workaround that will allow us to use True and False
         # inside templates (e.g. to pass to template tags)

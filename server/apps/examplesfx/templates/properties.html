@@ -1,6 +1,6 @@
 {% extends "appfx:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
@@ -71,10 +71,10 @@
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
+    splunkjs.mvc.on("start", function() {
         // Fetch a reference to the control and contexts
-        var radio = AppFx.Components.getInstance("timeline-radio");
-        var simpleSearch1 = AppFx.Components.getInstance("simplesearch1");
+        var radio = splunkjs.mvc.Components.getInstance("timeline-radio");
+        var simpleSearch1 = splunkjs.mvc.Components.getInstance("simplesearch1");
         
         // Add our static choices
         radio.settings.set("choices", [

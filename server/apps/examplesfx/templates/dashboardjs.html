@@ -1,6 +1,6 @@
 {% extends "appfx:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
@@ -90,30 +90,30 @@
     // Because we didn't use the Django template tags, we have to load our
     // dependencies manually.
     var deps = [
-        "appfx/splunkui/chart",
-        "appfx/splunkui/resulttable",
-        "appfx/splunkui/searchcontext",
-        "appfx/splunkui/single",
+        "splunk.mvc/chart",
+        "splunk.mvc/resulttable",
+        "splunk.mvc/searchcontext",
+        "splunk.mvc/single",
     ];
-    AppFx.load(deps, function() {
+    splunkjs.mvc.load(deps, function() {
         // Here we are creating the three controls we are going to be using:
          
         // Table
-        AppFx.Components.create("appfx-resulttable", "table1", {
+        splunkjs.mvc.Components.create("appfx-resulttable", "table1", {
             contextid: "search1",
             el: $("#table1")
         }).render();
         
         // Single Value
         // We also give it the 'beforeLabel' option
-        AppFx.Components.create("appfx-single", "single1", {
+        splunkjs.mvc.Components.create("appfx-single", "single1", {
             contextid: "search2",
             beforeLabel: "Count of Events",
             el: $("#single1")
         }).render();
         
         // Chart
-        AppFx.Components.create("appfx-chart", "chart1", {
+        splunkjs.mvc.Components.create("appfx-chart", "chart1", {
             contextid: "search3",
             type: "line",
             el: $("#chart1")
@@ -121,17 +121,17 @@
         
         
         // Create the three search contexts that we need
-        AppFx.Components.create("appfx-searchcontext", "search1", {
+        splunkjs.mvc.Components.create("appfx-searchcontext", "search1", {
             earliest_time: "-24h@h",
             latest_time: "now",
             search: "search index=_internal | stats count by sourcetype" 
         }).start();
-        AppFx.Components.create("appfx-searchcontext", "search2", {
+        splunkjs.mvc.Components.create("appfx-searchcontext", "search2", {
             earliest_time: "-15m",
             latest_time: "now",
             search: "search index=_internal | stats count" 
         }).start();
-        AppFx.Components.create("appfx-searchcontext", "search3", {
+        splunkjs.mvc.Components.create("appfx-searchcontext", "search3", {
             earliest_time: "-24h@h",
             latest_time: "now",
             search: "search index=_internal | timechart count by sourcetype" 

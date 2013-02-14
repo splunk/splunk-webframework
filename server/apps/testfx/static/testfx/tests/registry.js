@@ -1,12 +1,12 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require("appfx.main");
-    var assert = require("testfx/chai").assert;
-    var BaseContext = require("appfx/splunkui/basecontext");
-    var BaseControl = require("appfx/splunkui/basecontrol");
-    var testutil = require("testfx/testutil");
+    var mvc = require("splunk.mvc");
+    var assert = require("../chai").assert;
+    var BaseContext = require("splunk.mvc/basecontext");
+    var BaseControl = require("splunk.mvc/basecontrol");
+    var testutil = require("../testutil");
     
-    var R = AppFx.Components;
+    var R = splunkjs.mvc.Components;
     
     var MockControl = BaseControl.extend({
         salt: testutil.getUniqueName()

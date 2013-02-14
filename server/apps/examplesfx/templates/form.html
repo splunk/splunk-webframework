@@ -1,6 +1,6 @@
 {% extends "appfx:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
@@ -133,12 +133,12 @@
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
+    splunkjs.mvc.on("start", function() {
         // Fetch a reference to the control and contexts
-        var select = AppFx.Components.getInstance("counts");
-        var radio = AppFx.Components.getInstance("host-radio");
-        var simpleSearch1 = AppFx.Components.getInstance("simplesearch1");
-        var simpleSearch2 = AppFx.Components.getInstance("simplesearch2");
+        var select = splunkjs.mvc.Components.getInstance("counts");
+        var radio = splunkjs.mvc.Components.getInstance("host-radio");
+        var simpleSearch1 = splunkjs.mvc.Components.getInstance("simplesearch1");
+        var simpleSearch2 = splunkjs.mvc.Components.getInstance("simplesearch2");
         
         // Set up default values for $count$ and $host$
         simpleSearch1.query.set({"count": 10, "host": "*"});

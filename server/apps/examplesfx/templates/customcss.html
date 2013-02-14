@@ -10,7 +10,7 @@
     <meta name="description" content="listen to your data">
     <meta name="author" content="Splunk Inc.">
     
-    <link rel="stylesheet" href="{{STATIC_URL}}appfx/contrib/bootstrap.css">
+    <link rel="stylesheet" href="{{STATIC_URL}}splunk/contrib/bootstrap.css">
     <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
     
     <style>
@@ -21,7 +21,7 @@
         }
     </style>
     <script>
-        window.APPFX_STATIC_URL = "{{STATIC_URL}}";
+        window.SPLUNKJS_STATIC_URL = "{{STATIC_URL}}";
     </script>
 </head>
 
@@ -37,7 +37,7 @@
           <a class="brand" href="{% url 'examplesfx:home'%}">Examples</a>
           <div class="nav-collapse">
             <ul class="nav">
-              <li id="splunkui"><a href="{% url 'examplesfx:home'%}">Go Back to Splunk UI</a></li>
+              <li><a href="{% url 'examplesfx:home'%}">Go Back to Splunk UI</a></li>
             </ul>
             <ul class="nav pull-right">
               <li><a href="{% url 'logout'%}">Logout</a></li>
@@ -117,47 +117,48 @@
         </div>
     </div>
     
-    <script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.js"></script>
-    <script src="{{STATIC_URL}}appfx/splunkjs/splunk.js"></script>
-    <script src="{{STATIC_URL}}appfx/contrib/require.js"></script>
-    <script src="{{STATIC_URL}}appfx/splunkui/appfx.bootstrap.js"></script>
+    <script src="{{STATIC_URL}}splunk/contrib/jquery-1.8.2.js"></script>
+    <script src="{{STATIC_URL}}splunk/splunk.js"></script>
+    <script src="{{STATIC_URL}}splunk/contrib/require.js"></script>
+    <script src="{{STATIC_URL}}splunk/mvc/mvc.config.js"></script>
     <script>
         var deps = [
-            "appfx/splunkui/chart",
-            "appfx/splunkui/resulttable",
-            "appfx/splunkui/searchcontext",
-            "appfx/splunkui/single",
+            "splunk.mvc/chart",
+            "splunk.mvc/resulttable",
+            "splunk.mvc/searchcontext",
+            "splunk.mvc/single",
         ];
-        AppFx.load(deps, function(AppFx) {
+        
+        splunkjs.mvc.load(deps, function() {
             // Create the controls            
-            AppFx.Components.create("appfx-resulttable", "resulttable1", {
+            splunkjs.mvc.Components.create("appfx-resulttable", "resulttable1", {
                 contextid: "search1",
                 el: $("#resulttable1")
             }).render();
-            AppFx.Components.create("appfx-single", "singlevalue1", {
+            splunkjs.mvc.Components.create("appfx-single", "singlevalue1", {
                 contextid: "search2",
                 el: $("#singlevalue1")
             }).render();
-            AppFx.Components.create("appfx-chart", "chart1", {
+            splunkjs.mvc.Components.create("appfx-chart", "chart1", {
                 contextid: "search3",
                 type: "line",
                 el: $("#chart1")
             }).render();
             
             // Create the contexts
-            AppFx.Components.create("appfx-searchcontext", "search1", {
+            splunkjs.mvc.Components.create("appfx-searchcontext", "search1", {
                 earliest_time: "-24h@h",
                 latest_time: "now",
                 search: "search index=_internal | stats count by sourcetype",
                 cache: true
             }).start();
-            AppFx.Components.create("appfx-searchcontext", "search2", {
+            splunkjs.mvc.Components.create("appfx-searchcontext", "search2", {
                 earliest_time: "-15m",
                 latest_time: "now",
                 search: "search index=_internal | stats count" ,
                 cache: true
             }).start();
-            AppFx.Components.create("appfx-searchcontext", "search3", {
+            splunkjs.mvc.Components.create("appfx-searchcontext", "search3", {
                 earliest_time: "-24h@h",
                 latest_time: "now",
                 search: "search index=_internal | timechart count by sourcetype",

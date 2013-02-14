@@ -1,14 +1,14 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require("appfx.main");
-    var assert = require("testfx/chai").assert;
-    var testutil = require("testfx/testutil");
+    var mvc = require("splunk.mvc");
+    var assert = require("../chai").assert;
+    var testutil = require("../testutil");
     
     // Load (and register) components that will be tested
     // (even if the associated module object is not referenced by tests).
-    var SearchContext = require("appfx/splunkui/searchcontext");
-    var SavedSearchContext = require("appfx/splunkui/savedsearchcontext");
-    var GroupContext = require("appfx/splunkui/groupcontext");
+    var SearchContext = require("splunk.mvc/searchcontext");
+    var SavedSearchContext = require("splunk.mvc/savedsearchcontext");
+    var GroupContext = require("splunk.mvc/groupcontext");
     
     var notImplemented = testutil.notImplemented;
     
@@ -112,18 +112,18 @@ define(function(require, exports, module) {
                     var contextName = testutil.getUniqueName();
                     var subcontextName = testutil.getUniqueName();
                     
-                    var context = AppFx.Components.create(
+                    var context = splunkjs.mvc.Components.create(
                         "appfx-groupcontext", contextName, {
                             contexts: [subcontextName]
                         });
-                    var oldSubcontext = AppFx.Components.create(
+                    var oldSubcontext = splunkjs.mvc.Components.create(
                         "appfx-searchcontext", subcontextName,
                         { autostart: false });
                     
                     context.start();
                     
-                    AppFx.Components.revokeInstance(subcontextName);
-                    var newSubcontext = AppFx.Components.create(
+                    splunkjs.mvc.Components.revokeInstance(subcontextName);
+                    var newSubcontext = splunkjs.mvc.Components.create(
                         "appfx-searchcontext", subcontextName,
                         { autostart: false });
                     
@@ -154,14 +154,14 @@ define(function(require, exports, module) {
         var subcontext1Name = testutil.getUniqueName();
         var subcontext2Name = testutil.getUniqueName();
         
-        var context = AppFx.Components.create(
+        var context = splunkjs.mvc.Components.create(
             "appfx-groupcontext", contextName, {
                 contexts: [subcontext1Name, subcontext2Name]
             });
-        var subcontext1 = AppFx.Components.create(
+        var subcontext1 = splunkjs.mvc.Components.create(
             "appfx-searchcontext", subcontext1Name,
             { autostart: false });
-        var subcontext2 = AppFx.Components.create(
+        var subcontext2 = splunkjs.mvc.Components.create(
             "appfx-savedsearchcontext", subcontext2Name,
             { autostart: false });
         

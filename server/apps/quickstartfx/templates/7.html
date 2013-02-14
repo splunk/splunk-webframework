@@ -1,6 +1,6 @@
 {% load url from future %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 <!DOCTYPE html>
 <html>
@@ -11,10 +11,10 @@
 		<link href="{{STATIC_URL}}quickstartfx/css/style.css" rel="stylesheet" type="text/css" media="screen">
 		<link href="{{STATIC_URL}}quickstartfx/css/prettify.css" rel="stylesheet" type="text/css" media="screen">
 		<script type="text/javascript" src="{{STATIC_URL}}quickstartfx/js/prettify.js"></script>
-		<script type="text/javascript" src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.min.js"></script>
+		<script type="text/javascript" src="{{STATIC_URL}}splunk/contrib/jquery-1.8.2.min.js"></script>
 
 		<script>
-        	window.APPFX_STATIC_URL = "{{STATIC_URL}}";
+        	window.SPLUNKJS_STATIC_URL = "{{STATIC_URL}}";
     	</script>
     	<style type="text/css">
     		#example-map{
@@ -70,10 +70,10 @@
 
 &#123;% search id="example-search" search="| inputlookup appfx.demo.dataset.csv | rename _time as download_time, device_ip_latitude as lat, device_ip_longitude as lng | stats count by lat, lng" %&#125; 
 </pre>
-						<p>With JavaScript, the map and table are selected through the <b>AppFx</b> object and a click handler is attached to the table. When a row in the table is clicked, the previous selection is cleared and a new marker is added to the map.</p>
+						<p>With JavaScript, the map and table are selected through the <b>splunkjs.mvc</b> object and a click handler is attached to the table. When a row in the table is clicked, the previous selection is cleared and a new marker is added to the map.</p>
 <pre class="prettyprint linenums">
-var table= AppFx.Components.getInstance("example-table");
-var exampleMap= AppFx.Components.getInstance("example-map");
+var table= splunkjs.mvc.Components.getInstance("example-table");
+var exampleMap= splunkjs.mvc.Components.getInstance("example-map");
 
 var marker = null;
 table.on("clicked:row", function(e){
@@ -112,16 +112,16 @@ table.on("clicked:row", function(e){
 			</div>
 			<div style="clear: both;"></div>
 		</div>
-		<script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.js"></script>
-	    <script src="{{STATIC_URL}}appfx/splunkjs/splunk.js"></script>
+		<script src="{{STATIC_URL}}splunk/contrib/jquery-1.8.2.js"></script>
+	    <script src="{{STATIC_URL}}splunk/splunk.js"></script>
 
 		{% component_loader %}
 
 	    <script type="text/javascript">
 
-	    		AppFx.on("start",function() {
-		            	var table= AppFx.Components.getInstance("example-table");
-		            	var exampleMap= AppFx.Components.getInstance("example-map");
+	    		splunkjs.mvc.on("start",function() {
+		            	var table= splunkjs.mvc.Components.getInstance("example-table");
+		            	var exampleMap= splunkjs.mvc.Components.getInstance("example-map");
 
 		            	var marker = null;
 		          		table.on("clicked:row", function(e){

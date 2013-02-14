@@ -6,15 +6,15 @@
 </head>
 <body>
   <div id="mocha"></div>
-  <script>window.APPFX_STATIC_URL = "{{STATIC_URL}}";</script>
+  <script>window.SPLUNKJS_STATIC_URL = "{{STATIC_URL}}";</script>
   
-  <script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.min.js"></script>
+  <script src="{{STATIC_URL}}splunk/contrib/jquery-1.8.2.min.js"></script>
   <script src="{{STATIC_URL}}testfx/mocha.js"></script>
-  <script src="{{STATIC_URL}}appfx/splunkjs/splunk.js"></script>
-  <script src="{{STATIC_URL}}appfx/contrib/require.js"></script>
-  <script src="{{STATIC_URL}}appfx/splunkui/appfx.bootstrap.js"></script>
+  <script src="{{STATIC_URL}}splunk/splunk.js"></script>
+  <script src="{{STATIC_URL}}splunk/contrib/require.js"></script>
+  <script src="{{STATIC_URL}}splunk/mvc/mvc.config.js"></script>
   <script>  
-    AppFx.load([], function(AppFx) {
+    splunkjs.mvc.load([], function() {
       var _ = require('underscore');
       mocha.setup('exports');
       

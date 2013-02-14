@@ -1,6 +1,6 @@
 {% extends "appfx:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
@@ -75,9 +75,9 @@
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
-        var table = AppFx.Components.getInstance("table");
-        var simpleSearch2 = AppFx.Components.getInstance("simplesearch2");
+    splunkjs.mvc.on("start", function() {
+        var table = splunkjs.mvc.Components.getInstance("table");
+        var simpleSearch2 = splunkjs.mvc.Components.getInstance("simplesearch2");
         
         // Set the index whenever the table is clicked
         table.on("clicked:row", function(e) {

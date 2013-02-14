@@ -193,6 +193,7 @@ INSTALLED_APPS = (
     'django.contrib.staticfiles',
     'debug_toolbar',
     'appfx',
+    'splunk',
 )
 
 # Auto-discover all user applications from the apps/ directory
@@ -230,7 +231,8 @@ JS_CACHE_DIR = "JS_CACHE"
 
 CLIENT_CONFIG = {
     "STATIC_URL": str(STATIC_URL),
-    "PROXY_PATH": str(PROXY_PATH)
+    "PROXY_PATH": str(PROXY_PATH),
+    "ENABLE_PROTECTIONS": True
 }
 
 # To allow multi-line templatetags, we have to modify the regex in

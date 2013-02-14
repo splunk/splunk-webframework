@@ -8,21 +8,21 @@
 		<link href="{{STATIC_URL}}quickstartfx/css/bootstrap.css" rel="stylesheet" media="screen">
 		<link href="{{STATIC_URL}}quickstartfx/css/style.css" rel="stylesheet" type="text/css" media="screen">
 		<link href="{{STATIC_URL}}quickstartfx/css/prettify.css" rel="stylesheet" type="text/css" media="screen">
-		<script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.min.js"></script>
-		<script src="{{STATIC_URL}}appfx/contrib/jquery.cookie.js"></script>
+		<script src="{{STATIC_URL}}splunk/contrib/jquery-1.8.2.min.js"></script>
+		<script src="{{STATIC_URL}}splunk/contrib/jquery.cookie.js"></script>
 		<style>
 		</style>
 		<script>
-			window.APPFX_STATIC_URL = "{{STATIC_URL}}";
+			window.SPLUNKJS_STATIC_URL = "{{STATIC_URL}}";
 			
 			/*
-			 * Collapse the Django debug toolbar (DjDT) by default in AppFx.
+			 * Collapse the Django debug toolbar (DjDT) by default in splunkjs.mvc.
 			 * 
 			 * DjDT by itself defaults to being maximized, which it undesirable
-			 * for AppFx because it obscures elements on the page behind it.
+			 * for the App Framework because it obscures elements on the page behind it.
 			 * There is no documented configuration in DjDT to disable this
 			 * behavior so we manually collapse the DjDT toolbar (and remember
-			 * this setting) upon the first launch of AppFx.
+			 * this setting) upon the first launch of splunkjs.mvc.
 			 */
 			$(document).ready(function() {
 			    var LAUNCHED_COOKIE_NAME = 'splunk_appfx_launched';
