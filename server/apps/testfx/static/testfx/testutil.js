@@ -11,6 +11,15 @@ define(function(require, exports, module) {
             done();
         },
         
+        appfxLookup : function(name){
+            return AppFx.Components.getInstance(name);
+        },
+        createUniqueDiv : function(attachTo){
+            var divName = this.getUniqueName();
+            attachTo.append("<div id='" + divName + "'></div>");
+            return divName;
+        },
+        
         // ### Assertions ###
         
         assertEventuallyTrue: function(predicate, message, next) {

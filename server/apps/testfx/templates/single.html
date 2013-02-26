@@ -27,10 +27,10 @@
       <a class="btn btn-primary span1 offset2" href="{% url 'testfx:next' id='single' %}">Next</a>
     </div>
     <div class="row">
-      <div clas="span4">
+      <div class="span4">
         <div id="hook" class="splunk"></div>
       </div>
-      <div class="span4 offset4" >
+      <div class="span4" >
         <div id="mocha"></div>
         
       </div>
@@ -38,7 +38,7 @@
   </div>
   <script>  
     var deps = ["appfx/splunkui/single",
-                "appfx/splunkui/searchcontext",
+                "testfx/mocksearchcontext",
     ];
       AppFx.load(deps,function(AppFx) {
           
@@ -52,7 +52,8 @@
 
         require(
           [
-            "testfx/tests/single", 
+            "testfx/tests/single",
+            
           ], 
           function() {
             _.each(arguments, function(suite) {

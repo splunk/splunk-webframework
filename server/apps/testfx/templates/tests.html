@@ -16,7 +16,7 @@
   <script>  
     AppFx.load([], function(AppFx) {
       var _ = require('underscore');
-      mocha.setup('exports');
+      mocha.setup({ui: 'exports', ignoreLeaks: true});
       
       mocha.add = function(suite) {
         mocha.suite.emit('require', suite);

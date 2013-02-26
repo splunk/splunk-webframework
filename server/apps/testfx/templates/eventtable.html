@@ -11,36 +11,57 @@
   <script>window.APPFX_STATIC_URL = "{{STATIC_URL}}";</script>
   
   <script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.min.js"></script>
+  <script src="{{STATIC_URL}}testfx/mocha.js"></script>
   <script src="{{STATIC_URL}}appfx/splunkjs/splunk.js"></script>
   <script src="{{STATIC_URL}}appfx/contrib/require.js"></script>
   <script src="{{STATIC_URL}}appfx/splunkui/appfx.bootstrap.js"></script>
   <style type="text/css">
-    #content{
-      width: 800px;
-    }
+  
   </style>
   <div id="content">
-    <h3>eventtable</h3>
-    <p>Should be an eventtable</p>
-
-    <div id="hook" class="splunk"></div>
-
-    <a href="{% url 'testfx:next' id='eventtable' %}">Next</a>
+    <div class="row">
+      <div class="span4">
+      <h3>eventtable</h3>
+      <p>Should be a eventtable control</p>
+      </div>
+      <a class="btn btn-primary span1 offset2" href="{% url 'testfx:next' id='eventtable' %}">Next</a>
+    </div>
+    <div class="row">
+      <div class="span7">
+        <div id="hook" class="splunk"></div>
+      </div>
+      <div class="span5" >
+        <div id="mocha"></div>
+        
+      </div>
+    </div>
   </div>
   <script>  
     var deps = ["appfx/splunkui/eventtable/eventtable",
-                "appfx/splunkui/searchcontext",
+                "testfx/mocksearchcontext",
     ];
       AppFx.load(deps,function(AppFx) {
-          AppFx.Components.create("appfx-eventtable", "example-eventtable", {
-          contextid: "test-search",
-          el: $("#hook") 
-      }).render();
-      AppFx.Components.create("appfx-searchcontext", "test-search", {
-          search: "search index=_internal | head 5",
-          preview: "True",
-          status_buckets: 300
-      }).start();   
+          
+        mocha.globals(['djdt']);
+        mocha.add = function(suite) {
+          mocha.suite.emit('require', suite);
+        };
+
+        var _ = require('underscore');
+        mocha.setup('exports');
+
+        require(
+          [
+            "testfx/tests/eventtable", 
+          ], 
+          function() {
+            _.each(arguments, function(suite) {
+              mocha.add(suite);
+            });
+          
+            mocha.run();
+          }
+        );
     });
   </script>
 </body>

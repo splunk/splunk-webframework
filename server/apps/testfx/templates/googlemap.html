@@ -3,7 +3,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>googlemap tests</title>
+  <title>googlemap test</title>
   <link rel="stylesheet" href="{{STATIC_URL}}testfx/mocha.css" />
   <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}appfx/contrib/bootstrap.css" />
 </head>
@@ -11,39 +11,59 @@
   <script>window.APPFX_STATIC_URL = "{{STATIC_URL}}";</script>
   
   <script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.min.js"></script>
+  <script src="{{STATIC_URL}}testfx/mocha.js"></script>
   <script src="{{STATIC_URL}}appfx/splunkjs/splunk.js"></script>
   <script src="{{STATIC_URL}}appfx/contrib/require.js"></script>
   <script src="{{STATIC_URL}}appfx/splunkui/appfx.bootstrap.js"></script>
   <style type="text/css">
-    #content{
-      width: 800px;
-    }
-    #hook{
-      height: 300px;
+    .googlemap-wrapper{
+        height: 200px;
     }
   </style>
   <div id="content">
-    <h3>googlemap</h3>
-    <p>Should be a googlemap</p>
-
-    <div id="hook" class="splunk"></div>
-
-    <a href="{% url 'testfx:next' id='googlemap' %}">Next</a>
+    <div class="row">
+      <div class="span4">
+      <h3>googlemap</h3>
+      <p>Should be googlemap</p>
+      </div>
+      <a class="btn btn-primary span1 offset2" href="{% url 'testfx:next' id='googlemap' %}">Next</a>
+    </div>
+    <div class="row">
+      <div class="span7">
+        <div id="hook" class="splunk"></div>
+      </div>
+      <div class="span5" >
+        <div id="mocha"></div>
+        
+      </div>
+    </div>
   </div>
   <script>  
     var deps = ["appfx/splunkui/googlemap",
                 "appfx/splunkui/searchcontext",
     ];
       AppFx.load(deps,function(AppFx) {
-          AppFx.Components.create("appfx-googlemap", "example-googlemap", {
-          contextid: "test-search",
-          el: $("#hook") 
-      }).render();
-      AppFx.Components.create("appfx-searchcontext", "test-search", {
-          search: "| inputlookup earthquakes.csv | rename Lat as lat , Lon as lng",
-          preview: "True",
-          status_buckets: 300
-      }).start();   
+          
+        mocha.globals(['djdt']);
+        mocha.add = function(suite) {
+          mocha.suite.emit('require', suite);
+        };
+
+        var _ = require('underscore');
+        mocha.setup('exports');
+
+        require(
+          [
+            "testfx/tests/googlemap", 
+          ], 
+          function() {
+            _.each(arguments, function(suite) {
+              mocha.add(suite);
+            });
+          
+            mocha.run();
+          }
+        );
     });
   </script>
 </body>
