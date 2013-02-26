@@ -6,8 +6,8 @@ define(function(require, exports, module) {
 
     var tests = {
         before: function(done) {
-            var context = AppFx.Components.create("appfx-searchcontext", "test-search", {
-                    search: "| inputlookup testdata.csv | head 100",
+            var context = AppFx.Components.create("appfx-mocksearchcontext", "test-search", {
+                    type: "googlemap",
                     preview: "True",
                     status_buckets: 300
             }).start();

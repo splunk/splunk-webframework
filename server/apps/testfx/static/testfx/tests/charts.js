@@ -38,7 +38,6 @@ define(function(require, exports, module) {
                 }).render();
                 
                 _.delay(function(){
-                    var thing= "foo";
                     assert.lengthOf($('#container1 .highcharts-container'), 1);
                     done(); 
                 }, 40);       

@@ -13,6 +13,7 @@ define(function(require, exports, module) {
     var EventTableMockDataSource = require('testfx/eventtablemockdatasource');
     var FormsMockDataSource = require('testfx/formsmockdatasource');
     var ChartMockDataSource = require('testfx/chartmockdatasource');
+    var GoogleMapDataSource = require('testfx/googlemapmockdatasource');
     var SearchModels = require('appfx/splunkui/searchmodel');
     
     var MockSearchContext = BaseContext.extend({
@@ -75,6 +76,9 @@ define(function(require, exports, module) {
                     break;
                 case "chart":
                     datasource = new ChartMockDataSource(attrs);
+                    break;
+                case "googlemap":
+                    datasource = new GoogleMapDataSource(attrs);
                     break;
                 default:
                     datasource = new MockDataSource(attrs);
