@@ -1,0 +1,8 @@
+# Splunk JavaScript SDK Changelog
+
+## v0.1.1
+
+### Bug fixes
+
+* Fixed a bug when trying to setup the App Framework with a 32-bit install
+of Splunk on a 64-bit Windows installation. 
