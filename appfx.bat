@@ -38,12 +38,12 @@ if not exist "!HOMEPATH!" (
 )
 
 @rem Trim the SPLUNK_HOME variable of spaces
-setlocal enabledelayedexpansion
-for /f "tokens=* delims= " %%a in ("%SPLUNK_HOME%") do set SPLUNK_HOME=%%a
+setlocal enabledelayedexpansion enableextensions 
+for /f "tokens=* delims= " %%a in ("!SPLUNK_HOME!") do set SPLUNK_HOME=%%a
 for /l %%a in (1,1,100) do if "!SPLUNK_HOME:~-1!"==" " set SPLUNK_HOME=!SPLUNK_HOME:~0,-1!
 (
     endlocal
-    set SPLUNK_HOME=%SPLUNK_HOME:"=%
+    set "SPLUNK_HOME=%SPLUNK_HOME:"=%"
 )
 
 @rem Add the node_modules bin directory to the PATH
@@ -58,4 +58,3 @@ mkdir %SCRIPTPATH%\contrib\django 2> nul
 
 @rem Run the actual CLI environment
 "%SPLUNK_HOME%"\bin\splunk cmd python "%SCRIPTPATH%\cli\appdo.py" %*
-
