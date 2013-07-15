@@ -1,0 +1,110 @@
+/*!
+ * Splunk shoestrap
+ * import and override bootstrap vars & mixins
+ */
+.clearfix {
+  *zoom: 1;
+}
+.clearfix:before,
+.clearfix:after {
+  display: table;
+  content: "";
+  line-height: 0;
+}
+.clearfix:after {
+  clear: both;
+}
+.hide-text {
+  font: 0/0 a;
+  color: transparent;
+  text-shadow: none;
+  background-color: transparent;
+  border: 0;
+}
+.input-block-level {
+  display: block;
+  width: 100%;
+  min-height: 26px;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  box-sizing: border-box;
+}
+.ie7-force-layout {
+  *min-width: 0;
+}
+/* ad hoc search mode selector
+    overview: button + dropdown + synthetic select
+    FIXME: why does this not use data-toggle and open class?
+    also why does this not use either dropdown or popdown or synthetic select?
+    TODO: does this need btn-group? maybe just use relative container
+
+    <div class="btn-group view-searchmode">
+        <a href="#" class="btn btn-small dropdown-toggle dropdown-toggle-search-mode" data-toggle="dropdown">
+            <i class="icon-bulb"></i>
+            <span class="link-label">Smart Mode</span>
+        </a>
+        <div class="dropdown-menu dropdown-menu-search-mode" style="display:block;">
+            <div class="arrow"></div>
+            <ul>
+                <li>
+                    <a data-value="fast" href="#">
+                        <span class="link-label">Fast Mode</span>
+                        <span class="link-description">
+                            Field discovery on for event searches. No event or field data for stats searches.
+                        </span>
+                    </a>
+                </li>
+                <li>
+                    <a data-value="smart" href="#">
+                        <span class="link-label">Smart Mode</span>
+                        <span class="link-description">
+                            Field discovery off for event searches. No event or field data for stats searches.
+                        </span>
+                    </a>
+                </li>
+                <li>
+                    <a data-value="verbose" href="#">
+                        <span class="link-label">Verbose Mode</span>
+                        <span class="link-description">All event &amp; field data</span>
+                    </a>
+                </li>
+            </ul>
+        </div><!-- /.dropdown-menu -->
+    </div><!-- /.btn-group -->
+
+*/
+.dropdown-toggle-search-mode i[class^="icon-"]::before {
+  vertical-align: top;
+}
+.dropdown-menu-search-mode {
+  width: 26em;
+}
+.dropdown-menu-search-mode .link-label {
+  *display: block;
+}
+.dropdown-menu-search-mode a {
+  padding-left: 45px !important;
+}
+.dropdown-menu-search-mode .link-description {
+  color: #999999;
+  display: block;
+  font-size: 0.85em;
+}
+.dropdown-menu-search-mode .link-icon {
+  display: block;
+  position: absolute;
+  color: #999999;
+  left: 0;
+  top: 5px;
+  font-size: 2em;
+  width: 1.5em;
+  line-height: 1em;
+  opacity: 0.8;
+  filter: alpha(opacity=80);
+}
+.dropdown-menu-search-mode a .icon-check {
+  left: 30px;
+}
+.dropdown-menu-search-mode li > a {
+  white-space: normal;
+}

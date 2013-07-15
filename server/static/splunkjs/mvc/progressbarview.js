@@ -1,0 +1,174 @@
+
+define('splunkjs/mvc/progressbarview',['require','exports','module','jquery','./mvc','backbone','./basesplunkview','underscore','views/shared/delegates/Popdown','splunk.util'],function(require, exports, module) {
+    var $ = require('jquery');
+    var mvc = require('./mvc');
+    var Backbone = require('backbone');
+    var BaseSplunkView = require('./basesplunkview');
+    var _ = require('underscore');
+    var PopdownView = require('views/shared/delegates/Popdown');
+    var SplunkUtil = require('splunk.util');
+
+    var ProgressBarView = BaseSplunkView.extend({
+        moduleId: module.id,
+        
+        className: 'splunk-progressbar',
+        initialize: function() {
+            if(!this.children) {
+                this.children = {};
+            }
+            this.bindToComponent(this.options.manager, this.onManagerChange, this);
+            this.model = { jobState: new Backbone.Model(), messages: new Backbone.Model() };
+            var debouncedRender = _.debounce(this.render);
+            this.model.jobState.on('change', debouncedRender, this);
+            this.model.messages.on('change', debouncedRender, this);
+        },
+        onManagerChange: function(ctxs, ctx) {
+            if(this.manager) {
+                this.manager.off(null, null, this);
+            }
+            this.manager = ctx;
+            if(!ctx) {
+                return;
+            }
+            this.model.jobState.clear();
+            this.model.messages.clear();
+            this.manager.on("search:start", this.onSearchStart, this);
+            this.manager.on("search:progress", this.onSearchProgress, this);
+            this.manager.on("search:error", this.onSearchFail, this);
+            this.manager.on("search:fail", this.onSearchFail, this);
+            this.manager.on("search:cancelled", this.onSearchCancelled, this);
+            this.manager.replayLastSearchEvent(this);
+        },
+        onSearchStart: function() {
+            this.model.messages.clear();
+            this.model.jobState.set({ text: '', progress: 0, active: true });
+        },
+        onSearchProgress: function(properties) {
+            var content = properties.content || {};
+            var dispatchState = content.dispatchState;
+
+            if(content.messages) {
+                var errMsgs = _(content.messages).chain().where({ 'type': 'ERROR' }).pluck('text').value();
+                var warnMsgs = _(content.messages).chain().where({ 'type': 'WARN' }).pluck('text').value();
+                this.model.messages.set('errors', errMsgs, { unset: _.isEmpty(errMsgs) });
+                this.model.messages.set('warnings', warnMsgs, { unset: _.isEmpty(warnMsgs) });
+            }
+
+            if(dispatchState === undefined) {
+                this.model.jobState.clear();
+            } else if(dispatchState === 'FAILED') {
+                this.model.jobState.clear();
+            } else {
+
+                var progress = content.doneProgress, pct, msg, active = true;
+                if(_.isNumber(progress) && !_.isNaN(progress)) {
+                    pct = String(Math.floor(progress * 100));
+                }
+                var status = _("Loading").t();
+                if(content.isRealTimeSearch) {
+                    if(content.doneProgress === 1) {
+                        msg = '';
+                    } else {
+                        if(pct !== undefined) {
+                            [status, pct + '%'].join(' - ');
+                        } else {
+                            msg = status;
+                        }
+                    }
+                } else {
+                    active = true;
+                    msg = [status, ' - ', pct + '%'].join('');
+                }
+
+                if(content.dispatchState === 'PAUSED') {
+                    msg = _("Paused").t();
+                    active = false;
+                } else {
+                    active = true;
+                }
+
+                if(content.dispatchState === 'DONE') {
+                    msg = _("Done").t();
+                    _.delay(_.bind(this.model.jobState.clear, this.model.jobState), 800);
+                }
+
+                this.model.jobState.set({
+                    text: msg,
+                    progress: pct,
+                    active: active
+                });
+            }
+        },
+        onSearchFail: function() {
+            this.model.jobState.clear();
+        },
+        onSearchCancelled: function() {
+            this.model.jobState.clear();
+        },
+        render: function() {
+            if(this.model.jobState.has('progress')) {
+                if(!this.$progress) {
+                    this.$progress = $('<div class="progress-bar"><div class="progress-msg"></div>' +
+                            '<div class="progress progress-striped">' +
+                            '<div class="bar" style="width: 0%"></div>' +
+                            '</div>' +
+                            '</div>').appendTo(this.el);
+                }
+                this.$('.progress-msg').text(this.model.jobState.get('text'));
+                this.$('.progress')[this.model.jobState.get('active') ? 'addClass' : 'removeClass']('active')
+                        .find('.bar').width((this.model.jobState.get('progress') || 0) + '%');
+
+            } else {
+                if(this.$progress) {
+                    this.$progress.remove();
+                    this.$progress = null;
+                }
+            }
+            if(this.model.messages.has('errors') || this.model.messages.has('warnings')) {
+                if(!this.$error) {
+                    this.$error = $('<div class="error-details">' +
+                                    '<a href="#" class="dropdown-toggle error-indicator"><i class="icon-warning-sign"></i></a>' +
+                                    '<div class="dropdown-menu"><div class="arrow"></div>' +
+                                        '<ul class="first-group error-list">' +
+                                        '</ul>' +
+                                    '</div>' +
+                                    '</div>').appendTo(this.$el);
+                }
+                this.$error.find('.error-list').html(this.errorStatusTemplate(_.extend({ _:_, errors: null, warnings: null }, this.model.messages.toJSON())));
+
+                if(!this.children.errorPopdown) {
+                    this.children.errorPopdown = new PopdownView({ el: this.$error });
+                }
+                this.$error[this.model.messages.has('errors') ? 'addClass' : 'removeClass']('severe');
+            } else {
+                if(this.$error) {
+                    this.$error.remove();
+                    this.$error = null;
+                }
+                if(this.children.errorPopdown) {
+                    this.children.errorPopdown.remove();
+                    this.children.errorPopdown = null;
+                }
+            }
+
+            return this;
+        },
+        remove: function() {
+            _(this.children).invoke('remove');
+            _(this.model).invoke('off');
+            if(this.manager) {
+                this.manager.off(null, null, this);
+            }
+            return BaseSplunkView.prototype.remove.call(this);
+        },
+        errorStatusTemplate: _.template(
+                '<% _(errors).each(function(error){ %>' +
+                    '<li class="error"><i class="icon-warning-sign"></i> <%- error %></li>' +
+                '<% }); %>' +
+                '<% _(warnings).each(function(warn){ %>' +
+                    '<li class="warning"><i class="icon-warning-sign"></i> <%- warn %></li>' +
+                '<% }); %>')
+    });
+
+    return ProgressBarView;
+});

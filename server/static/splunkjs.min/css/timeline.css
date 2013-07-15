@@ -1,0 +1,62 @@
+/*!
+ * Splunk shoestrap
+ * import and override bootstrap vars & mixins
+ */
+.clearfix {
+  *zoom: 1;
+}
+.clearfix:before,
+.clearfix:after {
+  display: table;
+  content: "";
+  line-height: 0;
+}
+.clearfix:after {
+  clear: both;
+}
+.hide-text {
+  font: 0/0 a;
+  color: transparent;
+  text-shadow: none;
+  background-color: transparent;
+  border: 0;
+}
+.input-block-level {
+  display: block;
+  width: 100%;
+  min-height: 26px;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  box-sizing: border-box;
+}
+.ie7-force-layout {
+  *min-width: 0;
+}
+.splunk-charting-Timeline .splunk-charting-label {
+  cursor: default;
+}
+.splunk-charting-Timeline .splunk-charting-TimeAxisLabels .splunk-charting-label {
+  margin-left: 5px;
+  margin-right: 5px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+.splunk-charting-Timeline .splunk-charting-NumericAxisLabels .splunk-charting-label {
+  margin-left: 5px;
+  margin-right: 5px;
+  margin-top: 3px;
+  margin-bottom: 3px;
+}
+.splunk-charting-Timeline .splunk-charting-ClickDragRangeMarker .splunk-charting-label,
+.splunk-charting-Timeline .splunk-charting-CursorMarker .splunk-charting-label {
+  color: #000000;
+  margin-left: 7px;
+  margin-right: 7px;
+}
+.splunk-charting-Timeline .splunk-charting-Tooltip .splunk-charting-label {
+  color: #ffffff;
+  margin-left: 7px;
+  margin-right: 7px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}

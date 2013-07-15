@@ -1,0 +1,16 @@
+/*  */
+
+/* Bootstrap Css Map Fix*/
+.splunk-googlemap img { 
+  max-width: none;
+}
+/* Bootstrap Css Map Fix*/
+.splunk-googlemap label { 
+  width: auto; 
+  display:inline; 
+} 
+/* Set a small height on the map so that it shows up*/
+.splunk-googlemap {
+    min-height: 100px;
+    height: 100%;
+}
