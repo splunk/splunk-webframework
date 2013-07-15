@@ -1,17 +1,17 @@
-// Copyright 2012 Splunk, Inc.
+// 
 
 define(function(require, exports, module) {
-    var AppFx = require('appfx.main');
-    var BaseControl = require("appfx/splunkui/basecontrol");
+    var mvc = require('splunkjs/mvc');
+    var BaseSplunkView = require("splunkjs/mvc/basesplunkview");
     var _ = require("underscore");
 
-    var ExpandoTable = BaseControl.extend({
+    var ExpandoTable = BaseSplunkView.extend({
         className: "examplesfx-expandotable",
 
         options: {
-            contextid: null,
+            managerid: null,
             table: null,
-            datasource: "results",
+            data: "results",
             valueField: "",
             targetToken: "",
             template: ""
@@ -27,36 +27,36 @@ define(function(require, exports, module) {
             // table, because we don't know if they exist yet or not, and could
             // change in the future.
             this.bindToComponent(this.settings.get("table"), this.onTableChange, this);
-            this.bindToComponent(this.settings.get("contextid"), this.onContextChange, this);
+            this.bindToComponent(this.settings.get("managerid"), this.onContextChange, this);
         },
         
         onContextChange: function(contexts, context) {
-            // Deregister from any old contexts and datasources
+            // Deregister from any old contexts and result models
             if (this.context) {
                 this.context.off(null, null, this);
                 this.context = null;
             }
-            if (this.datasource) {
-                this.datasource.off(null, null, this);
-                this.datasource.destroy();
-                this.datasource = null;
+            if (this.resultsModel) {
+                this.resultsModel.off(null, null, this);
+                this.resultsModel.destroy();
+                this.resultsModel = null;
             }
             
             // Bail out if there is no new context (e.g. is somebody removed
-            // a context with the name we bound to).
+            // a context with the id we bound to).
             if (!context) {
                 return;
             }
 
             this.context = context;
-            this.datasource = this.context.data(this.settings.get("datasource"), {
+            this.resultsModel = this.context.data(this.settings.get("data"), {
                 count: 1
             });
             
             // In this example, we will register just for data updates. However,
             // if we wanted to show search messages (such as errors), we would have
             // to bind to the search context too.
-            this.datasource.on("data", this.onDataChanged, this);
+            this.resultsModel.on("data", this.onDataChanged, this);
         },
 
         onTableChange: function(components, table) {
@@ -94,7 +94,7 @@ define(function(require, exports, module) {
                 
                 // We need to find the number of columns in the table, which will be the number
                 // of fields in the search, plus one for the index.
-                var numColumns = that.table.datasource.data().fields.length + 1;
+                var numColumns = that.table.resultsModel.data().fields.length + 1;
                 
                 // Create the new row and add it to the DOM after the clicked row
                 var newRow = $("<tr class='info-box'><td class='info-td' colspan='" + numColumns + "'></td></tr>");
@@ -104,9 +104,12 @@ define(function(require, exports, module) {
                 that.context.query.set(that.settings.get("targetToken"), value.trim());
                 that.context.startSearch();
             });
+
+            this.render();
         },
         
         render: function(content) {
+            
             this.$el.empty();
 
             if (this.table) {
@@ -118,16 +121,13 @@ define(function(require, exports, module) {
         
         onDataChanged: function() {
             // When there is data, render the template
-            if (this.datasource.hasData()) {
+            if (this.resultsModel.hasData()) {
                 var infoBox = this.$("td.info-td");
-                var data = this.datasource.collection().at(0);
+                var data = this.resultsModel.collection().at(0);
                 infoBox.html(_.template(this.settings.get("template"), data.toJSON()));
             }
         },
     });
-    
-    // We prefix with our app name to make sure there are no collisions.
-    AppFx.Components.registerType('examplesfx-expandotable', ExpandoTable);
     
     return ExpandoTable;
 });

@@ -1,0 +1,117 @@
+{% extends "splunkdj:base_with_app_bar.html" %}
+
+{% load splunkmvc %}
+
+{% block title %}Map Views{% endblock title %}
+
+{% block css %}
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/prettify.css"/>
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/custom.css"/>
+
+<style type="text/css">
+    .map-container {
+        height: 400px;
+    }
+</style>
+{% endblock css %}
+
+{% block content %}
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
+    <div class="row">
+        <div class="span12 dashboard-header clearfix">
+            <h2>Map Views</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" >
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body html">
+    <p>The <b>GoogleMap</b> view binds a map to a search that interprets geographic data and displays it on a map. Data with <code>lat</code> and <code>lng</code> fields are used to populate map markers according to location. 
+
+    <h4>Example</h4>
+    <p>In this example, we use the <code>&#123;% googlemap %&#125;</code> tag to create the <b>GoogleMap</b> view, which is bound to a search that includes latitude and longitude values. Search results (markers) are automatically displayed at their locations on the map.
+
+    <div class="bs-docs-example map-container">
+       {% googlemap id="example-map" managerid="geosearch" %}  
+    </div>
+
+<ul class="nav nav-tabs">
+                <li class="active">
+                    <a href="#django" data-toggle="tab">Django</a>
+                </li>
+                <li>
+                    <a href="#js" data-toggle="tab">JavaScript</a>
+                </li>
+            </ul>
+            <div class="tab-content code-sample">
+                <div class="tab-pane active django" id="django">
+                    <pre class="prettyprint linenums lang-js">
+&#123;% block content %&#125;
+    &#123;% googlemap id="example-map" managerid="geosearch" %&#125;
+&#123;% endblock content %&#125;
+
+&#123;% block managers %&#125; 
+    &#123;% searchmanager id="geosearch" search="| inputlookup earthquakes.csv | rename Lat as lat Lon as lng | stats count by lat, lng" %&#125; 
+&#123;% endblock managers%&#125;</pre>
+                </div>
+                <div class="tab-pane" id="js">
+                    <pre class="prettyprint linenums lang-js">
+var GoogleMapView = require("splunkjs/mvc/googlemapview");
+new GoogleMapView({
+    name: "example-map",
+    managerid: "geosearch",
+    el: $("#divToHangOn")
+}).render();
+
+var SearchManager = require("splunkjs/mvc/searchmanager");
+new SearchManager({
+    name: "geosearch",
+    search: "| inputlookup earthquakes.csv | rename Lat as lat Lon as lng | stats count by lat, lng"
+});    </div>
+            </div>  
+
+    <h3>Options</h3>
+    <ul>
+        <p><code>tileSource</code>: Tiles to use in map render. Can be <code>openStreetMap</code> or <code>splunk</code>. Defaults to <code>splunk</code>. </p>
+    </ul>
+
+
+</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+{% endblock content %}
+
+{% block managers %}
+    {% searchmanager id="geosearch" search="| inputlookup earthquakes.csv | rename Lat as lat Lon as lng | stats count by lat, lng" %}
+{% endblock managers %}
+
+{% block js %}
+
+{{block.super}}
+
+<script type="text/javascript">
+
+require.config({
+    shim: {
+        "componentfx/prettify": {
+            deps: [],
+            exports: "prettyPrint"
+        } 
+    }
+});
+
+require(["componentfx/prettify", "bootstrap.tab"], function(prettyPrint) {
+    //pp formats code samples
+    prettyPrint();
+});
+ 
+</script>
+
+{% endblock js %}

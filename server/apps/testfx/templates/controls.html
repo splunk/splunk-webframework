@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Application Framework Control Tests</title>
+  <link rel="stylesheet" href="{{STATIC_URL}}testfx/mocha.css" />
+  <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/contrib/bootstrap.css" />
+</head>
+</head>
+<body>
+  <script>window.SPLUNKJS_STATIC_URL = "{{STATIC_URL}}";</script>
+  
+  <script src="{{STATIC_URL}}testfx/jquery-1.8.2.min.js"></script>
+  <script src="{{STATIC_URL}}testfx/mocha.js"></script>
+  <script src="{{STATIC_URL}}splunkjs/splunk.js"></script>
+  <script src="{{STATIC_URL}}splunkjs/contrib/require.js"></script>
+  <script src="{{STATIC_URL}}splunkjs/config.js"></script> 
+  
+  <div id="content">
+    <h3>Control test pages</h3>
+    <ul>
+      <p><a href="{% url 'testfx:controls' id='resulttable' %}">resulttable</a></p>
+      <p><a href="{% url 'testfx:controls' id='single' %}">single</a></p>
+      <p><a href="{% url 'testfx:controls' id='searchbar' %}">searchbar</a></p>
+      <p><a href="{% url 'testfx:controls' id='timepicker' %}">timepicker</a></p>
+      <p><a href="{% url 'testfx:controls' id='timeline' %}">timeline</a></p>
+      <p><a href="{% url 'testfx:controls' id='eventtable' %}">eventtable</a></p>
+      <p><a href="{% url 'testfx:controls' id='forms' %}">forms</a></p>
+      <p><a href="{% url 'testfx:controls' id='charts' %}">charts</a></p>
+      <p><a href="{% url 'testfx:controls' id='googlemap' %}">googlemap</a></p>
+      <!-- <p><a href="{% url 'testfx:controls' id='d3chart' %}">d3chart</a></p> -->
+    </ul>
+  </div>
+  <script>  
+    require(["splunkjs/ready!"], function() {
+        var _ = require('underscore');
+    });
+  </script>
+</body>
+</html>

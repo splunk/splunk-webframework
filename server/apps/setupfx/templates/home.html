@@ -1,0 +1,33 @@
+{% extends "splunkdj:base_with_account_bar.html" %}
+
+{% load splunkmvc %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <style>        
+        .main-area {
+            margin: 0px auto;
+            margin-top: 30px;
+            margin-bottom: 30px;
+            padding: 10px;
+            width: 300px;
+        }
+    </style>
+{% endblock css %}
+
+{% block content %}
+
+    <div>
+        <div class="main-area">
+            <p>I'm the simulated Flurry app!</p>
+            <p><a href="{% url 'setupfx:setup' %}">Edit Settings</a></p>
+            <p><a href="{% url 'setupfx:unconfigure' %}">Mark as Unconfigured (DEBUG)</a></p>
+        </div>
+    </div>
+
+{% endblock content%}
+
+{% block js %}    
+    <!-- No JS yet -->
+{% endblock js %}

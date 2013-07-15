@@ -1,69 +1,75 @@
-{% extends "appfx:base_with_app_bar.html" %}
+{% extends "splunkdj:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
 {% block css %}
-    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
-
-    <style>    
-    </style>
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
 {% endblock css %}
 
 {% block content %}
 
-<div class="container">
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
     <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Drilldown - the target page</h4>
-                </div>
-                <div class="panel-body">
-                    This page is the target of the drilldown example. When you
-                    clicked on the table, we navigated here. You can see in the
-                    code how we use the <code>AppFx.loadDrilldown</code> helper
-                    to load the drilldown parameters, and then we start the searches.
-                    At this point, everything is operating as it normally would,
-                    and you can interact with the components as you would normally.
-                </div>
-            </div>
+        <div class="span12 dashboard-header clearfix">
+            <h2>Drilldown - the target page</h2>
         </div>
     </div>
-    <div class="row">
-        <div class="span6">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Chart 1</h4>
-                </div>
-                <div class="panel-body">
-                    {% chart id="chart1" contextid="search1" type="line" %}
-                </div>
-            </div>
-        </div>
-        <div class="span6">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Chart 2</h4>
-                </div>
-                <div class="panel-body">
-                    {% chart id="chart2" contextid="search2" type="line" %}
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>My Table</h4>
-                </div>
-                <div class="panel-body">
-                    <div class="pull-right">
-                        {% paginator id="table-paginator" %}
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
                     </div>
-                    {% resulttable id="table1" contextid="search1" paginator="table-paginator" %}
+                    <div class="panel-body">
+                        <p>This page is the target of the drilldown example. When you
+                        clicked on the table, we navigated here. You can see in the
+                        code how we use the <code>mvc.loadDrilldown</code> helper
+                        to load the drilldown parameters, and then we start the searches.
+                        At this point, everything is operating as it normally would,
+                        and you can interact with the components as you would normally.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Chart 1</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% chart id="chart1" managerid="search1" type="line" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Chart 2</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% chart id="chart2" managerid="search2" type="line" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>My Table</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% resulttable id="table1" managerid="search1" %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -72,25 +78,25 @@
 
 {% endblock content%}
 
-{% block contexts %}
-    {% search id="search1" search="search index=_internal sourcetype=$sourcetype$ | timechart count" 
+{% block managers %}
+    {% searchmanager id="search1" search="index=_internal sourcetype=$sourcetype$ | timechart count" 
         preview=True cache=60 status_buckets=300 autostart=False %}
         
-    {% search id="search2" search="search index=_internal source=$source$ | head 1000 | timechart count" 
+    {% searchmanager id="search2" search="index=_internal source=$source$ | head 1000 | timechart count" 
         preview=True cache=60 status_buckets=300 autostart=False %}
-{% endblock contexts %}
+{% endblock managers %}
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
+    require(["splunkjs/ready!"], function(mvc) {
         // Since we know this page is the target of a drilldown, we can just use the
         // drilldown helper to load the information that is encoded in the URL.
-        AppFx.loadDrilldown(); 
+        mvc.loadDrilldown(); 
         
-        var search1 = AppFx.Components.getInstance("search1");
-        var search2 = AppFx.Components.getInstance("search2");
+        var search1 = mvc.Components.getInstance("search1");
+        var search2 = mvc.Components.getInstance("search2");
         
-        // Since we told the contexts to not autostart, after the drilldown,
+        // Since we told the managers to not autostart, after the drilldown,
         // we need to start them.
         search1.startSearch();
         search2.startSearch();

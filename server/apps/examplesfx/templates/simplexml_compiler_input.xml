@@ -1,0 +1,72 @@
+<form>
+  <label>AAA-Airport Analysis (forms)</label>
+    <description/>
+    <fieldset submitButton="false">
+        <input type="dropdown" token="s_state" searchWhenChanged="false">
+            <label>State:</label>
+            <choice value="*">ANY</choice>
+            <populatingSearch fieldForValue="OriginStateName" fieldForLabel="OriginStateNameCount">| inputlookup airports
+| stats dc(OriginAirport) as count by OriginStateName
+| eval OriginStateNameCount = OriginStateName . " (" . count . " airports)"
+| sort + OriginStateName</populatingSearch>
+        </input>
+        <input type="dropdown" token="s_airport" searchWhenChanged="true">
+            <label>Airport:</label>
+            <choice value="*">ANY</choice>
+            <populatingSearch fieldForValue="Origin" fieldForLabel="OriginAirport">| inputlookup airports 
+| search OriginStateName="$s_state$"
+| dedup OriginAirport
+| sort + OriginAirport</populatingSearch>
+        </input>
+        <input type="dropdown" token="s_chart" searchWhenChanged="true">
+            <label>Chart Type:</label>
+            <choice value="column">column</choice>
+            <choice value="bar">bar</choice>
+            <choice value="area">area</choice>
+        </input>
+    </fieldset>
+    <row>
+        <single id="element1">
+            <title>Total Departing Flights</title>
+            <searchString>index=faa OriginStateName="$s_state$" Origin="$s_airport$"
+| stats count
+| eval delay=tostring(delay,"commas")</searchString>
+            <earliestTime>1357027200</earliestTime>
+            <latestTime>1359705600</latestTime>
+        </single>
+        <single id="element2">
+            <searchTemplate>index=faa OriginStateName="$s_state$" Origin=$s_airport$ 
+| stats avg(DepDelayMinutes) as delay 
+| eval delay=round(delay,2)</searchTemplate>
+            <title>Average Departure Delay</title>
+            <earliestTime>1357027200</earliestTime>
+            <latestTime>1359705600</latestTime>
+        </single>
+        <html id="element6">
+            <h3>User Selections</h3>
+            <p>State = $s_state$<br/>Airport = $s_airport$<br/>Chart Type = $s_chart$</p>
+        </html>
+    </row>
+    <row>
+        <chart id="element5">
+            <title>Cancellation Trend</title>
+            <searchString>index=faa OriginStateName="$s_state$" Origin="$s_airport$" cancellation=*
+| timechart count by cancellation</searchString>
+            <earliestTime>1357027200</earliestTime>
+            <latestTime>1359705600</latestTime>
+            <option name="charting.axisX.scale">linear</option>
+            <option name="charting.axisY.scale">linear</option>
+            <option name="charting.chart">$s_chart$</option>
+            <option name="charting.chart.nullValueMode">gaps</option>
+            <option name="charting.chart.rangeValues">["0","30","70","100"]</option>
+            <option name="charting.chart.stackMode">default</option>
+            <option name="charting.chart.style">shiny</option>
+            <option name="charting.drilldown">1</option>
+            <option name="charting.gaugeAutoRanges">1</option>
+            <option name="charting.gaugeColors">["84E900","FFE800","BF3030"]</option>
+            <option name="charting.height">300</option>
+            <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+            <option name="charting.legend.placement">bottom</option>
+        </chart>
+    </row>
+</form>

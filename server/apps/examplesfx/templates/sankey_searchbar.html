@@ -1,0 +1,96 @@
+{% extends "splunkdj:base_with_app_bar.html" %}
+
+{% load splunkmvc %}
+{% load examples %}
+
+{% block title %}{{app_name}} Custom View with Searchbar{% endblock title %}
+
+{% block css %}
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/custom.css" />
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}examplesfx/contrib/jqueryui/css/ui-lightness/jquery-ui-1.9.2.custom.min.css">
+<style>        
+.sankey-artists, #sankey1 {
+  height: 500px;
+}
+</style>
+{% endblock css %}
+
+{% block content %}
+<div class="dashboard-body container-fluid main-section-body">
+  <div class="row">
+    <div class="span12 dashboard-header clearfix">
+      <h2>Custom Sankey Visualization Bound to Searchbar</h2>
+    </div>
+  </div>
+
+  <div class="dashboard-row">
+   <div class="dashboard-cell" style="width: 100%;">
+    <div class="dashboard-panel">
+      <div class="dashboard-element">
+        <div class="panel-head">
+        </div>
+
+        <div class="panel-body">
+          {% searchbar id="main-searchbar" managerid="search" %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-row">
+  <div class="dashboard-cell" style="width: 100%;">
+    <div class="dashboard-panel">
+      <div class="dashboard-element">
+        <div class="panel-head">
+        </div>
+
+        <div class="panel-body">
+          {% sankey id="sankey1" managerid="search" %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+{% endblock content%}
+
+{% block managers %}
+
+{% searchmanager id="search" search='| inputlookup musicdata.csv | stats count by artist_name, eventtype | where (eventtype="ua-mobile-android" OR eventtype="ua-mobile-ipad" OR eventtype="ua-mobile-blackberry" OR eventtype="ua-mobile-iphone" OR eventtype="ua-mobile-ipod")' %}
+
+{% endblock managers %}
+
+{% block js %}    
+<script>    
+require(["splunkjs/ready!", "underscore"], function(mvc, _) {
+
+        // Customize the sankey component.  As described in
+        // sankeyfx.js, the formatName is an option that expects a
+        // function.  That function takes a name from the search and
+        // returns a formatted name.  In this case, replace access_log
+        // strings for mobile clients with more readable names.
+        mvc.Components.getInstance('sankey1').settings.set({
+          'formatName': function(name) { 
+            return {
+              'ua-mobile-android': 'Android',
+              'ua-mobile-ipad': 'iPad',
+              'ua-mobile-blackberry': 'Blackberry',
+              'ua-mobile-iphone': 'iPhone',
+              'ua-mobile-ipod': 'iPod'
+            }[name] || name;
+          }
+        });
+
+        var search = mvc.Components.getInstance('search');
+        var searchbar = mvc.Components.getInstance('main-searchbar');
+        searchbar.on("change", function() { 
+          search.set('search', searchbar.val());
+        });
+
+      });
+
+</script>
+{% endblock js %}

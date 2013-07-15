@@ -9,6 +9,7 @@ docs/_build
 *.sublime-workspace
 server/static/*
 testdb
-contrib/django
 .appfxrc
+.splunkdjrc*
 .splunkhome
+*.pyo

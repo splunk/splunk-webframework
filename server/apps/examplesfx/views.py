@@ -1,5 +1,5 @@
 from django.contrib.auth.decorators import login_required
-from appfx.decorators.render import render_to
+from splunkdj.decorators.render import render_to
 
 @render_to('examplesfx:home.html')
 @login_required

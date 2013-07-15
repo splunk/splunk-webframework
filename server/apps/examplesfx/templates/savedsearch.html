@@ -1,50 +1,56 @@
-{% extends "appfx:base_with_app_bar.html" %}
+{% extends "splunkdj:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
 {% block css %}
-    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
 {% endblock css %}
 
 {% block content %}
-
-<div class="container">
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
     <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Saved Searches</h4>
-                </div>
-                <div class="panel-body">
-                    This example shows how to use a saved search context to power 
-                    multiple controls.
+        <div class="span12 dashboard-header clearfix">
+            <h2>Saved Searches</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                    <p>This example shows how to use a saved search manager to power 
+                    multiple views.</p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="row">
-        <div class="span6">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Chart 1</h4>
-                </div>
-                <div class="panel-body">
-                    {% chart id="chart1" contextid="savedsearch1" type="pie" %}
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Chart 1</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% chart id="chart1" managerid="savedsearch1" type="pie" %}
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="span6">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>My Table</h4>
-                </div>
-                <div class="panel-body">
-                    <div class="pull-right">
-                        {% paginator id="table-paginator" %}
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>My Table</h3>
                     </div>
-                    {% resulttable id="table1" contextid="savedsearch1" paginator="table-paginator" %}
+                    <div class="panel-body">
+                    {% resulttable id="table1" managerid="savedsearch1" %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -53,6 +59,6 @@
 
 {% endblock content%}
 
-{% block contexts %}
-    {% savedsearch id="savedsearch1" searchname="Top five sourcetypes" app="search" %}
-{% endblock contexts %}
+{% block managers %}
+    {% savedsearchmanager id="savedsearch1" searchname="Top five sourcetypes" app="search" %}
+{% endblock managers %}

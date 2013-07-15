@@ -1,5 +1,5 @@
 from django.contrib.auth.decorators import login_required
-from appfx.decorators.render import render_to
+from splunkdj.decorators.render import render_to
 
 @render_to('componentfx:home.html')
 @login_required
@@ -8,9 +8,9 @@ def home(request):
         "app_name": "componentfx"
     }
 
-@render_to('componentfx:test.html')
+@render_to()
 @login_required
-def test(request):
+def render_page(request, tmpl="componentfx:home.html"):
     return {
-        "app_name": "componentfx"
+        "TEMPLATE": "componentfx:%s.html" % tmpl
     }

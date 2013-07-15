@@ -1,0 +1,37 @@
+<script src="{% url 'page_config' %}?autoload=1"></script>
+{% if USE_BUILT_FILES %}
+    <script src="{{STATIC_URL}}i18n.js"></script>
+    <script src="{{STATIC_URL}}{{BUILT_FILES_ROOT}}/config.js"></script>
+    <script>
+    require.config({
+        // We use this map to be able to inject our splunkd_utils before the
+        // real one
+        map: {
+            "*": {
+                "util/splunkd_utils": "splunkjs/compiled/splunkd_utils",
+                "css": "splunkjs/contrib/require-css/css"
+            },
+            "splunkjs/compiled/splunkd_utils": {
+                "util/splunkd_utils": "util/splunkd_utils"
+            }
+        }
+    });
+    </script>
+{% else %}
+    <script src="{{STATIC_URL}}i18n.js"></script>
+    <script src="{{STATIC_URL}}splunkjs/contrib/require.js"></script>
+    <script src="{{STATIC_URL}}profiles/shared.js"></script>
+    <script src="{{STATIC_URL}}splunkjs/config.js"></script>
+    <script>
+        // When non-compiled, we want to see all console output.
+        require.config({
+            paths: {
+                'util/console': 'util/console_dev'
+            }
+        });
+    </script>
+{% endif %}
+<script>
+    require.config({baseUrl: "{{STATIC_URL}}"});
+    require(["splunkjs/ready!"]);
+</script>

@@ -1,1 +1,1 @@
-<view template="testfx:/templates/redirect.tmpl"></view>
+<view template="testfx:/templates/redirect.tmpl" isVisible="false"></view>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+{% load splunkmvc %}
+
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Application Framework Tests</title>
+  <link rel="stylesheet" href="{{STATIC_URL}}testfx/mocha.css" />
+</head>
+<body>
+  <div id="mocha"></div>
+  {% component_loader %}
+  <script src="{{STATIC_URL}}testfx/mocha.js"></script>
+
+  <script>  
+    require(["splunkjs/ready!"], function() {
+      var _ = require('underscore');
+      mocha.setup('exports');
+      
+      mocha.add = function(suite) {
+        mocha.suite.emit('require', suite);
+      };
+      
+      mocha.globals(['djdt']);
+      
+      require(
+        // Low-level tests ordered before higher level tests so that
+        // earlier failures are more likely to be the underlying failure.
+        [
+          // Global utility & infrastructure tests
+          "testfx/tests/tokens",
+          "testfx/tests/utils",
+
+          // Global singletons
+          "testfx/tests/registry",  // precedes components (controls & contexts)
+          "testfx/tests/mvc",
+          
+          // Component infrastructure
+          "testfx/tests/tokenawaremodel",
+          
+          // Manager tests
+          "testfx/tests/searchmanager",
+          "testfx/tests/contexts",
+          "testfx/tests/contexts2",
+          
+          // View infrastructure
+          "testfx/tests/viewvaluetests",
+          
+          // View tests
+          "testfx/tests/selectview"
+        ],
+        function() {
+          _.each(arguments, function(suite) {
+            mocha.add(suite);
+          });
+          
+          var runner = mocha.run(function() {
+            console.log(JSON.stringify(runner.stats));
+          });
+        }
+      );
+    });
+  </script>
+</body>
+</html>

@@ -1,11 +1,11 @@
-{% extends "appfx:base_with_app_bar.html" %}
+{% extends "splunkdj:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
 {% block css %}
-    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
 
     <style>   
         #timepicker, #timepicker2 {
@@ -21,79 +21,94 @@
 
 {% block content %}
 
-<div class="container">
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
     <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Timepicker</h4>
-                </div>
-                <div class="panel-body">
-                    <p>
-                    It is very common to use a timepicker to control the time
-                    bounds of a search. This example shows you can can easily set
-                    up a timepicker, without any custom code. This example
-                    uses Django template tags, but the same can easily be 
-                    achieved in JavaScript.
-                    </p>
-                    
-                    <p>
-                    Multiple timepickers can exist simultanenously on the page,
-                    controlling different searches (or even the same search).
-                    </p>
-                    
-                    <p>
-                    Note that currently only the presets for the timepicker are
-                    implemented. Custom time ranges are not supported for this
-                    preview release.
-                    </p>
+        <div class="span12 dashboard-header clearfix">
+            <h2>Time Pickers</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                        <p>
+                        Using a time picker is a common way to control the time
+                        bounds of a search. This example shows you can can easily set
+                        up a time picker, without any custom code. This example
+                        uses Django template tags, but the same can easily be 
+                        achieved in JavaScript.
+                        </p>
+                        
+                        <p>
+                        Multiple time pickers can exist simultanenously on the page,
+                        controlling different searches (or even the same search).
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Timepicker 1</h4>
-                </div>
-                <div class="panel-body">
-                    {% timepicker id="timepicker" contextid="simplesearch1" %}
-                    {% single id="single1" contextid="simplesearch1" beforeLabel="_internal event Count: " %}
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Timepicker 2</h4>
-                </div>
-                <div class="panel-body">
-                    {% timepicker id="timepicker2" contextid="simplesearch2" %}
-                    {% single id="single2" contextid="simplesearch2" beforeLabel="_audit event Count: " %}
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Time Picker 1</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% timepicker id="timepicker" managerid="simplesearch1" %}
+                        {% single id="single1" managerid="simplesearch1" beforeLabel="_internal event Count: " %}
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="row">
-    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Time Picker 2</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% timepicker id="timepicker2" managerid="simplesearch2" %}
+                        {% single id="single2" managerid="simplesearch2" beforeLabel="_audit event Count: " %}
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
 {% endblock content%}
 
-{% block contexts %}
-    {% search id="simplesearch1" search="search index=_internal | stats count" 
+{% block managers %}
+    {% searchmanager id="simplesearch1" search="index=_internal | stats count" 
         preview=True cache=True status_buckets=0 auto_finalize_ec=100000 autostart=True %}
         
-    {% search id="simplesearch2" search="search index=_audit | stats count" 
+    {% searchmanager id="simplesearch2" search="index=_audit | stats count" 
         preview=True cache=True status_buckets=0 auto_finalize_ec=100000 autostart=True %}
-{% endblock contexts %}
+{% endblock managers %}
 
 {% block js %}
 <script>
+    require(["splunkjs/ready!"], function(mvc) {
+        var search1 = mvc.Components.getInstance("simplesearch1");
+        var search2 = mvc.Components.getInstance("simplesearch2");
+        var timepicker1 = mvc.Components.getInstance("timepicker"); 
+        var timepicker2 = mvc.Components.getInstance("timepicker2");
+        
+        timepicker1.on("change", function() {
+            search1.search.set(timepicker1.val());
+        });
+        
+        timepicker2.on("change", function() {
+            search2.search.set(timepicker2.val());
+        });
+    });
 </script>
 
 {% endblock js %}

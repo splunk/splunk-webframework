@@ -1,18 +1,18 @@
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require("appfx.main");
-    var assert = require("testfx/chai").assert;
-    var BaseContext = require("appfx/splunkui/basecontext");
-    var BaseControl = require("appfx/splunkui/basecontrol");
-    var testutil = require("testfx/testutil");
+    var mvc = require("splunkjs/mvc");
+    var assert = require("../chai").assert;
+    var BaseManager = require("splunkjs/mvc/basemanager");
+    var BaseSplunkView = require("splunkjs/mvc/basesplunkview");
+    var testutil = require("../testutil");
     
-    var R = AppFx.Components;
+    var R = splunkjs.mvc.Components;
     
-    var MockControl = BaseControl.extend({
+    var MockControl = BaseSplunkView.extend({
         salt: testutil.getUniqueName()
     });
     
-    var MockContext = BaseContext.extend({
+    var MockContext = BaseManager.extend({
         salt: testutil.getUniqueName()
     });
     
@@ -38,8 +38,6 @@ define(function(require, exports, module) {
              * Registry API
              * 
              * Non-Private Methods:
-             *  + registerType(htmlClassName, Component)
-             *      > Register a new type of component.
              *  + create(htmlClassName, htmlIdAndComponentName, options) : Component
              *      > Instantiates a component.
              *  + getInstance(htmlIdAndComponentName) : Component
@@ -50,38 +48,14 @@ define(function(require, exports, module) {
              *      > (Backbone model methods)
              */
             "Registry": {
-                // Tests: [registerType]
-                "should advertise component type after registration": function(done) {
-                    _.each([MockControl, MockContext], function(MockComponent) {
-                        R.registerType('appfx-mock', MockComponent);
-                        assert.isTrue(R.hasType('appfx-mock'));
-                        assert.strictEqual(MockComponent, R.getType('appfx-mock'));
-                        assert.isTrue(_.indexOf(R.getTypes(), MockComponent) != -1,
-                            "getTypes() lacks control after registerType()");
-                        assert.isTrue(_.indexOf(R.getTypeNames(), 'appfx-mock') != -1,
-                            "getTypeNames() lacks control after registerType()");
-                    
-                        R.revokeType('appfx-mock');
-                        assert.isFalse(R.hasType('appfx-mock'));
-                        assert.isTrue(_.indexOf(R.getTypes(), MockComponent) == -1,
-                            "getTypes() has control after revokeType()");
-                        assert.isTrue(_.indexOf(R.getTypeNames(), 'appfx-mock') == -1,
-                            "getTypeNames() has control after revokeType()");
-                    });
-                    
-                    done();
-                },
-                
                 // Tests: [create, getInstance, revokeInstance]
-                "should advertise component instance after registration": function(done) {
+                "should advertise component instance after instantiation": function(done) {
                     _.each([MockControl, MockContext], function(MockComponent) {
-                        R.registerType('appfx-mock', MockComponent);
-                        
-                        assert.isFalse(R.has('mock1'));
-                        var mock1 = R.create('appfx-mock', 'mock1', {
+                        var mock1 = new MockComponent({
+                            id: 'mock1',
                             // Typical options for a control. But not required.
                             /*
-                            contextid: 'foocontext',
+                            managerid: 'foocontext',
                             el: $('<div id="mock1"></div>')
                             */
                         });
@@ -90,8 +64,6 @@ define(function(require, exports, module) {
                         
                         R.revokeInstance('mock1');
                         assert.isFalse(R.has('mock1'));
-                        
-                        R.revokeType('appfx-mock');
                     });
                     
                     done();
@@ -108,9 +80,7 @@ define(function(require, exports, module) {
                 
                 // Tests: [bind, has]
                 "should fire events when component registered and unregistered": function(done) {
-                    _.each([MockControl, MockContext], function(MockComponent) {
-                        R.registerType('appfx-mock', MockComponent);
-                    
+                    _.each([MockControl, MockContext], function(MockComponent) {                    
                         var changeSetEventFired = false;
                         var changeClearEventFired = false;
                         R.bind("change:mock", function(sourceRegistry, sourceComponent) {
@@ -124,22 +94,87 @@ define(function(require, exports, module) {
                     
                         assert.isFalse(R.has('mock'));
                         assert.isFalse(changeSetEventFired);
-                        var mock1 = R.create('appfx-mock', 'mock', {});
+                        var mock1 = new MockComponent({id: 'mock'});
                         assert.isTrue(R.has('mock'));
                         assert.isTrue(changeSetEventFired);
                         
                         // Ensure attempt to rebind the name fails
                         assert.throws(function() {
-                            R.create('appfx-mock', 'mock', {});
-                        }, /Already have instance with name/);
+                            new MockComponent({id: 'mock'});
+                        }, 'Already have instance with id');
                         
                         assert.isFalse(changeClearEventFired);
                         R.revokeInstance('mock');
                         assert.isTrue(changeClearEventFired);
-                        
-                        R.revokeType('appfx-mock');
                     });
                     
+                    done();
+                },
+                
+                "should allow component ID replace if options.replace is set": function(done) {
+                    _.each([MockControl, MockContext], function(MockComponent) {
+                        var changeEventsFired = 0;
+                        
+                        R.bind('change:mock2', function(registry, component) {
+                            assert.strictEqual(registry, R);
+                            changeEventsFired++;
+                        });
+                        
+                        assert.isFalse(R.has('mock2'));
+                        assert.strictEqual(changeEventsFired, 0);
+                        
+                        var mockA = new MockComponent({id: 'mock2'});
+                        assert.isTrue(R.has('mock2'));
+                        assert.strictEqual(changeEventsFired, 1);
+                        
+                        // Ensure attempt to rebind the ID fails
+                        assert.throws(function() {
+                           new MockComponent({id: 'mock2'});
+                        }, 'Already have instance with ID');
+                        
+                        var mockB = new MockComponent({id: 'mock2'}, {replace: true});
+                        assert.isTrue(R.has('mock2'));
+                        assert.strictEqual(changeEventsFired, 2);
+                        assert.strictEqual(mockB, R.get('mock2'));
+                        
+                        changeEventsFired = 0;
+                        var currentComponent = null;
+                        R.bind('change:mock3', function(registry, component) {
+                            assert.strictEqual(registry, R);
+                            assert.strictEqual(component, currentComponent);
+                            changeEventsFired++;
+                        });
+                        
+                        currentComponent = mockB;
+                        R.registerInstance('mock3', mockB);
+                        assert.isTrue(R.has('mock3'));
+                        assert.strictEqual(changeEventsFired, 1);
+                        assert.strictEqual(mockB, R.get('mock3'));
+                        
+                        currentComponent = mockA;
+                        R.registerInstance('mock3', mockA, {replace: true});
+                        assert.isTrue(R.has('mock3'));
+                        assert.strictEqual(changeEventsFired, 2);
+                        assert.strictEqual(mockA, R.get('mock3'));
+                        
+                        // We are now going to unregister the component
+                        currentComponent = undefined;
+                        
+                        // Revoke it and check it is gone
+                        R.revokeInstance('mock2');
+                        assert.isFalse(R.has('mock2'));
+                        assert.strictEqual(changeEventsFired, 3);
+                        
+                        // Revoke it and check it is gone
+                        R.revokeInstance('mock3');
+                        assert.isFalse(R.has('mock3'));
+                        assert.strictEqual(changeEventsFired, 4);
+                        
+                        // Unregister our listeners
+                        R.off('change:mock2');
+                        R.off('change:mock3');
+                    });
+                        
                     done();
                 }
             }

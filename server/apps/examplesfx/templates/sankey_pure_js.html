@@ -1,0 +1,308 @@
+{% extends "splunkdj:base_with_app_bar.html" %}
+
+{% load splunkmvc %}
+{% load examples %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/custom.css" />
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}examplesfx/contrib/jqueryui/css/ui-lightness/jquery-ui-1.9.2.custom.min.css">
+    <style>     
+        .sankey-artists, #sankey-artists-downloaded {
+            height: 500px;
+        }
+        
+        #accordion {
+            min-height: 300px;
+        }
+    </style>
+{% endblock css %}
+
+{% block content %}
+<div class="dashboard-body container-fluid main-section-body">
+  <div class="row">
+    <div class="span12 dashboard-header clearfix">
+      <h2>Custom Visualization - Sankey Flows (JavaScript)</h2>
+    </div>
+  </div>
+
+  <div class="dashboard-row">
+    <div class="dashboard-cell" style="width: 100%;">
+      <div class="dashboard-panel">
+        <div class="dashboard-element">
+          <div class="panel-head">
+          </div>
+
+          <div class="panel-body">
+            <p>
+              This demo includes several standard views, as
+              well as the custom Sankey view. Unlike the previous example,
+              all views and managers are instantiated in JavaScript&mdash;the HTML
+              merely creates placeholders for them.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-row">
+      <div class="dashboard-cell" style="width: 50%;">
+        <div class="dashboard-panel sankey-artists">
+          <div class="dashboard-element">
+            <div class="panel-head">
+              <h3>Top Artists Downloaded</h3>
+            </div>
+
+            <div class="panel-body">
+              <div id="chart-top-artist-downloads" class="splunk-view">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-cell" style="width: 50%;">
+        <div class="dashboard-panel" id="accordion">
+          <h3>Top Artist Searches</h3>
+
+          <div class="dashboard-element">
+            <div class="panel-body">
+              <div id="chart-top-artist-searches" class="splunk-view">
+              </div>
+            </div>
+          </div>
+
+          <h3>Top Song Searches</h3>
+
+          <div class="dashboard-element">
+            <div class="panel-body">
+              <div id="table-top-song-downloads" class="splunk-view">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-row">
+      <div class="dashboard-cell" style="width: 100%;">
+        <div class="dashboard-panel">
+          <div class="dashboard-element">
+            <div class="panel-head">
+              <h3>Form Input</h3>
+            </div>
+
+            <div class="panel-body">
+              <p>How would you like these results filtered?</p>
+              <div id="select-artist-types">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-row">
+      <div class="dashboard-cell" style="width: 100%;">
+        <div class="dashboard-panel">
+          <div class="dashboard-element">
+            <div class="panel-head">
+              <h3>Artists Downloaded to Devices</h3>
+            </div>
+
+            <div class="panel-body">
+              <div id="sankey-artists-downloaded" class="splunk-view">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-row">
+      <div class="dashboard-cell" style="width: 100%;">
+        <div class="dashboard-panel">
+          <div class="dashboard-element">
+            <div class="panel-head">
+              <h3>Results for Artists Downloaded to Devices</h3>
+            </div>
+
+            <div class="panel-body">
+              <div id="interactive-table" class="splunk-view">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock content %}
+
+{% block js %}    
+<script>
+    var deps = [
+        "underscore",
+        "splunkjs/mvc",
+        "splunkjs/mvc/chartview",
+        "splunkjs/mvc/selectview",
+        "splunkjs/mvc/tableview",
+        "splunkjs/mvc/searchmanager",
+        "examplesfx/sankeyfx"
+    ];
+
+    require(deps, function(_, mvc) {
+        // The double-require pattern ensures that jQuery, which is loaded
+        // by the ready command, are globally available before jQuery-UI
+        // starts attaching new commands to it.
+        require(["examplesfx/contrib/jqueryui/js/jquery-ui-1.9.2.custom.min"], function() {
+            var SearchManager = require("splunkjs/mvc/searchmanager");
+            var ChartView = require("splunkjs/mvc/chartview");
+            var SelectView = require("splunkjs/mvc/selectview");
+            var ResultTableView = require("splunkjs/mvc/tableview");
+            var Sankey = require("examplesfx/sankeyfx");
+            
+            $('#accordion').accordion();
+
+            // Provide the search managers.  These don't need any DOM
+            // representation.
+     
+            new SearchManager({
+                id: "search-top-artist-searches",
+                search: '| inputlookup musicdata.csv | search bc_uri=/browse/search/* | top search_terms | fields - percent | rex field=search_terms mode=sed "s/\\+/ /g"',
+                cache: true
+            });
+
+            new SearchManager({
+                id: "search-top-artist-downloads",
+                search: "| inputlookup musicdata.csv | search bc_uri=/sync/addtolibrary/* | timechart useother=f usenull=f span=20s count by artist_name",
+                cache: true
+            });
+
+            new SearchManager({
+                id: "search-top-song-downloads",
+                search: "| inputlookup musicdata.csv | search bc_uri=/sync/addtolibrary/* | stats count by track_name | sort count desc | table track_name count",
+                cache: true
+            });
+
+            // The following two searches are set to 'autostart: false',
+            // in order to let us control their invocation.  This allows
+            // us to use a form to control the Sankey display, specify a
+            // startup value, and start the search ourselves, and to
+            // control the drill-down later.  A similar set-up can be seen
+            // in sankey_django.html and sankey_django.js.
+
+            var adtd = new SearchManager({
+                id: "artists-downloaded-to-devices",
+                search: '| inputlookup musicdata.csv | stats count by artist_name, eventtype | where (eventtype="ua-mobile-android" OR eventtype="ua-mobile-ipad" OR eventtype="ua-mobile-blackberry" OR eventtype="ua-mobile-iphone" OR eventtype="ua-mobile-ipod") | regex artist_name="$expr$"',
+                autostart: false,
+                cache: true
+            });
+
+            new SearchManager({
+                id: "interactive-search",
+                search: '| inputlookup musicdata.csv | search artist_name="$artist_name$" eventtype="$eventtype$"',
+                autostart: false,
+                cache: false,
+                preview: true
+            });
+
+            select = new SelectView({
+                id: "select-artist-types",
+                el: $('#select-artist-types'),
+                showClearButton: false,
+                choices: [
+                    {value: "all", label: "All Artists"},
+                    {value: "singles", label: "Artists With One Name"}
+                ],
+                default: 'all'
+            });
+
+            // Create the charts.  For these, there must be a
+            // corresponding element on the page, and we must pass
+            // that element in as an option.  In order to associate
+            // these charts with their corresponding searches, we
+            // provide the name into the managerid:
+
+            new ChartView({
+                id: "chart-top-artist-searches",
+                managerid: "search-top-artist-searches",
+                el: $('#chart-top-artist-searches'),
+                type: "bar"
+            }).render();
+
+            new ChartView({
+                id: "chart-top-artist-downloads",
+                managerid: "search-top-artist-downloads",
+                el: $('#chart-top-artist-downloads'),
+                type: "bar"
+            }).render();
+
+            new ResultTableView({
+                id: "table-top-song-downloads",
+                managerid: "search-top-song-downloads",
+                el: $('#table-top-song-downloads')
+            }).render();
+
+            new Sankey({
+                id: "sankey-artists-downloaded",
+                managerid: "artists-downloaded-to-devices",
+                el: $('#sankey-artists-downloaded'),
+                class: "sankey"
+            }).render();
+
+            new ResultTableView({
+                id: "interactive-table",
+                managerid: "interactive-search",
+                el: $('#interactive-table')
+            }).render();
+            
+            select.on("change", function() {
+                var r = { 
+                    "all": ".",
+                    "singles": '^\\w+$'
+                 }[select.val()];
+                adtd.query.set("expr", r);
+                adtd.startSearch();
+            });
+
+            select.render();
+
+            adtd.query.set("expr", '.');
+            adtd.startSearch();
+
+            var display = mvc.Components.getInstance("sankey-artists-downloaded");
+            var search  = mvc.Components.getInstance("interactive-search");
+
+            display.on("click:link", function(e) {
+                search.query.set("artist_name", e.source);
+                search.query.set("eventtype", e.target);
+                search.startSearch();
+            });
+
+            // Customize the graph's display charactersitics 
+            mvc.Components.getInstance('chart-top-artist-downloads').settings.set({
+                'chart.nullValueMode': 'zero',
+                'chart.stackMode': 'stacked100',
+                'layout.splitSeries': 'false',
+                'layout.placement': 'right' 
+            });
+
+            mvc.Components.getInstance('sankey-artists-downloaded').settings.set({
+                'formatName': function(name) { 
+                    return {
+                        'ua-mobile-android': 'Android',
+                        'ua-mobile-ipad': 'iPad',
+                        'ua-mobile-blackberry': 'Blackberry',
+                        'ua-mobile-iphone': 'iPhone',
+                        'ua-mobile-ipod': 'iPod'
+                    }[name] || name;
+                }
+            });
+        });
+    });
+
+</script>
+{% endblock js %}

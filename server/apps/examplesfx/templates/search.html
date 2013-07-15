@@ -1,78 +1,97 @@
-{% extends "appfx:base_with_app_bar.html" %}
+{% extends "splunkdj:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}Search{% endblock title %}
 
 {% block css %}
-    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}appfx/css/search-page.css" />
-    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
 
     <style>       
-     
+    
+        #section-body {
+            margin-right: 10px;
+        }
+    
         #main-area {
             background: white;
             padding-top: 10px;
             padding-bottom: 20px;
             width: 100%;
-        }   
-        
-        .splunk .nav-tabs {
-            padding-top: 10px;
+            margin-left: -20px;
             padding-left: 20px;
-        } 
-        
-        .splunk .nav-tabs li {
-            margin-right: 5px;
-        }
+            padding-right: 10px;
+        }   
     </style>
 
 {% endblock css %}
 
 {% block content %}
 
-<div class="container">
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
     <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Recreating the Search Timeline UI</h4>
-                </div>
-                <div class="panel-body">
-                    <p>
-                    This example shows how you can use the components of the Application
-                    Framework to recreate portions of the Splunk Search Timeline UI.
-                    Without any custom code, we can put the controls and
-                    contexts we want on the page.
-                    </p>
-                    
-                    <p>
-                    Another benefit is that this is still just an HTML/JS/CSS page:
-                    we can add custom HTML (such as this blurb), or even add custom
-                    interaction using JavaScript.
-                    </p>
+        <div class="span12 dashboard-header clearfix">
+            <h2>Recreating the Search Timeline UI</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                        <p>
+                        This example shows how you can use the components of the Application
+                        Framework to recreate portions of the Splunk Search Timeline UI.
+                        Without any custom code, we can put the views and
+                        managers we want on the page.
+                        </p>
+                        
+                        <p>
+                        Another benefit is that this is still just an HTML/JS/CSS page:
+                        we can add custom HTML (such as this blurb), or even add custom
+                        interaction using JavaScript.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
-
     <div class="section-body" id="section-body">
         <div class="section-inner">
-            {% searchbar id="main-searchbar" contextid="main-search" %}
-            {% searchcontrols id="main-searchcontrols" contextid="main-search" %}
+            {% searchbar id="main-searchbar"
+                managerid="main-search"
+                value="$search$"|token_safe
+                timepicker_value="$timeRange$"|token_safe %}
+            
+            {% searchcontrols id="main-searchcontrols"
+                managerid="main-search" %}
         </div>
     </div>
-
     <div id="main-area">
-        {% timeline id="main-timeline" contextid="main-search" %}
-        {% eventtable id="main-eventtable" contextid="main-search" %}
+        {% timeline id="main-timeline"
+            managerid="main-search"
+            value="$timeRange$"|token_safe %}
+        
+        {% eventsviewer id="main-events" managerid="main-search" drilldownRedirect=True %}
     </div>
+</div>
+{% endblock content %}
 
-{% endblock content%}
+{% block managers %}
 
-{% block contexts %}
+    {% searchmanager id="main-search"
+        app="search"
+        preview=True
+        required_field_list="*"
+        status_buckets=300
+        search="$search$"|token_safe
+        earliest_time="$timeRange.earliest_time$"|token_safe
+        latest_time="$timeRange.latest_time$"|token_safe %}
 
-    {% search id="main-search" app="search" preview=True required_field_list="*" status_buckets=300 %}
+{% endblock managers %}
 
-{% endblock contexts %}
+{% block js %}
+    {# No JavaScript Required #}
+{% endblock js %}

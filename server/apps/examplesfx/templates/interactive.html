@@ -1,83 +1,87 @@
-{% extends "appfx:base_with_app_bar.html" %}
+{% extends "splunkdj:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
 {% block css %}
-    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
 {% endblock css %}
 
 {% block content %}
 
-<div class="container">
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
     <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Control Interactivity</h4>
-                </div>
-                <div class="panel-body">
-                    <p>
-                    Much like form controls, other controls also support 
-                    interactivity (in this preview release, only the result table
-                    and chart controls do). When a row is clicked, for example, an
-                    event is generated that we can listen for.
-                    </p>
-                    
-                    <p>
-                    In this example, when a table row is clicked, we update
-                    the second search on the page, which updates
-                    the single value control.
-                    </p>
+        <div class="span12 dashboard-header clearfix">
+            <h2>View Interactivity</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                        <p>
+                        Much like form views, other views also support 
+                        interactivity. When a row is clicked, for example, an
+                        event is generated that we can listen for.
+                        </p>
+                        
+                        <p>
+                        In this example, when a table row is clicked, we update
+                        the second search on the page, which updates
+                        the single value view.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Table</h4>
-                </div>
-                <div class="panel-body">
-                    {% resulttable id="table" contextid="simplesearch1" %}
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Value for clicked on sourcetype</h4>
-                </div>
-                <div class="panel-body">
-                    {% single id="single1" contextid="simplesearch2" beforeLabel="Event Count: " %}
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Table</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% resulttable id="table" managerid="simplesearch1" %}
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-    <div class="row">
-    </div>
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Value for clicked on sourcetype</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% single id="single1" managerid="simplesearch2" beforeLabel="Event Count: " %}
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
 {% endblock content%}
 
-{% block contexts %}
-    {% search id="simplesearch1" search="| eventcount summarize=false index=* OR index=_* | table index count" 
+{% block managers %}
+    {% searchmanager id="simplesearch1" search="| eventcount summarize=false index=* OR index=_* | table index count" 
         preview=True cache=True autostart=True %}
         
-    {% search id="simplesearch2" search="search index=$index$ earliest=-1h | stats count" 
+    {% searchmanager id="simplesearch2" search="| eventcount summarize=false index=$index$ | table count" 
         preview=True cache=True autostart=False %}
-{% endblock contexts %}
+{% endblock managers %}
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
-        var table = AppFx.Components.getInstance("table");
-        var simpleSearch2 = AppFx.Components.getInstance("simplesearch2");
+    require(["splunkjs/ready!"], function(mvc) {
+        var table = mvc.Components.getInstance("table");
+        var simpleSearch2 = mvc.Components.getInstance("simplesearch2");
         
         // Set the index whenever the table is clicked
         table.on("clicked:row", function(e) {

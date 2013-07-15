@@ -1,0 +1,224 @@
+{% extends "splunkdj:base_with_app_bar.html" %}
+
+{% load splunkmvc %}
+
+{% block title %}{{app_name}} Search Managers{% endblock title %}
+
+{% block css %}
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/prettify.css"/>
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/custom.css"/>
+{% endblock css %}
+
+{% block content %}
+ <!-- SEARCH CONTEXTS -->
+        <div class="dashboard-body container-fluid main-section-body" data-role="main">
+    <div class="row">
+        <div class="span12 dashboard-header clearfix">
+            <h2>Managers</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body html">  
+            
+            <p>Search is a core feature of the Splunk Application Framework. All of the framework views can be bound to a search in various ways. Some views are populated by searches, some modify the searches they are bound to, and some do both.</p>
+            <p>Each search is represented by a <i>manager</i> that manages the query, properties, operation, and lifetime of an individual search job. You can create managers using Django template tags or JavaScript. Managers can correspond to a saved search, or a search job you create on the fly in code or dynamically with views.</p>
+            <div class="page-header"></div>
+            <h2>Search manager</h2>
+            <p>A search manager (declared with the <code>&#123;% searchmanager %&#125;</code> tag) represents a search manager, which can be generated dynamically or hard coded. The <code>search</code> property corresponds to the search query. Here is an example of declaring a search manager for a search that counts the events in the internal index:</p>
+
+            <ul class="nav nav-tabs">
+                <li class="active">
+                    <a href="#django" data-toggle="tab">Django</a>
+                </li>
+                <li>
+                    <a href="#js" data-toggle="tab">JavaScript</a>
+                </li>
+            </ul>
+            <div class="tab-content code-sample">
+                <div class="tab-pane active django" id="django">
+                    <pre class="prettyprint linenums lang-js">
+
+&#123;% searchmanager id="example-search" search="index=_internal | stats count" %&#125;</pre>
+
+                </div>
+                <div class="tab-pane" id="js">
+                    <pre class="prettyprint linenums lang-js">
+var SearchManager = require("splunkjs/mvc/searchmanager");
+new SearchManager({
+    id: "search1",
+    search: "index=_internal | stats count by sourcetype" 
+});</pre>
+                </div>
+            </div>
+            <p>To bind a search manager to a view, provide the manager's unique ID in the view's <code>managerid</code> property. For example, to create a chart that is bound to the previous search manager:</p>
+
+            <ul class="nav nav-tabs">
+                <li class="active">
+                    <a href="#django2" data-toggle="tab">Django</a>
+                </li>
+                <li>
+                    <a href="#js2" data-toggle="tab">JavaScript</a>
+                </li>
+            </ul>
+            <div class="tab-content code-sample">
+                <div class="tab-pane active django" id="django2">
+                    <pre class="prettyprint linenums lang-js">
+&#123;% chart id="example-chart" managerid="example-search" type="line" %&#125;</pre>
+                </div>
+                <div class="tab-pane" id="js2">
+                    <pre class="prettyprint linenums lang-js">
+var ChartView = require("splunkjs/mvc/chartview");
+new ChartView({
+    id: "example-chart",
+    managerid: "example-search",
+    el: $("#divToHangOn")
+}).render();</pre>
+                </div>
+            </div>
+
+            <h3>Options</h3>
+            <p>You can set the following properties using templates tags or JavaScript. These search manager options do not affect the search job on the Splunk server.</p>
+            <ul>
+                <p><code>app</code>: Sets the namespace (the app context) to run in.</p>
+                <p><code>autostart</code>: When <code>true</code>, the search manager automatically starts a new job when its properties have changed and when the page first loads (and the <code>component_loader</code> is called). When <code>false</code>, application code must call <code>startSearch</code> manually to start a search.</p>
+                <p><code>cache</code>: When <code>true</code>, the search manager always uses the results from a preexisting search job when possible. When <code>false</code>, the search manager never uses results from preexisting search jobs. When <code><i>n</i></code>, only search jobs that are newer than <i>n</i> seconds are used.</p>
+                <p><code>search</code>: The search query string.</p>
+                <p><code>sid</code>: The search job ID.</p>
+
+            </ul>
+            <h3>Search job options</h3>
+            <p>Additional properties can be set (in Django or Javascript) that modify the search job on the Splunk instance. For example, to set the <code>latest_time</code> property:</p>
+
+            <ul class="nav nav-tabs">
+                <li class="active">
+                    <a href="#django3" data-toggle="tab">Django</a>
+                </li>
+                <li>
+                    <a href="#js3" data-toggle="tab">JavaScript</a>
+                </li>
+            </ul>
+            <div class="tab-content code-sample">
+                <div class="tab-pane active django" id="django3">
+                    <pre class="prettyprint linenums lang-js">
+&#123;% searchmanager id="example-search" search="index=_internal | stats count" latest_time="now" %&#125;</pre>
+                </div>
+                <div class="tab-pane" id="js3">
+                    <pre class="prettyprint linenums lang-js">
+var SearchManager = require("splunkjs/mvc/searchmanager");
+new SearchManager({
+    id: "search1",
+    latest_time: "now",
+    search: "index=_internal | stats count by sourcetype" 
+});</pre>
+                </div>
+            </div>
+
+            <p>For a complete list of search job options, see the <a href="http://docs.splunk.com/Documentation/AppFramework" target="_blank">SearchManager</a> reference documentation.</p>
+
+            <h3>Events</h3>
+            <p>The following events are fired by this component:</p>
+            <ul>
+                <p><code>search:error</code>: Fired when an error occurs.</p>
+                <p><code>search:fail</code>: Fired when the search job fails.</p>
+                <p><code>search:progress</code>: Fired to indicate search progress.</p>
+                <p><code>search:cancelled</code>: Fired when the search is cancelled.</p>
+                <p><code>search:start</code>: Fired when the search is started.</p>
+                <p><code>search:done</code>: Fired when the search is completed and will return no more results. Note that for a real-time search this event will never fire.</p>
+            </ul>
+
+            <div class="page-header"></div>
+            <h2>Saved search manager</h2>
+            <p>A saved search manager (declared with the <code>&#123;% savedsearchmanager %&#125;</code> tag) corresponds to a saved search (by providing its ID) on a Splunk instance. Bind the saved search manager to a view the same way you'd bind a search manager. For example, to bind a table to a saved search called <b>example-saved-search</b> through a <code>savedsearchmanager</code>:</p>
+
+            <ul class="nav nav-tabs">
+                <li class="active">
+                    <a href="#django4" data-toggle="tab">Django</a>
+                </li>
+                <li>
+                    <a href="#js4" data-toggle="tab">JavaScript</a>
+                </li>
+            </ul>
+            <div class="tab-content code-sample">
+                <div class="tab-pane active django" id="django4">
+                    <pre class="prettyprint linenums lang-js">
+&#123;% chart id="example-chart" managerid="saved-search" type="line" %&#125;
+&#123;% savedsearchmanager id="saved-search" searchname="example-saved-search" %&#125;</pre>
+                </div>
+                <div class="tab-pane" id="js4">
+                    <pre class="prettyprint linenums lang-js">
+var ChartView = require("splunkjs/mvc/chartview");
+new ChartView({
+    id: "example-chart",
+    managerid: "example-saved-search",
+    el: $("#divToHangOn")
+}).render();
+
+var SavedSearchManager = require("splunkjs/mvc/savedsearchmanager");
+new SavedSearchManager({
+    id: "example-saved-search",
+    searchname: "all100",
+});</pre>
+                </div>
+            </div>
+
+            <h3>Options</h3>
+            <p>You can set the following properties using templates tags or JavaScript:</p>
+            <ul>
+                <p><code>app</code>: Sets the namespace (the app context) to run in.</p>
+                <p><code>autostart</code>: When <code>true</code>, the saved search manager automatically starts a new job when its properties have changed and when the page first loads (and the <code>component_loader</code> is called). When <code>false</code>, application code must call <code>startSearch</code> manually to start a search.</p>
+                <p><code>cache</code>: When <code>true</code> the saved search manager always uses the results from a preexisting search job when possible. When <code>false</code>, it never uses results from preexisting search jobs. When <code><i>n</i></code>, only search jobs that are newer than <i>n</i> seconds are used.</p>
+                <p><code>searchname</code>: The name of the saved search on the Splunk server.</p>
+            </ul>
+
+        <h3>Events</h3>
+        <p>The following events are fired by this component:</p>
+        <ul>
+            <p><code>search:error</code>: Fired when an error occurs.</p>
+            <p><code>search:fail</code>: Fired when the search job fails.</p>
+            <p><code>search:progress</code>: Fired to indicate search progress.</p>
+            <p><code>search:cancelled</code>: Fired when the search is cancelled.</p>
+            <p><code>search:start</code>: Fired when the search is started.</p>
+            <p><code>search:done</code>: Fired when the search is completed and will return no more results. Note that for a real-time search this event will never fire.</p>
+        </ul>
+         </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content %}
+
+{% block managers %}
+    
+{% endblock managers %}
+
+{% block js %}
+
+{{block.super}}
+
+<script type="text/javascript">
+
+require.config({
+    shim: {
+        "componentfx/prettify": {
+            deps: [],
+            exports: "prettyPrint"
+        } 
+    }
+});
+
+require(["componentfx/prettify", "bootstrap.tab"], function(prettyPrint) {
+    //pp formats code samples
+    prettyPrint();
+});
+    
+</script>
+
+{% endblock js %}

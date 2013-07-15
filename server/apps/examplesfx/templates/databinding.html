@@ -1,0 +1,105 @@
+{% extends "splunkdj:base_with_app_bar.html" %}
+
+{% load splunkmvc %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
+{% endblock css %}
+
+{% block content %}
+
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
+    <div class="row">
+        <div class="span12 dashboard-header clearfix">
+            <h2>Data Binding</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                    <p>
+                        This example demonstrates how to create components directly
+                        in JavaScript and setup data binding between their properties.
+                    </p>
+                    <p>
+                        The text boxes on the left and right sides will keep their
+                        values in sync automatically since they are bound to
+                        the same token (<code>$fullName$</code>).
+                    </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Left Side</h3>
+                    </div>
+                    <div class="panel-body">
+                        <p>Who are you?</p>
+                        <div id="leftField" class="splunk-view"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Right Side</h3>
+                    </div>
+                    <div class="panel-body">
+                        <p>Your name is:</p>
+                        <div id="rightField" class="splunk-view"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content %}
+
+{% block managers %}
+{% endblock managers %}
+
+{% block js %}
+<script>
+    // Because we didn't use the Django template tags, we have to load our
+    // dependencies manually.
+    var deps = [
+        "splunkjs/mvc",
+        "splunkjs/mvc/textboxview"
+    ];
+    require(deps, function(mvc) {
+        var TextBoxView = require("splunkjs/mvc/textboxview");
+        
+        // Instantiate components
+        new TextBoxView({
+            id: "leftField",
+            el: $("#leftField"),
+            default: "Bob Waters",
+            value: mvc.tokenSafe("$fullName$")
+        }).render();
+
+        new TextBoxView({
+            id: "rightField",
+            el: $("#rightField"),
+            // NOTE: If this default is specified, it will override the
+            //       default defined in the view above.
+            //default: "$1.00 $2.00", // literal value
+            value: mvc.tokenSafe("$fullName$")
+        }).render();
+    });
+</script>
+
+{% endblock js %}

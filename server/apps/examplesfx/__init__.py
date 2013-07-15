@@ -1,4 +1,4 @@
-# Copyright 2012 Splunk, Inc.
+# 
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -11,13 +11,3 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-
-"""A collection of examples to show off the capabilities of the Splunk Application
-Framework."""
-
-__author__ = "Splunk, Inc"
-__label__ = "ExamplesFx"
-__license__ = "http://www.apache.org/licenses/LICENSE-2.0"
-__version_info__ = (0, 1, 0)
-__version__ = ".".join(map(str, __version_info__))
-

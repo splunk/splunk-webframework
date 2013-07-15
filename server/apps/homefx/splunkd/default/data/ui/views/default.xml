@@ -1,1 +1,1 @@
-<view template="homefx:/templates/redirect.tmpl"></view>
+<view template="homefx:/templates/redirect.tmpl" isVisible="false"></view>
