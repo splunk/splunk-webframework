@@ -1710,7 +1710,6 @@ define('models/services/search/Job',
                         rf: "*",
                         auto_cancel: 100,
                         status_buckets: 300,
-                        timeFormat: '%s.%Q',
                         output_mode: 'json'
                     }
                 },
@@ -1781,7 +1780,11 @@ define('models/services/search/Job',
             return deferredResponse.promise();
         },
         syncRead = function(model, options){
-            var defaults = {data: {output_mode: 'json'}},
+            var defaults = {
+                    data: {
+                        output_mode: 'json'
+                    }
+                },
                 app_and_owner = {};
 
             if (model.isNew()){

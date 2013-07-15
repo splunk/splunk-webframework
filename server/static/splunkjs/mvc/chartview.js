@@ -4075,7 +4075,11 @@ define('js_charting/series/ColumnSeries',[
             config.pointPadding = this.computeColumnSpacing(this.properties['columnSpacing']);
             config.groupPadding = this.computeColumnGroupSpacing(this.properties['seriesSpacing']);
             return config;
-        }
+        },
+
+        // SPL-68694, this should be a no-op for column series or it will interfere with click handlers
+        bringToFront: function() { }
+
     });
 
     return ColumnSeries;
@@ -4110,7 +4114,11 @@ define('js_charting/series/BarSeries',[
             config.pointPadding = this.computeBarSpacing(this.properties['barSpacing']);
             config.groupPadding = this.computeBarGroupSpacing(this.properties['seriesSpacing']);
             return config;
-        }
+        },
+
+        // SPL-68694, this should be a no-op for bar series or it will interfere with click handlers
+        bringToFront: function() { }
+
     });
 
     return BarSeries;
@@ -6154,16 +6162,20 @@ define('js_charting/visualizations/charts/Chart',[
             }
 
             // decorate each point element with the info we need to map it to its corresponding data object
+            var that = this;
             $(chart.series).each(function(i, series) {
                 $(series.data).each(function(j, point) {
                     if(point.graphic && point.graphic.element) {
-                        $(point.graphic.element).attr('data-series-index', i);
-                        $(point.graphic.element).attr('data-point-index', j);
+                        var $element = $(point.graphic.element);
+                        $element.attr('data-series-index', i);
+                        $element.attr('data-point-index', j);
+                        if(that.chartClickEnabled) {
+                            $element.css('cursor', 'pointer');
+                        }
                     }
                 });
             });
             // we are not using mouse trackers, so attach event handlers to the chart's container element
-            var that = this;
             $chartContainer.on('click.splunk_jscharting', function(event) {
                 var $target = $(event.target);
                 if($target.is(that.POINT_CSS_SELECTOR)) {

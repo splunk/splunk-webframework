@@ -892,7 +892,6 @@ define('views/shared/delegates/PopdownDialog',[
 
             _.defaults(this.options, defaults);
             this.isShown = false;
-            this.$scrollContainer = $(this.options.scrollContainer);
             
             this.addEventHandlers = _.bind(this.addEventHandlers, this);
             this.dialogClick = _.bind(this.dialogClick, this);
@@ -909,6 +908,12 @@ define('views/shared/delegates/PopdownDialog',[
         },
         arrow: function () {
             return this.$el.find(this.options.arrow).first();
+        },
+        scrollContainer: function () {
+            if (!this.$scrollContainer) {
+                this.$scrollContainer = $(this.options.scrollContainer);
+            }
+            return this.$scrollContainer;
         },
         toggle: function ($toggle) {
             this.trigger('toggle', $toggle);
@@ -952,9 +957,10 @@ define('views/shared/delegates/PopdownDialog',[
             $('html').on('mousedown.popdown.' + this.cid, this.bodyMouseDown.bind(this));
             $(window).on('keydown.' + this.cid, this.windowKeydown.bind(this));
             
+            
             if (this.options.scrollContainer !== window) {
-                this.scrollPosition = {top: this.$scrollContainer.scrollTop(), left: this.$scrollContainer.scrollLeft()};
-                this.$scrollContainer.on('scroll.' + this.cid, this.containerScroll.bind(this));
+                this.scrollPosition = {top: this.scrollContainer().scrollTop(), left: this.scrollContainer().scrollLeft()};
+                this.scrollContainer().on('scroll.' + this.cid, this.containerScroll.bind(this));
             }
             
             return this;
@@ -964,7 +970,7 @@ define('views/shared/delegates/PopdownDialog',[
             $(window).off('.' + this.cid);
             
             if (this.options.scrollContainer !== window) {
-                this.$scrollContainer.off('.' + this.cid);
+                this.scrollContainer().off('.' + this.cid);
             }
             
             return this;
@@ -1043,7 +1049,7 @@ define('views/shared/delegates/PopdownDialog',[
                 this.$el.removeClass('up');
                 if (popDownDialogBottom > m.window.bottom) {
                     //Scroll
-                    this.$scrollContainer.scrollTop(this.$scrollContainer.scrollTop() + popDownDialogBottom - m.window.bottom);
+                    this.scrollContainer().scrollTop(this.scrollContainer().scrollTop() + popDownDialogBottom - m.window.bottom);
                     
                     //reset the relative offsets
                     m.toggle.offset = $toggle.offset();
@@ -1128,8 +1134,8 @@ define('views/shared/delegates/PopdownDialog',[
 
         },
         containerScroll: function (e)  {
-            var newScrollTop = this.$scrollContainer.scrollTop(),
-                newScrollLeft = this.$scrollContainer.scrollLeft();
+            var newScrollTop = this.scrollContainer().scrollTop(),
+                newScrollLeft = this.scrollContainer().scrollLeft();
                 
             this.position.top = this.position.top + (this.scrollPosition.top - newScrollTop);
             this.position.left = this.position.left + (this.scrollPosition.left  - newScrollLeft);

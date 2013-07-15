@@ -58,7 +58,10 @@ for /l %%a in (1,1,100) do if "!SPLUNK_HOME:~-1!"==" " set SPLUNK_HOME=!SPLUNK_H
 )
 
 @rem Add the node_modules bin directory to the PATH
-set PATH=%PATH%;%SCRIPTPATH%\node_modules\.bin;%SPLUNK_HOME%\bin
+set OLDPATH=%PATH%
+set PATH=%SCRIPTPATH%\node_modules\.bin;%SPLUNK_HOME%\bin
 
 @rem Run the actual CLI environment
 "%SPLUNK_HOME%"\bin\splunk cmd python "%SCRIPTPATH%\cli\appdo.py" %*
+
+set PATH=%OLDPATH%

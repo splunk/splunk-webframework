@@ -3608,9 +3608,6 @@ define('models/DateInput',
             isoWithoutTZ: function(){
                 return this.strftime("%Y-%m-%dT%H:%M:%S.%Q");
             },
-            unixEpoch: function(){
-                return this.strftime("%s.%Q");
-            },
             time: function(){
                 return this.strftime("%H:%M:%S.%Q");
             },
