@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <title>AAA-Airport Analysis (forms) | Splunk</title>
+    <meta name="description" content="listen to your data" />
+    <meta name="author" content="Splunk Inc." />
+    <meta name="viewport" content="width=1024, initial-scale=1.0" />
+    <link rel="stylesheet" type="text/css" href="/en-US/static/@167776/css/bootstrap.min.css" />
+    <link rel="stylesheet" type="text/css" media="all" href="/en-US/static/@167776/css/pages/dashboard-simple-bootstrap.min.css" />
+</head>
+<body class="simplexml preload">
+<div class="header">
+    <div id="placeholder-splunk-bar">
+        <a href="/en-US/app/launcher/home" class="brand" title="splunk &gt; listen to your data">splunk<strong>&gt;</strong></a>
+    </div>
+    <div id="placeholder-app-bar"></div>
+</div>
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
+    <div class="dashboard-header clearfix">
+        <h2>AAA-Airport Analysis (forms)</h2>
+        <p class="description"></p>
+    </div>
+    <div class="fieldset">
+        <div class="element input-dropdown" id="field1">
+            <label>State:</label>
+        </div>
+        <div class="element input-dropdown" id="field2">
+            <label>Airport:</label>
+        </div>
+        <div class="element input-dropdown" id="field3">
+            <label>Chart Type:</label>
+        </div>
+        <!--
+        <div class="input form-submit" id="search_btn">
+            <button class="btn btn-primary submit">Search</button>
+        </div>
+          -->
+    </div>
+    <div class="dashboard-row dashboard-row1">
+        <div class="dashboard-cell" style="width: 33.33%;">
+            <div class="dashboard-panel">
+                
+                <div class="panel-element-row">
+                    
+                    <div class="dashboard-element single" id="element1" style="width: 100%">
+                        <div class="panel-head">
+                            <h3>Total Departing Flights</h3>
+                        </div>
+                        <div class="panel-body"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="dashboard-cell" style="width: 33.33%;">
+            <div class="dashboard-panel">
+                
+                <div class="panel-element-row">
+                    
+                    <div class="dashboard-element single" id="element2" style="width: 100%">
+                        <div class="panel-head">
+                            <h3>Average Departure Delay</h3>
+                        </div>
+                        <div class="panel-body"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="dashboard-cell" style="width: 33.33%;">
+            <div class="dashboard-panel">
+                
+                <div class="panel-element-row">
+                    <div class="dashboard-element html" id="element6" style="width: 100%">
+                        <div class="panel-body html">
+                                <div><p></p><h3>User Selections</h3><p>State = $s_state$<br>Airport = $s_airport$<br>Chart Type = $s_chart$</p></div>
+                    </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="dashboard-row dashboard-row2">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                
+                <div class="panel-element-row">
+                    <div class="dashboard-element chart" id="element5" style="width: 100%">
+                        <div class="panel-head">
+                            <h3>Cancellation Trend</h3>
+                        </div>
+                        <div class="panel-body"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="footer"></div>
+<script>
+    var i18n_register = function(){}
+</script>
+<script src="/en-US/config?autoload=1"></script>
+<script src="/en-US/static/@167916/js/contrib/require.js"></script>
+<script src="/en-US/static/@167916/js/i18n.js"></script>
+<script src="/en-US/static/@167916/js/profiles/shared.js"></script>
+<script src="/en-US/static/@167916/js/contrib/require_dev_config.js"></script>
+<script type="text/javascript">
+require.config({
+    baseUrl: "/en-US/static/@167776/js"
+});
+require([
+    "splunkjs/mvc", 
+    "splunkjs/mvc/utils",
+    "underscore",
+    "jquery",
+    "splunkjs/mvc/simplexml",
+    "splunk.config"], 
+    function(mvc, utils, _, $) {
+        // AUTO-COMPILED JAVASCRIPT
+
+        //
+        // Import required dependencies
+        //
+
+        var DashboardController = require("splunkjs/mvc/simplexml/controller");
+        var HeaderView = require("splunkjs/mvc/headerview");
+        var FooterView = require("splunkjs/mvc/footerview");
+        var Dashboard = require("splunkjs/mvc/simplexml/dashboard");
+        var ChartElement = require("splunkjs/mvc/simplexml/element/chart");
+        var EventElement = require("splunkjs/mvc/simplexml/element/event");
+        var HtmlElement = require("splunkjs/mvc/simplexml/element/html");
+        var ListElement = require("splunkjs/mvc/simplexml/element/list");
+        var MapElement = require("splunkjs/mvc/simplexml/element/map");
+        var SingleElement = require("splunkjs/mvc/simplexml/element/single");
+        var TableElement = require("splunkjs/mvc/simplexml/element/table");
+        var Dropdown = require("splunkjs/mvc/simpleform/input/dropdown");
+        var RadioInput = require("splunkjs/mvc/simpleform/input/radio");
+        var TextInput = require("splunkjs/mvc/simpleform/input/text");
+        var TimeRangePicker = require("splunkjs/mvc/simpleform/input/timerange");
+        var SubmitButton = require("splunkjs/mvc/simpleform/input/submit");
+        var SearchManager = require("splunkjs/mvc/searchmanager");
+        var SavedSearchManager = require("splunkjs/mvc/savedsearchmanager");
+        var PivotSearchManager = require("splunkjs/mvc/pivotsearchmanager");
+        var PostProcessSearchContext = require("splunkjs/mvc/postprocess");
+        var UrlTokenModel = require("splunkjs/mvc/simplexml/urltokenmodel");
+        
+        //
+        // Enable form token namespaces
+        //
+        
+        var defaultTokenModel = mvc.Components.getInstance('default', {create: true});
+        var submittedTokenModel = mvc.Components.getInstance('submitted', {create: true});
+        
+        var urlTokenModel = new UrlTokenModel();
+        mvc.Components.registerInstance('url', urlTokenModel);
+        
+        //
+        // Create header and footer Splunk UI
+        //
+
+        new HeaderView({
+            name: 'header',
+            section: 'dashboards',
+            el: $('.header')
+        }, {tokens: true}).render();
+
+        new FooterView({
+            name: 'footer',
+            el: $('.footer')
+        }, {tokens: true}).render();
+
+        new Dashboard({
+            name: 'dashboard',
+            el: $('.dashboard-body')
+        }, {tokens: true}).render();
+
+        //
+        // Create components
+        //
+        
+        new SingleElement({
+            "name": "element1",
+            "managerid": "search1",
+            "el": $('#element1')
+        }, {tokens: true}).render();
+        
+        new SingleElement({
+            "name": "element2",
+            "managerid": "search2",
+            "el": $('#element2')
+        }, {tokens: true}).render();
+        
+        new HtmlElement({
+            "name": "element6",
+            "el": $('#element6')
+        }, {tokens: true}).render();
+        
+        new ChartElement({
+            "name": "element5",
+            "charting.chart": "$s_chart$",
+            "charting.chart.nullValueMode": "gaps",
+            "charting.drilldown": "1",
+            "charting.axisY.scale": "linear",
+            "charting.chart.rangeValues": "[\"0\",\"30\",\"70\",\"100\"]",
+            "charting.gaugeAutoRanges": "1",
+            "charting.gaugeColors": "[\"84E900\",\"FFE800\",\"BF3030\"]",
+            "charting.legend.labelStyle.overflowMode": "ellipsisMiddle",
+            "charting.chart.style": "shiny",
+            "charting.height": "300",
+            "charting.axisX.scale": "linear",
+            "charting.chart.stackMode": "default",
+            "charting.legend.placement": "bottom",
+            "managerid": "search3",
+            "el": $('#element5')
+        }, {tokens: true}).render();
+
+        splunkjs.mvc.Components.get('element5').on("drilldown", function(e){
+            e.defaultDrilldown();
+        });
+
+        //
+        // Create form inputs
+        //
+
+        var field1 = new Dropdown({
+            "name": "field1",
+            "choices": [
+                {"value": "*", "label": "ANY"}
+            ],
+            //"submitOnChange": false,
+            "labelField": "OriginStateNameCount",
+            "valueField": "OriginStateName",
+            "value": "$url:form.s_state$",
+            "managerid": "search4",
+            "el": $('#field1')
+        }, {tokens: true}).render();
+        
+        field1.on("change", function() {
+            var newValue = field1.val();
+            var newComputedValue = newValue;
+            
+            defaultTokenModel.set('s_state', newComputedValue);
+        });
+        if (field1.settings.get('value') !== undefined) {
+            field1.trigger("change");
+        }
+
+        new SearchManager({
+            "name": "search4",
+            "search": "| inputlookup airports\n| stats dc(OriginAirport) as count by OriginStateName\n| eval OriginStateNameCount = OriginStateName . \" (\" . count . \" airports)\"\n| sort + OriginStateName",
+            "autostart": true,
+            "app": utils.getCurrentApp(),
+            "auto_cancel": 90,
+            "status_buckets": 0,
+            "preview": true,
+            "timeFormat": "%s.%Q",
+            "wait": 0
+        }, {tokens: true});
+
+        var field2 = new Dropdown({
+            "name": "field2",
+            "choices": [
+                {"value": "*", "label": "ANY"}
+            ],
+            //"submitOnChange": true,
+            "labelField": "OriginAirport",
+            "valueField": "Origin",
+            "value": "$url:form.s_airport$",
+            "managerid": "search5",
+            "el": $('#field2')
+        }, {tokens: true}).render();
+        
+        field2.on("change", function() {
+            var newValue = field2.val();
+            var newComputedValue = newValue;
+            
+            defaultTokenModel.set('s_airport', newComputedValue);
+            
+            submittedTokenModel.set(defaultTokenModel.toJSON());
+        });
+        if (field2.settings.get('value') !== undefined) {
+            field2.trigger("change");
+        }
+
+        new SearchManager({
+            "name": "search5",
+            "search": "| inputlookup airports \n| search OriginStateName=\"$s_state$\"\n| dedup OriginAirport\n| sort + OriginAirport",
+            "autostart": true,
+            "app": utils.getCurrentApp(),
+            "auto_cancel": 90,
+            "status_buckets": 0,
+            "preview": true,
+            "timeFormat": "%s.%Q",
+            "wait": 0
+        }, {tokens: true});
+
+        var field3 = new Dropdown({
+            "name": "field3",
+            "choices": [
+                {"value": "column", "label": "column"},
+                {"value": "bar", "label": "bar"},
+                {"value": "area", "label": "area"}
+            ],
+            //"submitOnChange": true,
+            "value": "$url:form.s_chart$",
+            "el": $('#field3')
+        }, {tokens: true}).render();
+        
+        field3.on("change", function() {
+            var newValue = field3.val();
+            var newComputedValue = newValue;
+            
+            defaultTokenModel.set('s_chart', newComputedValue);
+            
+            submittedTokenModel.set(defaultTokenModel.toJSON());
+        });
+        if (field3.settings.get('value') !== undefined) {
+            field3.trigger("change");
+        }
+        
+        /*
+        var submit = new SubmitButton({
+            "name": "submit",
+            "el": $('#search_btn')
+        });
+        
+        submit.on("submit", function() {
+            submittedTokenModel.set(defaultTokenModel.toJSON());
+        })
+        */
+
+
+        //
+        // Create searches
+        //
+
+
+        new SearchManager({
+            "name": "search1",
+            "latest_time": "1359705600",
+            "earliest_time": "1357027200",
+            "search": "index=faa OriginStateName=\"$s_state$\" Origin=\"$s_airport$\"\n| stats count\n| eval delay=tostring(delay,\"commas\")",
+            "app": utils.getCurrentApp(),
+            "auto_cancel": 90,
+            "status_buckets": 0,
+            "preview": true,
+            "timeFormat": "%s.%Q",
+            "wait": 0
+        }, {tokens: true, tokenNamespace: "submitted"});
+
+        new SearchManager({
+            "name": "search2",
+            "latest_time": "1359705600",
+            "earliest_time": "1357027200",
+            "search": "index=faa OriginStateName=\"$s_state$\" Origin=$s_airport$ \n| stats avg(DepDelayMinutes) as delay \n| eval delay=round(delay,2)",
+            "app": utils.getCurrentApp(),
+            "auto_cancel": 90,
+            "status_buckets": 0,
+            "preview": true,
+            "timeFormat": "%s.%Q",
+            "wait": 0
+        }, {tokens: true, tokenNamespace: "submitted"});
+
+
+        new SearchManager({
+            "name": "search3",
+            "latest_time": "1359705600",
+            "earliest_time": "1357027200",
+            "search": "index=faa OriginStateName=\"$s_state$\" Origin=\"$s_airport$\" cancellation=*\n| timechart count by cancellation",
+            "app": utils.getCurrentApp(),
+            "auto_cancel": 90,
+            "status_buckets": 0,
+            "preview": true,
+            "timeFormat": "%s.%Q",
+            "wait": 0
+        }, {tokens: true, tokenNamespace: "submitted"});
+
+
+        DashboardController.ready();
+
+        // END OF AUTO-COMPILED JAVASCRIPT
+    }
+);
+</script>
+</body>
+</html>

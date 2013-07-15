@@ -1,0 +1,237 @@
+{% extends "splunkdj:base_with_app_bar.html" %}
+
+{% load splunkmvc %}
+
+{% block title %}{{app_name}} Chart Views{% endblock title %}
+
+{% block css %}
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/prettify.css"/>
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/custom.css"/>
+{% endblock css %}
+<style type="text/css">
+
+.gauge-wrapper{
+    height: 200px;
+}
+
+</style>
+
+{% block content %}
+<!-- CHART -->
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
+    <div class="row">
+        <div class="span12 dashboard-header clearfix">
+            <h2>Chart Views</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body html">
+
+            <p>The <b>Chart</b> view displays a series of data to plot in various configurable chart types.</p>
+            <p>Use the <code>&#123;% chart %&#125;</code> tag with the <code>type</code> property to specify the type of chart to display.</p>
+            
+<ul class="nav nav-tabs">
+                <li class="active">
+                    <a href="#django" data-toggle="tab">Django</a>
+                </li>
+                <li>
+                    <a href="#js" data-toggle="tab">JavaScript</a>
+                </li>
+            </ul>
+            <div class="tab-content code-sample">
+                <div class="tab-pane active django" id="django">
+                    <pre class="prettyprint linenums lang-js">
+&#123;% chart id="example-chart" managerid="example-search" type="line" %&#125;</pre>
+                </div>
+                <div class="tab-pane" id="js">
+                    <pre class="prettyprint linenums lang-js">
+var ChartView = require("splunkjs/mvc/chartview");
+new ChartView({
+    id: "example-chart",
+    managerid: "example-search",
+    type: "line",
+    el: $("#divToHangOn")
+}).render();</pre>
+                </div>
+            </div>
+
+            <h3>Chart types</h3>
+            <p>You can use the following types of charts:</p>
+            <ul>
+                <li>Area</li>
+                <li>Bar</li>
+                <li>Column</li>
+                <li>Filler gauge</li>
+                <!--<li>hybrid</li>-->
+                <li>Line</li>
+                <li>Marker gauge</li>
+                <li>Pie</li>
+                <li>Radial gauge</li>
+                <li>Scatter</li>
+            </ul>   
+
+            <h3>Area</h3>
+            <p>An area chart (type=<code>"area"</code>) renders each series in a data set as a filled area with an optional line. The data table upon which the chart is structured must contain at least two columns: the first column contains the values to plot on the x-axis (such as <b>_time</b> values for a time chart), and each additional column contains a series of values to plot on the y-axis.</p>
+
+            <div class="bs-docs-example">
+                {% chart id="example-chart-area" managerid="chart-search" type="area" %}
+            </div>
+
+            <h3>Bar</h3>
+            <p>A bar chart (type=<code>"bar"</code>) renders data as horizontal bars. The data set must contain at least two columns: the first column contains the values to plot on the y-axis, and each additional column contains a series of values to plot on the x-axis.</p>
+
+            <div class="bs-docs-example">
+                {% chart id="example-chart-bar" managerid="chart-search" type="bar" %}
+            </div>
+
+            <h3>Column</h3>
+            <p>A column chart (type=<code>"column"</code>) renders data as vertical columns. The data table upon which the chart is structured must contain at least two columns: the first column contains the values to plot on the x-axis, and each additional column contains a series of values to plot on the y-axis.</p>
+            
+            <div class="bs-docs-example">
+                {% chart id="example-chart-column" managerid="chart-search" type="column" %}
+            </div>
+
+            <h3>Filler gauge</h3>
+            <p>A filler gauge chart (type=<code>"fillerGauge"</code>) enables the visualization of a single numerical value mapped against a range of colors that may have particular business meaning or logic. The filler gauge is similar in appearance to a thermometer, with a liquid-like filler indicator that changes color as it rises or lowers and passes range boundaries. At least two range values are required to define a minimum and maximum range. Additional values can be supplied to define intervals between the minimum and maximum values.</p>
+
+            <div class="bs-docs-example gauge-wrapper">
+                {% chart id="example-chart-fillerGauge" managerid="gauge-search" type="fillerGauge" %}
+                
+            </div>
+
+            <!--
+            <h3>hybrid</h3>
+            <p>TBD</p>
+
+            <div class="bs-docs-example">
+                {% chart id="example-chart-hybrid" managerid="example-search" type="hybrid" %}
+            </div>
+        -->
+
+        <h3>Line</h3>
+        <p>A line chart (type=<code>"line"</code>) is a basic line graph that renders each series in a data set as a line with optional markers. The data table upon which the chart is structured must contain at least two columns: the first column contains the values to plot on the x-axis (such as <b>_time</b> values for a time chart), and each additional column contains a series of values to plot on the y-axis</p>
+
+        <div class="bs-docs-example">
+            {% chart id="example-chart-line" managerid="chart-search" type="line" %}
+        </div>
+
+        <h3>MarkerGauge</h3>
+        <p>A marker gauge chart (type=<code>"markerGauge"</code>) enables the visualization of a single numerical value mapped against a range of colors that may have particular business meaning or logic. The marker gauge is similar in appearance to a slide rule, with a linear range scale and a sliding marker that rests at the value returned by the search. At least two range values are required to define a minimum and maximum range. Additional values can be supplied to define intervals between the minimum and maximum values. </p>
+
+        <div class="bs-docs-example gauge-wrapper">
+            {% chart id="example-chart-markerGauge" managerid="gauge-search" type="markerGauge" %}
+        </div>
+
+        <h3>Pie</h3>
+        <p>A pie chart (type=<code>"pie"</code>) renders data as a circle divided into slices. The data table upon which the chart is structured must contain at least two columns: the first column contains the labels for each pie chart slice, and the second column contains the values for those slices.</p>
+
+        <div class="bs-docs-gauge">
+            {% chart id="example-chart-pie" managerid="chart-search" type="pie" %}
+        </div>
+
+        <h3>Radial gauge</h3>
+        <p>A radial gauge chart (type=<code>"radialGauge"</code>) enables the visualization of a single numerical value mapped against a range of colors that may have particular business meaning or logic. The radial gauge is similar in appearance to a speedometer in appearance with an arced range scale and a rotating needle. At least two range values are required to define a minimum and maximum range. Additional values can be supplied to define intervals between the minimum and maximum values.</p>
+
+        <div class="bs-docs-example gauge-wrapper">
+            {% chart id="example-chart-radialGauge" managerid="gauge-search" type="radialGauge" %}
+        </div>
+
+        <h3>Scatter</h3>
+        <p>A scatter chart (type=<code>"scatter"</code>) is a Cartesian chart that renders data as scattered markers, and supports single and multiple series.</p>
+
+        <div class="bs-docs-example">
+            {% chart id="example-chart-scatter" managerid="scatter-search" type="scatter" %}
+        </div>
+
+        <h4>Chart Options</h4>
+        <p>Charts support the same options as the Splunk JSChart library. For a complete list of Splunk JSChart properties, see <a href="http://docs.splunk.com/Documentation/Splunk/5.0.2/Viz/CustomChartingConfig-ChartLegend" target="_blank">Chart and legend properties</a>.</p>
+        <p>These properties must be set in JavaScript, for example:</p>
+
+<pre class="prettyprint linenums lang-js">
+splunkjs.mvc.Components.getInstance("example-chart").settings.set({
+    "charting.axisTitleX.text": " x-axis title ",
+    "charting.axisTitleY.text": " y-axis title ",
+    "charting.legend.placement": "none",
+});
+</pre>
+
+    <p>In addition to the charting library properties, you can set the following properties using templates tags or JavaScript:</p>
+    <ul>
+        <p><code>managerid</code>: The search manager of the chart.</p>
+
+        <p><code>type</code>: The type of chart.</p>
+
+        <p><code>data</code>: The name of the results model to use.</p>
+    </ul>
+
+    <h4>Events</h4>
+    <p>The following events are fired by charts:</p>
+    <ul>
+        <p><code>clicked:chart</code>: Fired when the chart is clicked.</p>
+        <p><code>clicked:legend</code>: Fired when the legend is clicked.</p>
+    </ul>
+</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- END CHART -->
+
+
+{% endblock content %}
+
+{% block managers %}
+
+    {% searchmanager id="example-search" search="index=_internal | head 100 | timechart count by sourcetype span=100s" preview=False cache=True %}
+    {% searchmanager id="chart-search" search="| inputlookup splunkdj.demo.dataset.csv | chart count by artist_name | head 20" preview=False cache=True %}
+
+    {% searchmanager id="scatter-search" search="| inputlookup splunkdj.demo.dataset.csv | rename device_ip_city as city eventcount as downloads | stats avg(duration) by city downloads" preview=False cache=True %}
+    
+{% endblock managers %}
+
+{% block js %}
+
+{{block.super}}
+
+<script type="text/javascript">
+
+require.config({
+    shim: {
+        "componentfx/prettify": {
+            deps: [],
+            exports: "prettyPrint"
+        } 
+    }
+});
+
+require(["componentfx/prettify", "bootstrap.tab"], function(prettyPrint) {
+    //pp formats code samples
+    prettyPrint();
+});
+
+require(["splunkjs/ready!"], function(mvc) { 
+    var SearchManager = require("splunkjs/mvc/searchmanager");
+    new SearchManager({
+        "id": "gauge-search",
+        "search": "| stats count | eval count =42 | table count",
+        "latest_time": null,
+        "earliest_time": null,
+        "auto_cancel": 90,
+        "status_buckets": 0,
+        "preview": true,
+        "timeFormat": "%s.%Q",
+        "wait": 0
+    });
+
+});
+   
+</script>
+
+{% endblock js %}

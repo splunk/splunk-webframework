@@ -1,36 +1,45 @@
-# Copyright 2012 Splunk, Inc.
-
 from django.contrib.auth.decorators import login_required
-from appfx.decorators.render import render_to
-
 import settings
+from splunkdj.decorators.render import render_to
+from splunkdj.utility import create_derived_service
+from splunklib.binding import namespace
 
-# A getattr that returns None instead of throwing AttributeException.
-def _getattr(obj, attr):
-    return getattr(obj, attr) if hasattr(obj, attr) else None
+_NO_DESCRIPTION = "No description has been provided for this app."
+
+# Returns the specified configuration file key or None if it does not exist
+def _get_conf_key(conf, stanza_name, key):
+    if conf is None:
+        # No app.conf available
+        return None
+    try:
+        return conf[stanza_name][key]
+    except KeyError:
+        return None
 
 @render_to('homefx:home.html')
 @login_required
 def home(request):
-    no_description = "No description has been provided for this app. Please update your app"
-
     apps = []
     for app in settings.USER_APPS:
-        if app == "homefx": 
+        if app == "homefx":
             continue
-
-        module = __import__(app)
-        if not module:
-            continue
-
+        
+        # Workaround Configurations.__getitem__ not supporting namespace
+        # override correctly for individual lookups. (DVPL-2155)
+        app_service = create_derived_service(request.service, owner='nobody', app=app)
+        try:
+            app_conf = app_service.confs['app']
+        except KeyError:
+            # App does not have an app.conf
+            app_conf = None
+        
         info = {
-            'author': _getattr(module, "__author__") or "",
-            'description': _getattr(module, "__doc__") or no_description,
+            'author': _get_conf_key(app_conf, 'launcher', 'author') or "",
+            'description': _get_conf_key(app_conf, 'launcher', 'description') or _NO_DESCRIPTION,
             'name': app,
-            'label': _getattr(module, "__label__") or app,
-            'license': _getattr(module, "__license__") or "",
-            'version': _getattr(module, "__version__") or "0.0" }
-
+            'label': _get_conf_key(app_conf, 'ui', 'label') or app,
+            'version': _get_conf_key(app_conf, 'launcher', 'version') or "0.0"
+        }
         apps.append(info)
 
     return { 'apps': apps }

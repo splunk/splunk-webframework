@@ -1,20 +1,17 @@
 // TODO: This entire file is duplicated from contexts.js,
-//       with local modifications to test SavedSearchContext instead of
-//       SearchContext.
+//       with local modifications to test SavedSearchManager instead of
+//       SearchManager.
 //       
 //       Both files should be diffed, and common logic deduplicated. (DVPL-1609)
 define(function(require, exports, module) {
     var _ = require("underscore");
-    var AppFx = require("appfx.main");
-    var assert = require("testfx/chai").assert;
-    var testutil = require("testfx/testutil");
+    var mvc = require("splunkjs/mvc");
+    var assert = require("../chai").assert;
+    var testutil = require("../testutil");
     
-    // Load (and register) components that will be tested
-    // (even if the associated module object is not referenced by tests).
-    var SavedSearchContext = require("appfx/splunkui/savedsearchcontext");
-    
-    // Minimize irrelevant diffs.
-    var SearchContext = SavedSearchContext;
+    // Load components that will be tested
+    var SearchManager = require("splunkjs/mvc/searchmanager");
+    var SavedSearchManager = require("splunkjs/mvc/savedsearchmanager");
     
     var TEST_QUERY = "search index=_internal | head 10";
     var TEST_NONPREFIXED_QUERY = "index=_internal | head 10";
@@ -30,11 +27,31 @@ define(function(require, exports, module) {
         },
         
         beforeEach: function(done) {
+            this.timeout(100000);
             done();
         },
         
         after: function(done) {
-            done();
+            var Async = splunkjs.Async;
+            var Utils = splunkjs.Utils;
+            var service = mvc.createService({app: "-", owner: "-"});
+            service.savedSearches().fetch(function(err, savedSearches) {
+                var tasks = [];
+                var list = savedSearches.list();
+                _.each(list, function(savedSearch) {
+                    if (!Utils.startsWith(savedSearch.name, "deleteme")) {
+                        return;
+                    }
+                    
+                    tasks.push(function(done) {
+                        savedSearch.remove(done);
+                    });
+                });
+                
+                Async.parallel(tasks, function() {
+                    done(); 
+                });
+            });
         },
         
         afterEach: function(done) {
@@ -42,20 +59,20 @@ define(function(require, exports, module) {
         },
         
         "Context Tests": {
-            "SavedSearchContext": {
+            "SavedSearchManager": {
                 // constructor, initialize
                 "is instantiable": function(done) {
                     var name = testutil.getUniqueName();
-                    var context = AppFx.Components.create("appfx-savedsearchcontext", name, {});
+                    var context = new SavedSearchManager({id: name});
                     assert.isNotNull(context);
-                    assert.strictEqual(context.get("name"), name);
+                    assert.strictEqual(context.get("id"), name);
                     
                     done();
                 },
                 
                 // set
                 "forwards set() of query model parameter to the query model": function(done) {
-                    var context = createSearchContext();
+                    var context = createSearchManager();
                     createMethodSpy(context.query, 'set');
                     
                     context.set({ search: 'SEARCH_VALUE' }, TEST_OPTIONS);
@@ -68,7 +85,7 @@ define(function(require, exports, module) {
                     done();
                 },
                 "forwards set() of job model parameter to the job model": function(done) {
-                    var context = createSearchContext();
+                    var context = createSearchManager();
                     createMethodSpy(context.search, 'set');
                     
                     context.set({ auto_cancel: 'AC_VALUE' }, TEST_OPTIONS);
@@ -81,7 +98,7 @@ define(function(require, exports, module) {
                     done();
                 },
                 "forwards set() of special 'query' property to the query model": function(done) {
-                    var context = createSearchContext();
+                    var context = createSearchManager();
                     createMethodSpy(context.query, 'set');
                     
                     context.set({
@@ -97,7 +114,7 @@ define(function(require, exports, module) {
                     done();
                 },
                 "forwards set() of special 'search' property to the job model": function(done) {
-                    var context = createSearchContext();
+                    var context = createSearchManager();
                     createMethodSpy(context.search, 'set');
                     
                     context.set({
@@ -115,7 +132,7 @@ define(function(require, exports, module) {
                     done();
                 },
                 "handles set() of individual attribute": function(done) {
-                    var context = createSearchContext();
+                    var context = createSearchManager();
                     createMethodSpy(context.query, 'set');
                     
                     context.set('search', 'SEARCH_VALUE', TEST_OPTIONS);
@@ -133,20 +150,25 @@ define(function(require, exports, module) {
                 //       (DVPL-1610)
                 
                 // start
-                "does start its job when asked to start itself": function(done) {
-                    var context = createSearchContext();
-                    context.startSearch = createMethodMock();
-                    
-                    context.start();
+                "does start its job when instantiated": function(done) {
+                    // HACK: Can't just do a normal
+                    //       `context.startSearch = createMethodMock();`
+                    //       because a reference to `startSearch` is used in
+                    //       the SearchManager constructor.
+                    var EarlyMockedSearchContext = SearchManager.extend({
+                        startSearch: createMethodMock()
+                    });
+                    var context = new EarlyMockedSearchContext({
+                        id: testutil.getUniqueName()
+                    });
+             
                     assert.equal(context.startSearch.callCount, 1);
-                    
                     done();
                 },
                 "does NOT start its job when asked to start itself if autostart is false": function(done) {
-                    var context = createSearchContext({ autostart: false });
+                    var context = createSearchManager({ autostart: false });
                     context.startSearch = createMethodMock();
                     
-                    context.start();
                     assert.equal(context.startSearch.callCount, 0);
                     
                     done();
@@ -157,16 +179,18 @@ define(function(require, exports, module) {
                     // HACK: Can't just do a normal
                     //       `context.startSearch = createMethodMock();`
                     //       because a reference to `startSearch` is used in
-                    //       the SearchContext constructor.
-                    var EarlyMockedSearchContext = SearchContext.extend({
+                    //       the SearchManager constructor.
+                    var EarlyMockedSearchManager = SearchManager.extend({
                         startSearch: createMethodMock()
                     });
-                    var context = new EarlyMockedSearchContext({
-                        name: testutil.getUniqueName()
+                    var context = new EarlyMockedSearchManager({
+                        id: testutil.getUniqueName()
                     });
                     
                     context.set('search', TEST_QUERY);
-                    assert.equal(context.startSearch.callCount, 1);
+
+                    // Expected to equal 2. One on construction, one on change
+                    assert.equal(context.startSearch.callCount, 2);
                     
                     done();
                 },
@@ -174,12 +198,12 @@ define(function(require, exports, module) {
                     // HACK: Can't just do a normal
                     //       `context.startSearch = createMethodMock();`
                     //       because a reference to `startSearch` is used in
-                    //       the SearchContext constructor.
-                    var EarlyMockedSearchContext = SearchContext.extend({
+                    //       the SearchManager constructor.
+                    var EarlyMockedSearchManager = SearchManager.extend({
                         startSearch: createMethodMock()
                     });
-                    var context = new EarlyMockedSearchContext({
-                        name: testutil.getUniqueName(),
+                    var context = new EarlyMockedSearchManager({
+                        id: testutil.getUniqueName(),
                         autostart: false
                     });
                     
@@ -192,15 +216,15 @@ define(function(require, exports, module) {
                 // startSearch
                 // TODO: Fails. (DVPL-1605)
                 "will fail if no named saved search provided": function(done) {
-                    var context = createSearchContext({ autostart: false });
-                    
-                    context.startSearch();
+                    var context = createSearchManager({ autostart: false });
                     context.on('search:error', function(message) {
                         done();
                     });
+                    
+                    context.startSearch();
                 },
                 "will fail if the named saved search does not exist": function(done) {
-                    var context = createSearchContext({ autostart: false });
+                    var context = createSearchManager({ autostart: false });
                     
                     context.set('searchname', testutil.getUniqueName());
                     context.startSearch();
@@ -208,8 +232,8 @@ define(function(require, exports, module) {
                         done();
                     });
                 },
-                "will dispatch the named saved search if it has no jobs": function(done) {
-                    createSavedSearchAndContext({ cache: true }, function(err, savedSearch, context) {
+                "will dispatch the named saved search if it has no jobs": function(done) {                    
+                    createSavedSearchAndContext({ cache: true, autostart: false }, function(err, savedSearch, context) {
                         if (err) { console.log(err); throw err; }
                         
                         context.startSearch();
@@ -238,21 +262,21 @@ define(function(require, exports, module) {
                     });
                 },
                 "will reuse an existing job with similar properties when cache is true": function(done) {
-                    runcacheTest(
+                    runCacheTest(
                         /*cacheOfContext2=*/ true,
                         /*fakeCurrentTimeForContext2=*/ -1,
                         /*doesExpectJobToBeReused=*/ true,
                         done);
                 },
                 "will NOT reuse an existing job with similar properties when cache is false": function(done) {
-                    runcacheTest(
+                    runCacheTest(
                         /*cacheOfContext2=*/ false,
                         /*fakeCurrentTimeForContext2=*/ -1,
                         /*doesExpectJobToBeReused=*/ false,
                         done);
                 },
                 "will reuse fresh jobs when cache > 0": function(done) {
-                    runcacheTest(
+                    runCacheTest(
                         /*cacheOfContext2=*/ 7.5,
                         /*fakeCurrentTimeForContext2=*/ (new Date()).valueOf() + 5000,
                         /*doesExpectJobToBeReused=*/ true,
@@ -260,7 +284,7 @@ define(function(require, exports, module) {
                 },
                 // TODO: Fails. (DVPL-1606)
                 "will ignore stale jobs when cache > 0": function(done) {
-                    runcacheTest(
+                    runCacheTest(
                         /*cacheOfContext2=*/ 2.5,
                         /*fakeCurrentTimeForContext2=*/ (new Date()).valueOf() + 5000,
                         /*doesExpectJobToBeReused=*/ false,
@@ -269,18 +293,16 @@ define(function(require, exports, module) {
                 
                 // startSearch -> createManager
                 "triggers correct events while running a job": function(done) {
-                    createSavedSearchAndContext({}, function(err, savedSearch, context) {
+                    createSavedSearchAndContext({autostart: false}, function(err, savedSearch, context) {
                         if (err) { console.log(err); throw err; }
                         
                         var gotStartEvent = false;
                         var gotProgressEvent = false;
-                    
-                        context.start();
+
                         context.on('search:start', function(job) {
                             assert.isNotNull(job);
                             assert.isTrue(job instanceof splunkjs.Service.Job,
                                 "Expected job object in search:start.");
-                        
                             assert.isFalse(gotStartEvent,
                                 "Got start event multiple times.");
                             gotStartEvent = true;
@@ -296,11 +318,8 @@ define(function(require, exports, module) {
                             assert.isTrue(gotStartEvent,
                                 "Got progress event before a start event.");
                             gotProgressEvent = true;
-                        
-                            // TODO: Implement finished event. (DVPL-1607)
-                            finished(properties, job);
                         });
-                        var finished = function(properties, job) {
+                        context.on('search:done', function(properties, job) {
                             assert.isNotNull(job);
                             assert.isTrue(job instanceof splunkjs.Service.Job,
                                 "Expected job object.");
@@ -311,7 +330,9 @@ define(function(require, exports, module) {
                                 "Got finished event without any preceding progress events.");
                         
                             done();
-                        };
+                        });
+
+                        context.startSearch();
                     });
                 },
                 
@@ -337,11 +358,9 @@ define(function(require, exports, module) {
     // =========================================================================
     // Test Helpers
     
-    var createSearchContext = function(options_opt) {
-        return AppFx.Components.create(
-            "appfx-savedsearchcontext",
-            testutil.getUniqueName(),
-            options_opt || {});
+    var createSearchManager = function(options_opt) {
+        var options = _.extend({id: testutil.getUniqueName()}, options_opt);
+        return new SavedSearchManager(options);
     };
     
     var createSavedSearchAndContext = function(options, done) {
@@ -351,7 +370,7 @@ define(function(require, exports, module) {
         options.app = 'search';
         options.owner = 'admin';
         
-        var context = createSearchContext(options);
+        var context = createSearchManager(options);
         
         context.service.savedSearches().create({
             name: savedSearchName,
@@ -373,22 +392,16 @@ define(function(require, exports, module) {
         });
     };
     
-    var runcacheTest = function(
-            cacheOfContext2,
-            fakeCurrentTimeForContext2, // -1 to use real time
-            doesExpectJobToBeReused,
-            done) {
-        
+    // fakeCurrentTimeForContext2 -> use -1 for real time
+    var runCacheTest = function(cacheOfContext2, fakeCurrentTimeForContext2, doesExpectJobToBeReused, done) {
         var savedSearchName = testutil.getUniqueName();
-        var context2 = createSearchContext({
+        var context2 = createSearchManager({
             autostart: false,
             cache: cacheOfContext2,
             searchname: savedSearchName,
-            app: 'search'
+            app: 'search',
+            owner: 'admin'
         });
-        // TODO: I should be able to pass this as a parameter
-        //       to SavedSearchContext's constructor. (DVPL-1608)
-        context2.service.owner = 'admin';
         
         context2.service.savedSearches().create({
             name: savedSearchName,
@@ -400,33 +413,35 @@ define(function(require, exports, module) {
                 if (err) { console.log(err); throw err; }
                 
                 var OldDate = Date;
-                var NewDate = Date;
                 if (fakeCurrentTimeForContext2 != -1) {
-                    NewDate = function() {
+                    Date = function() {
                         return new OldDate(fakeCurrentTimeForContext2);
                     };
                 }
-                
-                context2.startSearch({_date: NewDate});
-                context2.on("search:start", function(job2) {
-                    if (doesExpectJobToBeReused) {
-                        assert.equal(job2.sid, job1.sid,
-                            "Expected context2 to reuse job of context1.");
-                    }
-                    else {
-                        assert.notEqual(job2.sid, job1.sid,
-                            "Expected context2 to NOT reuse job of context1.");
-                    }
-                    
-                    done();
-                });
+                try {                
+                    context2.startSearch();
+                    context2.on("search:start", function(job2) {
+                        if (doesExpectJobToBeReused) {
+                            assert.equal(job2.sid, job1.sid,
+                                "Expected context2 to reuse job of context1.");
+                        }
+                        else {
+                            assert.notEqual(job2.sid, job1.sid,
+                                "Expected context2 to NOT reuse job of context1.");
+                        }
+                        
+                        done();
+                    });
+                }
+                finally {
+                    Date = OldDate;
+                }
             });
         });
     };
     
     var runActionTest = function(actionName, done) {
-        createSavedSearchAndContext({}, function(err, savedSearch, context) {
-            context.start();
+        createSavedSearchAndContext({autostart: false}, function(err, savedSearch, context) {
             context.on('search:start', function(job) {
                 job[actionName] = createMethodMock();
             
@@ -435,6 +450,8 @@ define(function(require, exports, module) {
             
                 done();
             });
+            
+            context.startSearch();
         });
     };
     

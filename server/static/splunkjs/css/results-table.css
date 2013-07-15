@@ -1,0 +1,188 @@
+/*!
+ * Splunk shoestrap
+ * import and override bootstrap vars & mixins
+ */
+.clearfix {
+  *zoom: 1;
+}
+.clearfix:before,
+.clearfix:after {
+  display: table;
+  content: "";
+  line-height: 0;
+}
+.clearfix:after {
+  clear: both;
+}
+.hide-text {
+  font: 0/0 a;
+  color: transparent;
+  text-shadow: none;
+  background-color: transparent;
+  border: 0;
+}
+.input-block-level {
+  display: block;
+  width: 100%;
+  min-height: 26px;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  box-sizing: border-box;
+}
+.ie7-force-layout {
+  *min-width: 0;
+}
+/* results table view
+    Sub-components: table-chrome, table-sorts, etc.
+
+    <div class="views-shared-resultstable" style="display: block;">
+        <div class="simpleResultsTableWrapper">
+            <table class="simpleResultsTable splTable table table-striped table-chrome enableMouseover">
+                <tbody>
+                    <tr class="">
+                        <th class="None sorts">
+                            <a><span class="sortLabel">count</span> </a>
+                        </th>
+                        <th class="None">
+                            <a><span class="sortLabel">host</span> </a>
+                        </th>
+                        <th class="None">
+                            <a><span class="sortLabel">percent</span> </a>
+                        </th>
+                    </tr>
+                    <tr>
+                        <td field="count" class="d" ismin="1" ismax="1" heat="1.0">
+                            100
+                        </td>
+                        <td field="host" class="d">
+                            pkhalil-mbp15.sv.splunk.com
+                        </td>
+                        <td field="percent" class="d" ismin="1" ismax="1" heat="1.0">
+                            100.000000
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+*/
+.shared-resultstable .simpleResultsTableWrapper {
+  width: 100%;
+  overflow: auto;
+}
+.shared-resultstable table .pos {
+  color: #888;
+  text-align: right;
+  font-size: 11px;
+  width: 50px;
+}
+.shared-resultstable table tr > th:first-child,
+.shared-resultstable table tr > td:first-child {
+  padding-left: 20px;
+}
+.shared-resultstable table tr > th:last-child,
+.shared-resultstable table tr > td:last-child {
+  padding-right: 20px;
+}
+.shared-resultstable .table-chrome th a {
+  color: #333333;
+  text-decoration: none;
+}
+.shared-resultstable .table-chrome th.pos:after {
+  content: "";
+}
+.shared-resultstable-resultstablemaster {
+  overflow-x: auto;
+}
+.shared-resultstable-resultstablemaster table tr > th:first-child,
+.shared-resultstable-resultstablemaster table tr > td:first-child {
+  padding-left: 20px;
+}
+.shared-resultstable-resultstablemaster table tr > th:last-child,
+.shared-resultstable-resultstablemaster table tr > td:last-child {
+  padding-right: 20px;
+}
+.shared-resultstable-resultstablemaster td.numeric .multivalue-subcell {
+  text-align: right;
+}
+.shared-resultstable-resultstablemaster td.timestamp,
+.shared-resultstable-resultstablemaster th.timestamp {
+  min-width: 150px;
+}
+.shared-resultstable-resultstablemaster table.single-column-table th.numeric {
+  text-align: left;
+}
+.shared-resultstable-resultstablemaster table.single-column-table td.numeric {
+  text-align: left;
+}
+.shared-resultstable-resultstablemaster table.single-column-table td.numeric .multivalue-subcell {
+  text-align: left;
+}
+.shared-resultstable-resultstablemaster td.with-overlay {
+  padding-right: 20px;
+}
+.shared-resultstable-resultstablemaster .overlay-cell {
+  height: 24px;
+  width: 15px;
+  float: right;
+  margin: -4px -20px -24px 0;
+}
+.shared-resultstable-resultstablemaster .overlay-cell-value {
+  height: 24px;
+  width: 0;
+  border-left: 15px solid #f5f5f5;
+}
+.shared-resultstable-resultstablemaster .heat-value {
+  border-left-color: #d85d3c;
+}
+.shared-resultstable-resultstablemaster .max-value {
+  border-left-color: #d85d3c;
+}
+.shared-resultstable-resultstablemaster .min-value {
+  border-left-color: #6ab7c7;
+}
+.shared-resultstable-resultstablemaster .no-value {
+  border-left-color: transparent;
+}
+.shared-resultstable-resultstablemaster .tbody tr.even td {
+  background-color: transparent;
+}
+.shared-resultstable-resultstablemaster .tbody tr.odd td {
+  background-color: #f5f5f5;
+}
+.shared-resultstable-resultstablemaster .wrapped-results th,
+.shared-resultstable-resultstablemaster .wrapped-results td {
+  white-space: normal;
+}
+.shared-resultstable-resultstablemaster .not-wrapped-results th,
+.shared-resultstable-resultstablemaster .not-wrapped-results td {
+  white-space: nowrap;
+}
+.shared-resultstable-resultstablemaster thead tr.sorts th.highlighted {
+  background-color: #eeeeee;
+  background-color: #f5f5f5;
+  background-image: -moz-linear-gradient(top, #ffffff, #e5e5e5);
+  background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#ffffff), to(#e5e5e5));
+  background-image: -webkit-linear-gradient(top, #ffffff, #e5e5e5);
+  background-image: -o-linear-gradient(top, #ffffff, #e5e5e5);
+  background-image: linear-gradient(to bottom, #ffffff, #e5e5e5);
+  background-repeat: repeat-x;
+  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#ffffffff', endColorstr='#ffe5e5e5', GradientType=0);
+  border-color: #aeaeae;
+  border-top-color: #b7b7b7;
+  border-bottom-color: #989898;
+  background-position: 0 0;
+}
+.shared-resultstable-resultstablemaster tbody td.highlighted,
+.shared-resultstable-resultstablemaster tbody tr.highlighted > td {
+  background-color: #e4e4e4 !important;
+  cursor: pointer;
+}
+.shared-resultstable-resultstablemaster .multivalue-subcell.highlighted {
+  background-color: #e4e4e4 !important;
+  cursor: pointer;
+}
+.shared-resultstable-resultstablemaster .scroll-table-wrapper {
+  height: 100%;
+}

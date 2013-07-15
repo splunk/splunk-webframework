@@ -1,0 +1,63 @@
+{% extends "splunkdj:base_with_app_bar.html" %}
+
+{% load splunkmvc %}
+{% load examples %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+  <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
+  <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/custom.css" />
+{% endblock css %}
+
+{% block content %}
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
+    <div class="row">
+        <div class="span12 dashboard-header clearfix">
+            <h2>Globe</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                    <p>This example shows how you can use even more advanced
+                      web visualization technologies, such as WebGL. In this case,
+                      we are using the three.js library to display a globe
+                      with earthquake data.</p>
+                      
+                    <p>Note: You need a web browser (such as Firefox or Chrome) 
+                       and a video card with WebGL support to see this example.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Earthquakes</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% globe id="earthquake-table" managerid="earthquake-search" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}
+
+{% block managers %}
+  {% searchmanager id="earthquake-search"
+     search='| inputlookup earthquakes.csv | search Magnitude>2.5 | dedup Region | fields Lat Lon Depth Magnitude Region | rename Lat as latitude, Lon as longitude, Depth as depth, Magnitude as magnitude, Region as location'
+  %}
+{% endblock managers %}
+
+{% block js %}    
+  {# No custom javascript required. #}
+{% endblock js %}

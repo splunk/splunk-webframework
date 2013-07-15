@@ -1,76 +1,85 @@
-{% extends "appfx:base_with_app_bar.html" %}
+{% extends "splunkdj:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
 {% block css %}
-    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
-
-    <style>    
-    </style>
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
 {% endblock css %}
 
 {% block content %}
-
-<div class="container">
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
     <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Dashboards with Django template tags</h4>
-                </div>
-                <div class="panel-body">
-                    This example shows how to create a simple dashboard using our simple
-                    Django template tags for creating controls and contexts. In this case,
-                    we are powering the dashboard using two searches, and three of the
-                    charts are powered by the same search.
-                </div>
-            </div>
+        <div class="span12 dashboard-header clearfix">
+            <h2>Dashboards with Django Template Tags</h2>
         </div>
     </div>
-    <div class="row">
-        <div class="span6">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Chart 1</h4>
-                </div>
-                <div class="panel-body">
-                    {% chart id="chart1" contextid="simplesearch1" type="pie" %}
-                </div>
-            </div>
-        </div>
-        <div class="span6">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Chart 2</h4>
-                </div>
-                <div class="panel-body">
-                    {% chart id="chart2" contextid="simplesearch1" type="bar" %}
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-body">
-                    {% timeline id="timeline1" contextid="simplesearch1" %}
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>My Table</h4>
-                </div>
-                <div class="panel-body">
-                    <div class="pull-right">
-                        {% paginator id="table-paginator" %}
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
                     </div>
-                    {% resulttable id="table1" contextid="simplesearch2" paginator="table-paginator" %}
+                    <div class="panel-body">
+                    <p>This example shows how to create a simple dashboard using our simple
+                    Django template tags for creating views and managers. In this case,
+                    we are powering the dashboard using two searches, and three of the
+                    charts are powered by the same search.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Chart 1</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% chart id="chart1" managerid="simplesearch1" type="pie" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Chart 2</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% chart id="chart2" managerid="simplesearch1" type="bar" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                        {% timeline id="timeline1" managerid="simplesearch1" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>My Table</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% resulttable id="table1" managerid="simplesearch2" %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -79,10 +88,10 @@
 
 {% endblock content%}
 
-{% block contexts %}
-    {% search id="simplesearch1" search="search index=_internal | head 1000 | stats count by sourcetype" 
+{% block managers %}
+    {% searchmanager id="simplesearch1" search="index=_internal | head 1000 | stats count by sourcetype" 
         preview=True cache=60 status_buckets=300 %}
         
-    {% search id="simplesearch2" search="search index=_internal | head 1000 | stats count by source" 
+    {% searchmanager id="simplesearch2" search="index=_internal | head 1000 | stats count by source" 
         preview=True cache=60 status_buckets=300 %}
-{% endblock contexts %}
+{% endblock managers %}

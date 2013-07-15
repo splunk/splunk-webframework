@@ -7,8 +7,9 @@
 docs/_build
 *.sublime-project
 *.sublime-workspace
-server/static/*
+server/static/JS_CACHE/*
 testdb
-contrib/django
 .appfxrc
+.splunkdjrc*
 .splunkhome
+*.pyo

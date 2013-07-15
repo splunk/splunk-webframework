@@ -1,0 +1,556 @@
+/*!
+ * Splunk shoestrap
+ * import and override bootstrap vars & mixins
+ */
+.clearfix {
+  *zoom: 1;
+}
+.clearfix:before,
+.clearfix:after {
+  display: table;
+  content: "";
+  line-height: 0;
+}
+.clearfix:after {
+  clear: both;
+}
+.hide-text {
+  font: 0/0 a;
+  color: transparent;
+  text-shadow: none;
+  background-color: transparent;
+  border: 0;
+}
+.input-block-level {
+  display: block;
+  width: 100%;
+  min-height: 26px;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  box-sizing: border-box;
+}
+.ie7-force-layout {
+  *min-width: 0;
+}
+.leaflet-container {
+  z-index: 1;
+}
+.dashboard-wrapper {
+  padding-top: 20px;
+}
+.dashboard-body {
+  padding-left: 20px;
+  padding-right: 20px;
+}
+.preload .dashboard-row,
+.preload .fieldset,
+.preload .preload-hidden {
+  display: none;
+}
+.preload .dashboard-header:after {
+  content: "Loading...";
+  margin: auto;
+  padding: 50px 0;
+}
+.dashboard-header {
+  margin-bottom: 10px;
+  padding-top: 10px;
+}
+.dashboard-header h2 {
+  font-size: 24px;
+  margin: 0;
+  padding: 0;
+  font-weight: 200;
+  padding-left: 0;
+}
+.dashboard-header a.favorite {
+  color: #bbb;
+  cursor: pointer;
+}
+.dashboard-header a.favorite:hover {
+  text-decoration: none;
+  color: #FFCF00;
+}
+.dashboard-header .edit-dashboard-menu {
+  padding: 2px 0px 0px 20px;
+}
+.dashboard-header .edit-dashboard-menu .dashboard-source-type {
+  color: rgba(0, 0, 0, 0.35);
+  float: right;
+}
+.dashboard-header p.description {
+  margin: 0 200px 0 0;
+}
+.dashboard-header .dashboard-view-controls .btn-group > .btn {
+  font-size: 15px;
+}
+.dashboard-header .dashboard-view-controls > a:first-child {
+  margin-right: 10px;
+}
+.dashboard-header .edit-done {
+  margin-left: 10px;
+}
+.fieldset {
+  *zoom: 1;
+}
+.fieldset:before,
+.fieldset:after {
+  display: table;
+  content: "";
+  line-height: 0;
+}
+.fieldset:after {
+  clear: both;
+}
+.fieldset .form-submit {
+  padding-top: 21px;
+}
+.fieldset .input,
+.fieldset .element {
+  float: left;
+  margin-right: 10px;
+  padding-bottom: 10px;
+}
+.fieldset.hide-label label {
+  display: none;
+}
+.fieldset.hide-label .form-submit {
+  padding-top: 0px;
+}
+.dashboard-row {
+  *zoom: 1;
+}
+.dashboard-row:before,
+.dashboard-row:after {
+  display: table;
+  content: "";
+  line-height: 0;
+}
+.dashboard-row:after {
+  clear: both;
+}
+.dashboard-row .dashboard-cell {
+  float: left;
+}
+.dashboard-row .dashboard-panel {
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: white;
+  margin: 0 10px 10px 0;
+  box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+.dashboard-row .dashboard-panel .panel-element-row {
+  clear: both;
+}
+.dashboard-row .dashboard-panel .panel-element-row div.single {
+  float: left;
+  min-width: 200px;
+}
+.dashboard-row .dashboard-panel .dashboard-element {
+  margin-bottom: 7px;
+}
+.dashboard-row .dashboard-panel .dashboard-element .panel-footer {
+  clear: both;
+}
+.dashboard-row .dashboard-panel .dashboard-element:hover .view-results {
+  visibility: visible;
+}
+.dashboard-row .dashboard-panel .panel-head h3 {
+  line-height: 1;
+  margin: 0;
+  padding: 12px 15px 10px 15px;
+  text-shadow: 0 1px 0 white;
+  color: #363636;
+}
+.dashboard-row .dashboard-panel .panel-head h3 .untitled {
+  color: #888;
+}
+.dashboard-row .dashboard-panel .panel-footer {
+  clear: both;
+  padding: 0 15px;
+}
+.dashboard-row .dashboard-panel .panel-body {
+  clear: both;
+}
+.dashboard-row .dashboard-panel .panel-body.html {
+  padding: 5px 10px;
+}
+.dashboard-row .dashboard-panel .panel-body.html p,
+.dashboard-row .dashboard-panel .panel-body.html .splunk-radiogroup,
+.dashboard-row .dashboard-panel .panel-body.html .splunk-select,
+.dashboard-row .dashboard-panel .panel-body.html .splunk-textbox,
+.dashboard-row .dashboard-panel .panel-body.html .splunk-checkbox,
+.dashboard-row .dashboard-panel .panel-body.html .splunk-checkboxgroup,
+.dashboard-row .dashboard-panel .panel-body.html .splunk-timepicker {
+  padding: 0px;
+}
+.dashboard-row .dashboard-panel .panel-body .splunk-message-container .alert {
+  text-align: center;
+  color: #999;
+  border-style: none;
+  font-size: 13px;
+}
+.dashboard-row .dashboard-panel .panel-body .splunk-message-container .alert.alert-info i {
+  display: none;
+}
+.dashboard-row .dashboard-panel .panel-body .splunk-message-container .alert .icon-alert {
+  float: none;
+  color: #999;
+}
+.dashboard-row .dashboard-panel .panel-body .splunk-message-container.compact .alert {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  margin-bottom: 0;
+  text-align: left;
+  display: inline;
+}
+.dashboard-row .dashboard-panel .panel-body .splunk-message-container.compact .alert .icon-alert {
+  font-size: 150%;
+  top: 4px;
+}
+.dashboard-row .dashboard-panel .panel-body .splunk-single .splunk-message-container {
+  padding: 10px 40px 10px 40px;
+}
+.dashboard-row .dashboard-panel .panel-body .msg .single-result {
+  color: #999;
+}
+.dashboard-row .dashboard-panel .panel-body .splunk-table {
+  *zoom: 1;
+}
+.dashboard-row .dashboard-panel .panel-body .splunk-table:before,
+.dashboard-row .dashboard-panel .panel-body .splunk-table:after {
+  display: table;
+  content: "";
+  line-height: 0;
+}
+.dashboard-row .dashboard-panel .panel-body .splunk-table:after {
+  clear: both;
+}
+.dashboard-row .dashboard-panel .panel-body .splunk-table .splunk-paginator {
+  float: right;
+  padding-right: 15px;
+}
+.dashboard-row .dashboard-panel .panel-body p {
+  padding: 0px 10px;
+}
+.dashboard-row .dashboard-panel .panel-body .splunk-radiogroup,
+.dashboard-row .dashboard-panel .panel-body .splunk-select,
+.dashboard-row .dashboard-panel .panel-body .splunk-textbox,
+.dashboard-row .dashboard-panel .panel-body .splunk-checkbox,
+.dashboard-row .dashboard-panel .panel-body .splunk-checkboxgroup,
+.dashboard-row .dashboard-panel .panel-body > .splunk-timepicker,
+.dashboard-row .dashboard-panel .panel-body .splunk-searchbar,
+.dashboard-row .dashboard-panel .panel-body > button {
+  margin: 5px 10px;
+}
+.dashboard-row .dashboard-panel ul.shared-eventsviewer {
+  margin-bottom: 5px;
+  border-top-style: none;
+}
+.dashboard-row .dashboard-panel .view-results {
+  visibility: hidden;
+  margin: 0 0 -3px -3px;
+}
+.dashboard-row .dashboard-panel .view-results .inspector-link {
+  display: inline-block;
+  margin-right: 20px;
+}
+.dashboard-row .dashboard-panel .view-results .btn-pill {
+  padding: 0;
+  height: 20px;
+  line-height: 20px;
+  width: 22px;
+  font-size: 15px;
+  text-align: center;
+}
+.dashboard-row .dashboard-panel .view-results .btn-pill + .btn-pill {
+  margin-left: 0;
+}
+.dashboard-row .dashboard-panel .ui-resizable-handle {
+  width: 100%;
+  height: 8px;
+  background-color: #ddd;
+  z-index: 1000;
+  cursor: row-resize;
+  border-top: 1px solid #ddd;
+  border-top-width: 1px;
+  border-top-style: solid;
+  border-top-color: #dddddd;
+  bottom: 0;
+}
+.dashboard-row .dashboard-panel .ui-resizable-handle:before {
+  content: "";
+  margin: 1px auto;
+  display: block;
+  border-radius: 3px;
+  border: none;
+  height: 6px;
+  width: 6px;
+  background-color: #bbb;
+  box-shadow: inset 1px 1px 2px #999;
+}
+.dashboard-row .dashboard-panel .ui-resizable-handle:hover {
+  background: -webkit-linear-gradient(top, #ffffff 30%, #e5e5e5 100%);
+  background-image: -webkit-linear-gradient(top, #ffffff 30%, #e5e5e5 100%);
+}
+.dashboard-row .dashboard-panel .refresh-time-indicator {
+  font-size: 11px;
+  color: #666;
+  cursor: default;
+  padding: 10px 10px 6px 10px;
+}
+.dashboard-row .dashboard-panel .table {
+  margin-bottom: 3px;
+}
+.dashboard-row .dashboard-panel .table > thead > tr > th,
+.dashboard-row .dashboard-panel .table > tbody > tr > td {
+  padding: 6px 8px;
+}
+.dashboard-row .dashboard-panel .table th.reorderable {
+  padding: 0;
+}
+.dashboard-row .dashboard-panel .error-details {
+  display: block;
+  float: left;
+}
+.dashboard-row .dashboard-panel .error-details i {
+  color: #fac51c;
+}
+.dashboard-row .dashboard-panel .error-details.severe i {
+  color: #d85d3c;
+}
+.dashboard-row .dashboard-panel .error-details.severe .error-indicator:hover i {
+  color: #deaa05;
+}
+.dashboard-row .dashboard-panel .error-details.severe .error-indicator:hover i {
+  color: #bc4525;
+}
+.dashboard-row .dashboard-panel .error-details .error-indicator {
+  padding: 0;
+  height: 20px;
+  line-height: 20px;
+  width: 22px;
+  font-size: 15px;
+  text-align: center;
+  -webkit-border-radius: 3px;
+  -moz-border-radius: 3px;
+  border-radius: 3px;
+  margin-left: 3px;
+  display: block;
+}
+.dashboard-row .dashboard-panel .error-details .error-indicator:hover {
+  background-color: #eeeeee;
+}
+.dashboard-row .dashboard-panel .error-details .error-indicator i {
+  font-size: 18px;
+}
+.dashboard-row .dashboard-panel .error-details li {
+  border-top: 1px dotted #ddd;
+  padding: 5px 10px 5px 25px;
+  position: relative;
+}
+.dashboard-row .dashboard-panel .error-details li:first-child {
+  border-top: none;
+}
+.dashboard-row .dashboard-panel .error-details li > i {
+  font-size: 18px;
+  position: absolute;
+  left: 3px;
+  top: 5px;
+}
+.dashboard-row .dashboard-panel .error-details li.warning > i {
+  color: #fac51c;
+}
+.dashboard-row .dashboard-panel .error-details li.error > i {
+  color: #d85d3c;
+}
+.dashboard-row .dashboard-panel .progress-bar {
+  float: left;
+}
+.dashboard-row .dashboard-panel .progress-bar .progress-msg {
+  font-size: 11px;
+  color: #666;
+  display: inline-block;
+}
+.dashboard-row .dashboard-panel .progress-bar .progress.progress-striped {
+  width: 160px;
+  height: 10px;
+  display: inline-block;
+  margin-bottom: 0;
+  margin-left: 5px;
+  margin-top: 3px;
+  -webkit-border-radius: 2px;
+  -moz-border-radius: 2px;
+  border-radius: 2px;
+}
+.dashboard-row .dashboard-panel .progress-bar .progress.progress-striped .bar {
+  background-color: #ccc;
+  -webkit-background-size: 10px 10px;
+  -moz-background-size: 10px 10px;
+  -o-background-size: 10px 10px;
+  background-size: 10px 10px;
+  height: 10px;
+  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#cccccc', endColorstr='#dddddd', GradientType=0);
+}
+.dragndrop-enabled .sortable-dragging,
+.dragndrop-enabled .ui-sortable-helper {
+  width: 50% !important;
+}
+.dragndrop-enabled .dashboard-row.empty {
+  min-height: 20px;
+}
+.dragndrop-enabled .dashboard-row .dashboard-panel.drag-hover {
+  border-color: #bbbbbb;
+}
+.dragndrop-enabled .dashboard-row .panel-head {
+  border-bottom: 1px solid #ddd;
+}
+.dragndrop-enabled .dashboard-row .panel-head h3 {
+  padding: 12px 15px 7px 15px;
+}
+.dragndrop-enabled .dashboard-row .drag-handle {
+  cursor: move;
+  height: 19px;
+  background-color: #ebebeb;
+  background-image: -moz-linear-gradient(top, #f5f5f5, #dcdcdc);
+  background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#f5f5f5), to(#dcdcdc));
+  background-image: -webkit-linear-gradient(top, #f5f5f5, #dcdcdc);
+  background-image: -o-linear-gradient(top, #f5f5f5, #dcdcdc);
+  background-image: linear-gradient(to bottom, #f5f5f5, #dcdcdc);
+  background-repeat: repeat-x;
+  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#fff5f5f5', endColorstr='#ffdcdcdc', GradientType=0);
+  text-shadow: 0px -1px 0 rgba(0, 0, 0, 0.3);
+  margin: -1px -1px 0px -1px;
+  border: 1px solid #ccc;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+}
+.dragndrop-enabled .dashboard-row .drag-handle .handle-inner {
+  margin: 3px;
+  background: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAG0lEQVQIW2M0Njb+f/bsWUYYzciABuAyOFUAAKKMEAXhn6ySAAAAAElFTkSuQmCC) repeat;
+  height: 13px;
+  opacity: 0.3;
+  filter: alpha(opacity=30);
+}
+.dragndrop-enabled .dashboard-row .drag-handle:hover {
+  background-color: #f5f5f5;
+  background-image: -moz-linear-gradient(top, #ffffff, #e5e5e5);
+  background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#ffffff), to(#e5e5e5));
+  background-image: -webkit-linear-gradient(top, #ffffff, #e5e5e5);
+  background-image: -o-linear-gradient(top, #ffffff, #e5e5e5);
+  background-image: linear-gradient(to bottom, #ffffff, #e5e5e5);
+  background-repeat: repeat-x;
+  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#ffffffff', endColorstr='#ffe5e5e5', GradientType=0);
+}
+.dragndrop-enabled .dashboard-row .splunk-table {
+  margin-top: -1px;
+}
+.dragndrop-enabled .sortable-placeholder {
+  min-width: 10px;
+  float: left;
+}
+.dragndrop-enabled .sortable-placeholder .dashboard-panel {
+  min-height: 200px;
+  background: #eee;
+  border: 1px dashed #ccc;
+}
+.dragndrop-enabled .dashboard-cell {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+.dragndrop-enabled .dashboard-row {
+  min-height: 100px;
+}
+.html h1 {
+  font-size: 20px;
+  font-weight: bold;
+}
+.html h2 {
+  font-size: 16px;
+  margin: 10px 0;
+  font-weight: normal;
+}
+.html h3 {
+  font-size: 14px;
+  font-weight: bold;
+}
+.html h4 {
+  font-size: 12px;
+  font-weight: bold;
+  margin: 0;
+}
+.html h5 {
+  font-size: 10.2px;
+}
+.splunk-chart {
+  overflow-y: hidden;
+}
+.timerange > label {
+  color: #999999;
+  float: left;
+  width: 160px;
+  padding-top: 5px;
+  text-align: right;
+}
+.timerange > .controls {
+  margin-left: 180px;
+}
+.timerange > .control-group > label {
+  color: #999999;
+  float: left;
+  width: 160px;
+  padding-top: 5px;
+  text-align: right;
+}
+.timerange > .control-group > .controls {
+  margin-left: 180px;
+}
+.tab-content {
+  background-color: #fdfdfd;
+  /* Old browsers */
+
+  background-image: -moz-linear-gradient(top, #ffffff 60px, #f5f5f5 100px);
+  /* FF3.6+ */
+
+  background-image: -webkit-gradient(linear, left top, left bottom, color-stop(60px, #ffffff), color-stop(100px, #f5f5f5));
+  /* Chrome,Safari4+ */
+
+  background-image: -webkit-linear-gradient(top, #ffffff 60px, #f5f5f5 100px);
+  /* Chrome10+,Safari5.1+ */
+
+  background-image: -o-linear-gradient(top, #ffffff 60px, #f5f5f5 100px);
+  /* Opera 11.10+ */
+
+  background-image: -ms-linear-gradient(top, #ffffff 60px, #f5f5f5 100px);
+  /* IE10+ */
+
+  background-image: linear-gradient(to bottom, #ffffff 60px, #f5f5f5 100px);
+  /* W3C */
+
+  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#ffffffff', endColorstr='#fff5f5f5', GradientType=0);
+}
+.dashboard-row .dashboard-cell:last-child .dashboard-panel {
+  margin-right: 0;
+}
+.dashboards-table-controls-convertdashboard .shared-controls-controlgroup .controls-halfblock .help-block {
+  width: 50%;
+  text-align: center;
+}
+.shared-resultstable-resultstablemaster td.with-overlay .overlay-cell {
+  margin-right: 0;
+}
+.splunk-radiogroup .choice {
+  margin-bottom: 4px;
+}
+.splunk-radiogroup input {
+  margin: 0;
+}
+.splunk-radiogroup label {
+  display: inline-block;
+  margin-left: 1em;
+  margin-bottom: 0;
+  vertical-align: middle;
+}

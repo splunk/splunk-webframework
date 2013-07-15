@@ -11,6 +11,14 @@ define(function(require, exports, module) {
             done();
         },
         
+        createUniqueDiv : function(attachTo, title){
+            attachTo.append("</br><h4>+ "+title+"</h4>");
+            var divName = this.getUniqueName();
+            var newDiv = $("<div id='" + divName + "'></div>");
+            attachTo.append(newDiv);
+            return newDiv;
+        },
+        
         // ### Assertions ###
         
         assertEventuallyTrue: function(predicate, message, next) {

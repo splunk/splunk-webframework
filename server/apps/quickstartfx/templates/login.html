@@ -1,48 +1,20 @@
-{% load url from future %}
 
 <!DOCTYPE html>
 <html>
 	<head>
-		<title>Splunk App Framework Quick Start</title>
+		<title>Splunk Application Framework Quick Start</title>
 		<!-- Bootstrap -->
-		<link href="{{STATIC_URL}}quickstartfx/css/bootstrap.css" rel="stylesheet" media="screen">
+    	<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/bootstrap.css"/>
 		<link href="{{STATIC_URL}}quickstartfx/css/style.css" rel="stylesheet" type="text/css" media="screen">
 		<link href="{{STATIC_URL}}quickstartfx/css/prettify.css" rel="stylesheet" type="text/css" media="screen">
-		<script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.min.js"></script>
-		<script src="{{STATIC_URL}}appfx/contrib/jquery.cookie.js"></script>
+		<script type="text/javascript" src="{{STATIC_URL}}quickstartfx/js/jquery-1.8.2.min.js"></script>
 		<style>
 		</style>
-		<script>
-			window.APPFX_STATIC_URL = "{{STATIC_URL}}";
-			
-			/*
-			 * Collapse the Django debug toolbar (DjDT) by default in AppFx.
-			 * 
-			 * DjDT by itself defaults to being maximized, which it undesirable
-			 * for AppFx because it obscures elements on the page behind it.
-			 * There is no documented configuration in DjDT to disable this
-			 * behavior so we manually collapse the DjDT toolbar (and remember
-			 * this setting) upon the first launch of AppFx.
-			 */
-			$(document).ready(function() {
-			    var LAUNCHED_COOKIE_NAME = 'splunk_appfx_launched';
-			    
-			    var firstLaunch = !$.cookie(LAUNCHED_COOKIE_NAME);
-			    if (firstLaunch) {
-			        djdt.hide_toolbar(/*remember=*/true);
-			        
-			        $.cookie(LAUNCHED_COOKIE_NAME, 'true', {
-			            path: '/',
-			            expires: 365     // one year
-			        });
-			    }
-			});
-		</script>
 	</head>
 	<body>
 		<div id="container">
 			<img src="{{STATIC_URL}}quickstartfx/img/splunk-logo.png" id="splunk-logo" />
-			<h1 class="tagline">Welcome to the Splunk App Framework</h1>
+			<h1 class="tagline">Welcome to the Splunk Application Framework</h1>
 			<div class="row" id="login-panels">
 				<div class="span15 offset1 quickstart">
 					<div class="well well-white">
@@ -55,9 +27,9 @@
 				<div class="span15 offset1">
 					<div class="well well-white login">
 						<h1>Want to jump right in?</h1>
-						<h2>Start using the Splunk App Framework now!</h2>
+						<h2>Start using the Splunk Application Framework now!</h2>
 						<p>Log in using your Splunk credentials:</p>
-                      	<form action="{% url 'appfx.auth.views.login' %}" class="loginForm" method="post" autocomplete="off">
+                      	<form action="{% url 'splunkdj.auth.views.login' %}" class="loginForm" method="post" autocomplete="off">
                           	{% csrf_token %}
 							<fieldset>
 								<label>Username</label>
@@ -71,7 +43,7 @@
 					</div>
 				</div>
 			</div>
-			<p id="login-footer">© 2005-2012 Splunk Inc. App Framework 0.1.0</p>
+			<p id="login-footer">© 2005-2013 Splunk Inc. Application Framework 0.8.0</p>
 		</div>
 		
 	</body>

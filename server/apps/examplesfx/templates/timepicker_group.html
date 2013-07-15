@@ -1,11 +1,11 @@
-{% extends "appfx:base_with_app_bar.html" %}
+{% extends "splunkdj:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
 {% block css %}
-    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
 
     <style>   
         #timepicker {
@@ -20,66 +20,70 @@
 {% endblock css %}
 
 {% block content %}
-
-<div class="container">
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
     <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Timepicker Groups</h4>
-                </div>
-                <div class="panel-body">
-                    <p>
-                    Another common activity is to have one timepicker control
-                    multiple searches. In this example, we have the same timepicker
-                    set the timebounds for two separate searches that drive
-                    the single-value controls.
-                    </p>
-                    
-                    <p>
-                    The key to this example is a special context called a <i>group</i> context,
-                    which as its name implies, encapsulates multiple contexts
-                    and exposes them as a single context.
-                    </p>
+        <div class="span12 dashboard-header clearfix">
+            <h2>Time Pickers</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                        <p>
+                        Another common activity is to use one time picker for
+                        multiple searches. In this example, we have the same time picker
+                        set the timebounds for two separate searches that drive
+                        the single-value views.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="row">
-    </div>
-    <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Grouped Timepicker</h4>
-                </div>
-                <div class="panel-body">
-                    {% timepicker id="timepicker" contextid="timegroup" %}
-                    {% single id="single1" contextid="simplesearch1" beforeLabel="_internal event Count: " %}
-                    {% single id="single2" contextid="simplesearch2" beforeLabel="_audit event Count: " %}
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Grouped Time Picker </h3>
+                    </div>
+                    <div class="panel-body">
+                        {% timepicker id="timepicker" %}
+                        {% single id="single1" managerid="simplesearch1" beforeLabel="_internal event Count: " %}
+                        {% single id="single2" managerid="simplesearch2" beforeLabel="_audit event Count: " %}
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-    <div class="row">
-    </div>
     </div>
 </div>
 
 {% endblock content%}
 
-{% block contexts %}
-    {% search id="simplesearch1" search="search index=_internal | stats count" 
+{% block managers %}
+    {% searchmanager id="simplesearch1" search="index=_internal | stats count" 
         preview=True cache=True status_buckets=0 auto_finalize_ec=100000 autostart=True %}
         
-    {% search id="simplesearch2" search="search index=_audit | stats count" 
+    {% searchmanager id="simplesearch2" search="index=_audit | stats count" 
         preview=True cache=True status_buckets=0 auto_finalize_ec=100000 autostart=True %}
-        
-    {% group "simplesearch1" "simplesearch2" id="timegroup" %}
-{% endblock contexts %}
+{% endblock managers %}
 
 {% block js %}
 <script>
+    require(["splunkjs/ready!"], function(mvc) {
+        var search1 = mvc.Components.getInstance("simplesearch1");
+        var search2 = mvc.Components.getInstance("simplesearch2");
+        var timepicker1 = mvc.Components.getInstance("timepicker"); 
+        
+        timepicker1.on("change", function() {
+            search1.search.set(timepicker1.val());
+            search2.search.set(timepicker1.val());
+        });
+    });
 </script>
 
 {% endblock js %}

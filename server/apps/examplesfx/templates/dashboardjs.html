@@ -1,59 +1,67 @@
-{% extends "appfx:base_with_app_bar.html" %}
+{% extends "splunkdj:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
 {% block css %}
-    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
-
-    <style>    
-    </style>
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
 {% endblock css %}
 
 {% block content %}
-
-<div class="container">
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
     <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Dashboards with JavaScript</h4>
-                </div>
-                <div class="panel-body">
-                    This example shows how to create a simple dashboard using JavaScript
-                    to create and connect the controls and contexts. You can see how
-                    we can also use plain old static HTML in the page.
+        <div class="span12 dashboard-header clearfix">
+            <h2>Dashboards with JavaScript</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                    <p>This example shows how to create a simple dashboard using JavaScript
+                    to create and connect the views and managers. You can see how
+                    we can also use plain static HTML in the page.</p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="row">
-        <div class="span4">
-            <div class="panel" id="panel0">
-                <div class="panel-head">
-                    <h4>A little table action.</h4>
-                </div>
-                <div class="panel-body">
-                    <div id="table1" class="appfx-control"></div>
-                </div>
-            </div>
-        </div>
-        <div class="span4">
-            <div class="panel" id="panel1">
-                <div class="panel-head">
-                    <h4>Singularity</h4>
-                </div>
-                <div class="panel-body">
-                    <div id="single1" class="appfx-control"></div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 33%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>A little table action</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div id="table1" class="splunk-view"></div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="span4">
-            <div class="panel" id="panel2">
-                <div class="panel-body">
-                    <p style="padding:0 15px;">
-                        <b>Lorem ipsum</b> dolor sit amet, consectetur adipiscing elit.
+        <div class="dashboard-cell" style="width: 33%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Singularity</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div id="single1" class="splunk-view"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="dashboard-cell" style="width: 33%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                        <p><b>Lorem ipsum</b> dolor sit amet, consectetur adipiscing elit.
                         Integer a ligula eu lectus tempor vulputate. Pellentesque porttitor eros nec elit
                         tempus gravida. Nullam laoreet vestibulum nunc a vulputate. Ut erat dolor, mollis
                         nec feugiat eget, congue placerat libero. Integer lacinia scelerisque orci, et
@@ -63,20 +71,22 @@
                         luctus eget consequat leo. Sed id erat quis mauris consectetur interdum id id risus.
                         Donec mattis gravida sodales. Proin ultricies sapien quis eros tincidunt porta.
                         Vestibulum vitae nulla eu orci bibendum facilisis vel sed ligula. Curabitur consequat
-                        pulvinar nisl, ut tempus neque sagittis eu.
-                    </p>
+                        pulvinar nisl, ut tempus neque sagittis eu.</p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="row">
-        <div class="span12">
-            <div class="panel" id="panel3">
-                <div class="panel-head">
-                    <h4>Very timely chart</h4>
-                </div>
-                <div class="panel-body">
-                    <div id="chart1" class="appfx-control"></div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Very timely chart</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div id="chart1" class="splunk-view"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -90,52 +100,64 @@
     // Because we didn't use the Django template tags, we have to load our
     // dependencies manually.
     var deps = [
-        "appfx/splunkui/chart",
-        "appfx/splunkui/resulttable",
-        "appfx/splunkui/searchcontext",
-        "appfx/splunkui/single",
+        "splunkjs/mvc",
+        "splunkjs/mvc/chartview",
+        "splunkjs/mvc/tableview",
+        "splunkjs/mvc/searchmanager",
+        "splunkjs/mvc/singleview"
     ];
-    AppFx.load(deps, function() {
-        // Here we are creating the three controls we are going to be using:
+    require(deps, function() {
+        var ChartView = require("splunkjs/mvc/chartview");
+        var ResultTableView = require("splunkjs/mvc/tableview");
+        var SearchManager = require("splunkjs/mvc/searchmanager");
+        var SingleView = require("splunkjs/mvc/singleview");
+        
+        // Here we are creating the three views we are going to be using:
          
         // Table
-        AppFx.Components.create("appfx-resulttable", "table1", {
-            contextid: "search1",
+        new ResultTableView({
+            id: "table1",
+            managerid: "search1",
             el: $("#table1")
         }).render();
         
         // Single Value
         // We also give it the 'beforeLabel' option
-        AppFx.Components.create("appfx-single", "single1", {
-            contextid: "search2",
+        new SingleView({
+            id: "single1",
+            managerid: "search2",
             beforeLabel: "Count of Events",
             el: $("#single1")
         }).render();
         
         // Chart
-        AppFx.Components.create("appfx-chart", "chart1", {
-            contextid: "search3",
-            type: "line",
+        new ChartView({
+            id: "chart1",
+            managerid: "search3",
+            "charting.chart": "line",
             el: $("#chart1")
         }).render();
         
         
-        // Create the three search contexts that we need
-        AppFx.Components.create("appfx-searchcontext", "search1", {
+        // Create the three search managers that we need
+        new SearchManager({
+            id: "search1",
             earliest_time: "-24h@h",
             latest_time: "now",
-            search: "search index=_internal | stats count by sourcetype" 
-        }).start();
-        AppFx.Components.create("appfx-searchcontext", "search2", {
+            search: "index=_internal | stats count by sourcetype" 
+        });
+        new SearchManager({
+            id: "search2",
             earliest_time: "-15m",
             latest_time: "now",
-            search: "search index=_internal | stats count" 
-        }).start();
-        AppFx.Components.create("appfx-searchcontext", "search3", {
+            search: "index=_internal | stats count" 
+        });
+        new SearchManager({
+            id: "search3",
             earliest_time: "-24h@h",
             latest_time: "now",
-            search: "search index=_internal | timechart count by sourcetype" 
-        }).start();
+            search: "index=_internal | timechart count by sourcetype" 
+        });
     });
 </script>
 {% endblock js %}

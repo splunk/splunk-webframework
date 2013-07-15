@@ -33,17 +33,17 @@ var decrypt = function (input, password, callback) {
 };
 
 // If there is a config.json file, let's read it
-if (process.env['APPFX_CONFIG']) {
-    var configFile = JSON.parse(fs.readFileSync(process.env['APPFX_CONFIG']).toString("utf-8"));
+if (process.env['SPLUNKDJ_CONFIG']) {
+    var configFile = JSON.parse(fs.readFileSync(process.env['SPLUNKDJ_CONFIG']).toString("utf-8"));
     for(var k in configFile) {
         config[k] = configFile[k];
     }
 }
 
 var router = {};
-router[util.format('/%s', config.mount)]        = util.format('127.0.0.1:%s/%s', config.appfx_port, config.mount);
-router['/[^/]+/account/login']                  = util.format('127.0.0.1:%s/%s/accounts/login', config.appfx_port, config.mount);
-router['/[^/]+/account/logout']                 = util.format('127.0.0.1:%s/%s/accounts/logout', config.appfx_port, config.mount);
+router[util.format('/%s', config.mount)]        = util.format('127.0.0.1:%s/%s', config.splunkdj_port, config.mount);
+router['/[^/]+/account/login']                  = util.format('127.0.0.1:%s/%s/accounts/login', config.splunkdj_port, config.mount);
+router['/[^/]+/account/logout']                 = util.format('127.0.0.1:%s/%s/accounts/logout', config.splunkdj_port, config.mount);
 router[util.format('%s/', config.proxy_path)]   = util.format('%s:%s', config.splunkd_host, config.splunkd_port);
 router['/']                                     = util.format('%s:%s', config.splunkweb_host, config.splunkweb_port);
 

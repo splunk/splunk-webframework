@@ -2,18 +2,24 @@ from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.conf.urls import patterns, include, url
 from django.core.urlresolvers import reverse, RegexURLPattern
 from django.conf import settings
+from django.conf.urls.i18n import i18n_patterns
 from django.utils import importlib
     
 import sys
-    
+
 from django.http import HttpResponseRedirect
+
+import logging
+
+logger = logging.getLogger('spl.django.service')
 
 def redirect_to_default_app(request):
     home = "%s:home" % settings.DEFAULT_APP
     reversed = "/%s/" % settings.DEFAULT_APP
     try:
         reversed = reverse(home)
-    except:
+    except Exception, e:
+        logger.exception(e)
         pass
         
     return HttpResponseRedirect(reversed)
@@ -24,22 +30,23 @@ def redirect_to_home(app):
         reversed = "/%s/" % app
         try:
             reversed = reverse(home)
-        except:
+        except Exception, e:
+            logger.exception(e)
             pass
             
         return HttpResponseRedirect(reversed)
     
     return redirect_internal
     
-urlpatterns = patterns('',
+urlpatterns = i18n_patterns('',
     # Examples:
     # url(r'^$', 'testsite.views.home', name='home'),
     # url(r'^testsite/', include('testsite.foo.urls')),
     url(r'^$', redirect_to_default_app, name='home'),
-    url(r'^accounts/login/$', 'appfx.auth.views.login', name="login"),
-    url(r'^accounts/logout/$', 'appfx.auth.views.logout', name="logout"),
-    url(r"^sxml/(?P<app>\w+)/(?P<path>.+)$", 
-        "appfx.simplexml.views.render_viewdata", name="render_simplexml"),
+    url(r'^accounts/login/$', 'splunkdj.auth.views.login', name="login"),
+    url(r'^accounts/logout/$', 'splunkdj.auth.views.logout', name="logout"),
+    url(r'^page_config/$', 'splunkdj.views.get_page_config', name="page_config"),
+    url(r'^redirector/(?P<app>\w+)/(?P<view>.+)/$', 'splunkdj.views.redirector', name="redirector"),
 )
 
 for app in settings.USER_APPS:
@@ -51,15 +58,18 @@ for app in settings.USER_APPS:
         app_urls_module = "%s.urls" % app
         app_urls = importlib.import_module(app_urls_module)
         urls = app_urls.urlpatterns
-    except:
+    except Exception, e:
         # There is no urls module, so we look for urlpatterns on the app itself,
         # which might be the case for single-file apps
         app_module = importlib.import_module(app)
         if hasattr(app_module, 'urlpatterns'):
             urls = app_module.urlpatterns
         else:
-            print "Could not find any urlpatterns for '%s'" % app
-                    
+            logger.debug("Could not find any urlpatterns for '%s'" % app)
+
+        logger.exception(e);
+
+                        
     if urls:
         # It could be that the app has no 'home' view, so we simply use
         # first view in the list
@@ -79,10 +89,21 @@ for app in settings.USER_APPS:
         # defined one.
         urls.append(url(r'^$', redirect_to_home(app)))
     
-        urlpatterns += patterns('', 
+        urlpatterns += i18n_patterns('', 
             (app_prefix, include(urls, namespace=app, app_name=app))
         )
         
-from appfx.utility import jsurls, config
+# Now that we are done adding the app-specific URLs, we're going to add
+# some catch-all routes, namely:
+# /<app>/flashtimeline -> /<locale>/app/<app>/flashtimeline
+# /<app>/search -> /<locale>/app/<app>/search
+# /<app>/<template_name> -> will render that template in that app
+urlpatterns += i18n_patterns('',
+    url(r'^(?P<app>\w+)/flashtimeline/$', 'splunkdj.views.default_flashtimeline', name="flashtimeline"),
+    url(r'^(?P<app>\w+)/search/$', 'splunkdj.views.default_search', name="search"),
+    url(r'^(?P<app>\w+)/(?P<template_name>\w+)/$', 'splunkdj.views.default_template_render', name="template_render"),
+)
+        
+from splunkdj.utility import jsurls, config
 jsurls.create_javascript_urlpatterns()
 config.create_config()

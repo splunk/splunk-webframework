@@ -1,0 +1,138 @@
+{% extends "splunkdj:base_with_app_bar.html" %}
+
+{% load splunkmvc %}
+
+{% block title %}{{app_name}} Component Basics{% endblock title %}
+
+{% block css %}
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/prettify.css"/>
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/custom.css"/>
+{% endblock css %}
+
+{% block content %}
+<!-- OVERVIEW -->
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
+    <div class="row">
+        <div class="span12 dashboard-header clearfix">
+            <h2>Component Basics</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body html">
+                        <h3>JavaScript vs Django</h3>
+                        <p>The Splunk Application Framework allows developers to create components using Django template tags and JavaScript. The fundamental difference between these two methods is that Django tags are processed server-side, while JavaScript is run entirely on the client. No matter how a control is initially created (Django or JavaScript), the result is an object that you can interact with at run time using JavaScript.</p>
+
+                        <h3 id="django">Django</h3>
+                        <p>Django makes it possible to declare components in HTML pages using component tags. Tags are parsed by the server and replaced with the proper HTML elements before being sent to the client. On the client, the framework processes the resulting HTML, inserting the necessary DOM elements. This Component Reference app shows how to instantiate all of the framework components. For example, a Splunk chart can be added to a page by adding this Django <code>chart</code> tag to that page's HTML template:</p>
+<pre class="prettyprint linenums lang-js lang-js" >
+&#123;% chart id="example-chart" managerid="example-search" %&#125;
+</pre>
+                        <p>We'll show you the basics of how to use the Django template tags, but we don't go too deep into Django. For that, go to the source: <a href="https://www.djangoproject.com/" target="_blank">Django's website</a>.</p>
+
+                        <h3 id="javascript">JavaScript</h3>
+                        <p>You can create and interact with the components of the Splunk Application Framework using JavaScript rather than tags. You'll need to manually load the required resources (Django tags automatically call the <code>component_loader</code>). The framework relies on <b>require.js</b> for dependency loading. Typically, a user passes a list of dependencies to require that will be available in the provided callback. The standard pattern for usage is:</p>
+
+<pre class="prettyprint linenums lang-js">
+//define dependencies
+var deps = [
+    "splunkjs/mvc/chart",
+    "splunkjs/mvc/tableview",
+    "splunkjs/mvc/searchmanager",            
+];
+
+//load requirements and define a callback
+require(deps,function(mvc) {
+    //here the chart, tableview, and searchmanager are ready
+})
+</pre>   
+
+                        <p>The search manager runs searches automatically (on a page load or change event) when <code>autostart</code> is <code>true</code>.</p>
+                        <p>Views require a <code>&lt;div&gt;</code> tag, which is a jQuery selector that corresponds to a location (element ID) on the page for the view. This element ID is passed in with the <code>el</code> parameter (see below). To display views on the page, call <code>render</code>.</p>
+                        <p>Here is an example that continues the previous code snippet by adding a <code>tableview</code> and a <code>searchmanager</code> once components are loaded:</p>
+
+<pre class="prettyprint linenums lang-js">
+//define dependencies
+var deps = [
+    "splunkjs/mvc/tableview",
+    "splunkjs/mvc/searchmanager",            
+];
+
+//load requirements and define a callback
+require(deps,function() {
+    var ResultTableView = require("splunkjs/mvc/tableview");
+    var SearchManager = require("splunkjs/mvc/searchmanager");
+    
+    //create a resulttable.
+    new ResultTableView({
+        id: "resulttable1",
+        managerid: "search1",
+        el: $("#divToHangOn")   // identify the div to add this component to
+    }).render();                // call render                
+
+    //create a searchmanager.
+    new SearchManager({
+        id: "search1",
+        earliest_time: "-24h@h",
+        latest_time: "now",
+        search: "index=_internal | stats count by sourcetype" 
+    });                     
+})
+</pre>  
+
+                        <p>This pattern is used for all of the framework components.</p>
+
+                        <h3>Listening to click events</h3>
+                        <p>You can listen to and respond to click events on all controls in JavaScript as follows:</p>
+
+<pre class="prettyprint linenums lang-js">
+splunkjs.mvc.Components.getInstance("example-chart")
+    .on("clicked:chart", function (e) {
+        // your code here
+    })
+</pre>
+                        <p>Information about the event is encapsulated in the <code>e</code> argument that is passed into this function.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- END OVERVIEW-->
+
+
+
+{% endblock content %}
+
+{% block managers %}
+    
+{% endblock managers %}
+
+{% block js %}
+
+{{block.super}}
+
+<script type="text/javascript">
+
+require.config({
+    shim: {
+        "componentfx/prettify": {
+            deps: [],
+            exports: "prettyPrint"
+        } 
+    }
+});
+
+require(["componentfx/prettify"], function(prettyPrint) {
+    //pp formats code samples
+    prettyPrint();
+});
+    
+</script>
+
+{% endblock js %}

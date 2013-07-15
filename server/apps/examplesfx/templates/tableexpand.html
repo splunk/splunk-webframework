@@ -1,58 +1,66 @@
-{% extends "appfx:base_with_app_bar.html" %}
+{% extends "splunkdj:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
 {% block css %}
-    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
 {% endblock css %}
 
 {% block content %}
 
-<div class="container">
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
     <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Table Row Expansion</h4>
-                </div>
-                <div class="panel-body">
-                    <p>
-                    A very nice pattern is to have a table row expand into a
-                    more detailed view when it is clicked. Usually, this is
-                    done using two searches: one representing the "master"
-                    table, and another, which is tokenized for the "detail" view
-                    and is set whenever a row is clicked.
-                    </p>
-                    
-                    <p>
-                    In this example, when a table row is clicked, we expand
-                    that row and start the detail search for that sourcetype. The
-                    key takeaway is how we manually work
-                    with a search context (and its datasource) to get the results,
-                    and how we use the table click to drive that search.
-                    </p>
-                    
-                    <p>
-                    Don't be startled by the seemingly large number of lines of code.
-                    The majority of it is the HTML-DOM wrangling
-                    to get the table to expand properly. In another example,
-                    we will show how you could take this functionality and wrap
-                    it in a reusable control.
-                    </p>
+        <div class="span12 dashboard-header clearfix">
+            <h2>Table Row Expansion</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                        <p>
+                        A very nice pattern is to have a table row expand into a
+                        more detailed view when clicked. Usually, this is
+                        done using two searches: one representing the "master"
+                        table, and another, which is tokenized for the "detail" view
+                        and is set whenever a row is clicked.
+                        </p>
+                        
+                        <p>
+                        In this example, when a table row is clicked, we expand
+                        that row and start the detail search for that sourcetype. The
+                        key takeaway is how we manually work
+                        with a search manager (and its results model) to get the results,
+                        and how we use the table click to drive that search.
+                        </p>
+                        
+                        <p>
+                        Don't be startled by the seemingly large number of lines of code.
+                        The majority of it is the HTML-DOM wrangling
+                        to get the table to expand properly. In another example,
+                        we will show how you could take this functionality and wrap
+                        it in a reusable view.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Table</h4>
-                </div>
-                <div class="panel-body">
-                    {% resulttable id="table" contextid="simplesearch1" %}
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Table</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% resulttable id="table" managerid="simplesearch1" %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -61,24 +69,24 @@
 
 {% endblock content%}
 
-{% block contexts %}
-    {% search id="simplesearch1" search="search index=_internal | stats count by sourcetype" 
-        preview=True cache=True autostart=True earliest_time="-1h" %}
+{% block managers %}
+    {% searchmanager id="simplesearch1" search="| metadata type=sourcetypes index=_internal | rename totalCount as count | table sourcetype count" 
+        preview=True cache=True autostart=True %}
         
-    {% search id="expandsearch" search="| metadata type=sourcetypes index=_internal | search sourcetype=$sourcetype$"
+    {% searchmanager id="expandsearch" search="| metadata type=sourcetypes index=_internal | search sourcetype=$sourcetype$"
         preview=False cache=True autostart=False %}
-{% endblock contexts %}
+{% endblock managers %}
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
+    require(["splunkjs/ready!"], function(mvc) {
         var _ = require('underscore');
         
-        var table = AppFx.Components.getInstance("table");
-        var sourcetypeSearch = AppFx.Components.getInstance("expandsearch");
+        var table = mvc.Components.getInstance("table");
+        var sourcetypeSearch = mvc.Components.getInstance("expandsearch");
         
         // Let's get a reference to it's data
-        var sourcetypeData = sourcetypeSearch.data("results", {
+        var sourcetypeResultsModel = sourcetypeSearch.data("results", {
             count: 1
         });
         
@@ -92,7 +100,7 @@
             // jquery makes this a bit difficult
             var row = table.$("tr").find("td:contains(" + sourcetype + ")")
                 .filter(function(idx, cell) {
-                    return $(cell).text() === sourcetype;
+                    return $.trim($(cell).text()) === sourcetype;
                 }).parent();
                 
             // Do some HTML munging
@@ -129,9 +137,9 @@
         });
         
         // Whenever the data updates, we can update the HTML                
-        sourcetypeData.on("data", function() {                
+        sourcetypeResultsModel.on("data", function() {                
             infoRow.find(".loading").hide();
-            var collection = sourcetypeData.collection();
+            var collection = sourcetypeResultsModel.collection();
             var data = collection.at(0);
             
             infoRow.find(".earliest-time")

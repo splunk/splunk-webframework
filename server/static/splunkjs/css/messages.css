@@ -1,0 +1,8 @@
+.splunk-message-container {
+    padding: 54px 40px 90px 40px;
+}
+
+.splunk-message-container.compact {
+    padding: 0px 40px 10px 40px;
+    text-align: center;
+}

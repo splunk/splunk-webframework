@@ -1,0 +1,279 @@
+{% extends "splunkdj:base_with_app_bar.html" %}
+
+{% load splunkmvc %}
+
+{% block title %}{{app_name}} Dataview Template Rendering{% endblock title %}
+
+{% block css %}
+<link rel="stylesheet" href="{{STATIC_URL}}componentfx/prettify.css"/>
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
+<link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/custom.css" />
+<style>
+    table.example {
+        margin: 10px 0 20px 20px;
+        border: 1px solid #bbb;
+    }
+
+    table.example tr:nth-child(even) { background-color: #ddd; }
+    table.example tr:nth-child(odd)  { background-color: #fff; }
+    table.example td { padding: 0.2em 0.5em 0.1em 0.5em; }
+
+    .example-1 {
+        margin: 10px 0 20px 20px;
+        width: 50%;
+        border: 1px solid #bbb; 
+        font-weight: bold;
+    }
+</style>
+{% endblock css %}
+
+{% block content %}
+<div class="dashboard-body container-fluid main-section-body">
+  <div class="row">
+    <div class="span12 dashboard-header clearfix">
+      <h2>
+        Data Template View
+      </h2>
+    </div>
+  </div>
+
+  <div class="dashboard-row">
+    <div class="dashboard-cell">
+      <div class="dashboard-panel">
+        <div class="dashboard-element">
+          <div class="panel-head">
+          </div>
+
+          <div class="panel-body html">
+            <p>
+              The Data Template View provides developers with the
+              ability to render data using the client-side
+              templating engine provided by <a href=
+              "http://underscorejs.org">underscore.js</a>.
+            
+              Explaining underscore templates is beyond the scope
+              of this example, but the following examples should
+              help you get started.
+            </p>
+          
+              <h2>
+                Dataview, Django Tag, Embedded Template
+              </h2>
+            
+              <p>
+                In this example, an Underscore template is included
+                as text in the <strong>Dataview</strong> tag. In
+                this example, the search manager bound to the
+                <strong>Dataview</strong> uses the rangemap
+                search command to create a range field in the
+                search results that indicates a severity of values.
+              </p>
+
+              <div class="bs-docs-example">
+                {% dataview id="single-search-example"
+                managerid="example-single-search" 
+                template='<div class="example-1">Event Count: <%= results[0].count %>. Status: <%= results[0].range %></div>' %}
+              </div>
+
+              <pre class="prettyprint linenums lang-js">
+&#123;% block content %&#125;
+&#123;% dataview id="single-search-example"
+                 managerid="example-single-search" 
+                 template='&lt;div class="example-1"&gt;Event Count: &lt;%= results[0].count %&gt;.  Status: &lt;%= results[0].range %&gt;&lt;/div&gt;' 
+%&#125;
+&#123;% endblock content %&#125; 
+
+&#123;% block managers %&#125; 
+&#123;% searchmanager id="example-single-search" 
+      search="index=_internal | stats count | rangemap field=count low=0-3 elevated=3-6 severe=6-10 default=severe" 
+       earliest_time="-15m" latest_time="now" 
+%&#125;
+&#123;% endblock managers %&#125; 
+</pre>
+            
+              <h2>
+                Dataview, Django Tag, External Template
+              </h2>
+            
+              <p>
+                In this example, an Underscore template is included
+                by name in the <strong>Dataview</strong> tag. The
+                template is embedded in the HTML page itself. In
+                this example, the search manager bound to the
+                <strong>Dataview</strong> uses the music data to
+                list number of searches per artist.
+              </p>
+
+              <p>
+                The template is embedded using a &lt;script&gt;
+                tag. The <tt>type</tt> attribute is required to
+                prevent browsers from interpreting the script
+                contents as Javascript.
+              </p>
+
+              <div class="bs-docs-example">
+                <script type="text/x-underscore-tmpl" id=
+                "top-artist-search-template" class="c2">
+                <table class="example">
+                  <tbody>
+                  <% for(var i=0, l=results.length; i<l; i++) { var line=results[i]; %>
+                    <tr><td><%= line.search_terms %>:</td><td>&nbsp;&nbsp;<%= line.count %></td></tr>
+                  <% } %>
+                  </tbody>
+                </table>
+                </script> 
+
+                {% dataview id="table-top-artist-searches"
+                            managerid="search-top-artist-searches"
+                            templateName="top-artist-search-template" 
+                %}
+              </div>
+
+              <pre class="prettyprint linenums lang-js">
+&#123;% block content %&#125;            
+&lt;script type="text/x-underscore-tmpl" id="top-artist-search-template" style="display:none"&gt;
+&lt;table&gt;
+  &lt;tbody&gt;
+  &lt;% for(var i=0, l=results.length; i&lt;l; i++) { var line=results[i]; %&gt;
+    &lt;tr&gt;&lt;td&gt;&lt;%= line.search_terms %&gt;&lt;/td&gt;&lt;td&gt;&lt;%= line.count %&gt;&lt;/td&gt;&lt;/tr&gt;
+  &lt;% } %&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;/script&gt;
+
+&#123;% dataview id="table-top-artist-searches"
+   managerid="search-top-artist-searches"
+   templateName="top-artist-search-template" %&#125;
+&#123;% endblock %&#125;            
+
+&#123;% block managers %&#125;            
+&#123;% searchmanager id="search-top-artist-searches" 
+     search='| inputlookup musicdata.csv | search bc_uri=/browse/search/* | top search_terms | fields - percent | rex field=search_terms mode=sed "s/\+/ /g"'
+     cache=True
+%&#125;
+&#123;% endblock %&#125;            
+            
+</pre>
+            
+                <h2>
+                  Dataview, Javascript Example
+                </h2>
+              
+                <p>
+                  In this example, we invoke the DataView
+                  using Javascript, and associate the content of
+                  the template with the view programmatically.
+                  This technique allows users to invoke external
+                  templates using advanced loaders such as
+                  require.js
+                </p>
+
+                <div class="bs-docs-example">
+                  <div id="search-top-song-table">
+                  </div>
+                  <script type="text/x-underscore-tmpl" id="search-top-song-template" class="c2">
+                  <table class="example">
+                    <tbody>
+                    <% for(var i=0, l=results.length; i<l; i++) { var line=results[i]; %>
+                      <tr><td><%= line.track_name %>:</td><td>&nbsp;&nbsp;<%= line.count %></td></tr>
+                    <% } %>
+                    </tbody>
+                  </table>
+                  </script>
+                </div>
+
+                <pre class="prettyprint linenums lang-js">
+&#123;% block content %&#125;            
+&lt;script type="text/x-underscore-tmpl" id="top-artist-search-template" style="display:none"&gt;
+&lt;table&gt;
+  &lt;tbody&gt;
+  &lt;% for(var i=0, l=results.length; i&lt;l; i++) { var line=results[i]; %&gt;
+    &lt;tr&gt;&lt;td&gt;&lt;%= line.track_name %&gt;&lt;/td&gt;&lt;td&gt;&lt;%= line.count %&gt;&lt;/td&gt;&lt;/tr&gt;
+  &lt;% } %&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;/script&gt;
+
+&#123;% endblock %&#125;            
+
+&#123;% block js %&#125;            
+&lt;script type="application/javascript"&gt;
+    var deps = [
+        "splunkjs/mvc",
+        "splunkjs/mvc/searchmanager",
+        "splunkjs/mvc/dataview"
+    ];
+    require(deps, function(mvc, SearchManager, DataView) {
+        new SearchManager({
+            id: "search-top-song-downloads",
+            search: "| inputlookup musicdata.csv | search bc_uri=/sync/addtolibrary/* | stats count by track_name | sort count desc | table track_name count",
+            cache: true
+        });
+
+        new DataView({
+            id: "table-top-song-downloads",
+            managerid: "search-top-song-downloads",
+            template: $('#search-top-song-template').html(),
+            el: $('#search-top-song-table')
+        }).render();
+    });
+&lt;/script&gt;
+&#123;% endblock %&#125;            
+
+            
+</pre>
+             
+  </div>
+</div>
+{% endblock content%}
+
+
+{% block managers %}
+  {% searchmanager id="example-single-search" 
+     search="index=_internal | stats count | rangemap field=count low=0-3 elevated=3-6 severe=6-10 default=severe" 
+      earliest_time="-15m" latest_time="now" 
+  %}
+
+  {% searchmanager id="search-top-artist-searches" 
+     search='| inputlookup musicdata.csv | search bc_uri=/browse/search/* | top search_terms | fields - percent | rex field=search_terms mode=sed "s/\+/ /g"'
+     cache=True
+  %}
+
+{% endblock managers %}
+
+{% block js %}    
+<script type="application/javascript">
+require.config({
+    shim: {
+        "componentfx/prettify": {
+            deps: [],
+            exports: "prettyPrint"
+        } 
+    }
+});
+
+require(["componentfx/prettify", "bootstrap.tab"], function(prettyPrint) {
+    //formats code samples
+    prettyPrint();
+});
+    var deps = [
+        "splunkjs/mvc",
+        "splunkjs/mvc/searchmanager",
+        "splunkjs/mvc/dataview",
+    ];
+    require(deps, function(mvc, SearchManager, DataView) {
+        new SearchManager({
+            id: "search-top-song-downloads",
+            search: "| inputlookup musicdata.csv | search bc_uri=/sync/addtolibrary/* | stats count by track_name | sort count desc | table track_name count",
+            cache: true
+        });
+
+        new DataView({
+            id: "table-top-song-downloads",
+            managerid: "search-top-song-downloads",
+            template: $('#search-top-song-template').html(),
+            el: $('#search-top-song-table')
+        }).render();
+    });
+</script>
+{% endblock js %}

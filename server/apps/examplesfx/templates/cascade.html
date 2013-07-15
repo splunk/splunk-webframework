@@ -1,31 +1,32 @@
-{% extends "appfx:base_with_app_bar.html" %}
+{% extends "splunkdj:base_with_app_bar.html" %}
 
-{% load splunkui %}
+{% load splunkmvc %}
 
 {% block title %}{{app_name}} Home Page{% endblock title %}
 
 {% block css %}
-    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}{{app_name}}/dashboard.css" />
-
-    <style>    
-    </style>
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
 {% endblock css %}
 
 {% block content %}
-
-<div class="container">
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
     <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Cascading Forms</h4>
-                </div>
-                <div class="panel-body">
+        <div class="span12 dashboard-header clearfix">
+            <h2>Cascading Forms</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
                     <p>
-                    In this case, we have two form controls, and the choice of
+                    In this case, we have two form <code>select</code> views, and the choice of
                     one cascades into the other. When you select an index, we run 
                     a search to find which sourcetypes are available
-                    on that index. Finally, when you click the Search button, we
+                    on that index. Finally, when you click the <b>Search</b> button, we
                     use both selections to run the final search.
                     </p>
                     
@@ -33,36 +34,38 @@
                     Note how we are using the same approach as when we had form
                     inputs feeding into searches directly: there is no difference
                     between a search that populates a form and a search that
-                    populates a control.
+                    populates a view.
                     </p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="row">
-        <div class="span6">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4>Input</h4>
-                </div>
-                <div class="panel-body">
-                    Which index should we find sourcetypes for?
-                    {% select id="indexes" contextid="indexsearch" default="*" valueField="index" %}
-                    Which sourcetype should we use?
-                    {% select id="sourcetypes" contextid="sourcetypesearch" valueField="sourcetype" %}
-                    <button id="searchbutton" class="btn btn-primary">Search</button>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Input</h3>
+                    </div>
+                    <div class="panel-body">
+                        <p>Which index should we find sourcetypes for?</p>
+                        {% select id="indexes" managerid="indexsearch" default="*" valueField="index" %}
+                        <p>Which sourcetype should we use?</p>
+                        {% select id="sourcetypes" managerid="sourcetypesearch" valueField="sourcetype" %}
+                        <button id="searchbutton" class="btn btn-primary">Search</button>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-    <div class="row">
-        <div class="span12">
-            <div class="panel">
-                <div class="panel-head">
-                    <h4></h4>
-                </div>
-                <div class="panel-body">
-                    {% single id="singlevalue" contextid="simplesearch1" beforeLabel="Event Count: " %}
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                    </div>
+                    <div class="panel-body">
+                        {% single id="singlevalue" managerid="simplesearch1" beforeLabel="Event Count: " %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -71,23 +74,23 @@
 
 {% endblock content%}
 
-{% block contexts %}        
-    {% search id="indexsearch" search="| eventcount summarize=false index=* OR index=_*" cache=True preview=False %}
+{% block managers %}        
+    {% searchmanager id="indexsearch" search="| eventcount summarize=false index=* OR index=_*" cache=True preview=False %}
     
-    {% search id="sourcetypesearch" search="| metadata index=$index$ type=sourcetypes" cache=True preview=True autostart=False %}
+    {% searchmanager id="sourcetypesearch" search="| metadata index=$index$ OR index=_$index$ type=sourcetypes" cache=True preview=True autostart=False %}
     
-    {% search id="simplesearch1" search="search index=$index$ sourcetype=$sourcetype$ earliest=-5m | stats count" 
+    {% searchmanager id="simplesearch1" search="index=$index$ sourcetype=$sourcetype$ earliest=-5m | stats count" 
         preview=True cache=60 status_buckets=300 autostart=False %}
-{% endblock contexts %}
+{% endblock managers %}
 
 {% block js %}
 <script>
-    AppFx.on("start", function() {
-        // Fetch a reference to the control and contexts
-        var indexes = AppFx.Components.getInstance("indexes");
-        var sourcetypes = AppFx.Components.getInstance("sourcetypes");
-        var simpleSearch1 = AppFx.Components.getInstance("simplesearch1");
-        var sourcetypeSearch = AppFx.Components.getInstance("sourcetypesearch");
+    require(["splunkjs/ready!"], function(mvc) {
+        // Fetch a reference to the views and managers
+        var indexes = mvc.Components.getInstance("indexes");
+        var sourcetypes = mvc.Components.getInstance("sourcetypes");
+        var simpleSearch1 = mvc.Components.getInstance("simplesearch1");
+        var sourcetypeSearch = mvc.Components.getInstance("sourcetypesearch");
         
         // Add "all" choices to
         indexes.settings.set("choices", [
@@ -103,7 +106,7 @@
                 return;   
             }
             
-            // Set the tokens for both contexts
+            // Set the tokens for both managers
             sourcetypeSearch.query.set("index", indexes.val());
             
             // Start the searches

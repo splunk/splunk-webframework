@@ -1,10 +1,8 @@
-{% extends 'appfx:base_with_account_bar.html' %}
-{% load url from future %}
+{% extends 'splunkdj:base_with_account_bar.html' %}
 
 {% block title %}Home{% endblock title %}
 
 {% block css %}
-  <!--<link rel="stylesheet" href="{{STATIC_URL}}appfx/contrib/bootstrap.css"/>-->
   <style>
     .container {
       padding-top: 40px;
@@ -46,6 +44,7 @@
         background-color: #fff;
         padding: 15px 0px 0px 20px;
         margin-top: 0;
+        margin-bottom: 40px;
         border-radius: 4px;
         box-shadow: 0px 1px 1px rgba(0,0,0,0.08);
     }
@@ -76,24 +75,17 @@
   </div>
 {% endblock %}
 
-{% block _js %}
-  {{block.super}}
-  <script src="{{STATIC_URL}}appfx/contrib/jquery-1.8.2.js"></script>
-  <script src="{{STATIC_URL}}appfx/contrib/jquery.dragdrop.js"></script>
-  <script src="{{STATIC_URL}}appfx/contrib/underscore.js"></script>
-{% endblock _js %}
-
 {% block js %}
   <script>
-    $(function() {
-        $(".sortable").sortable({});
-        
-        // Make it so the entire area is clickable
-        $("li.app").click(function(e) {
-          e.stopPropagation();
-          e.preventDefault();
-          window.location = $(e.currentTarget).find("a.app-link").attr("href");
-        });
+    require(["jquery"], function() {
+      $(function() {        
+          // Make it so the entire area is clickable
+          $("li.app").click(function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            window.location = $(e.currentTarget).find("a.app-link").attr("href");
+          });
+      });
     });
   </script>
 {% endblock js %}

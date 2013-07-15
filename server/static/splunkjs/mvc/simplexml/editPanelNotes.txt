@@ -1,0 +1,37 @@
+If you clear a model then you lose the id.
+
+
+Methods on the DashboardReport object
+    - save to panel element
+        - has and id? - Update the dashboard xml
+        - add a new panel element to the dashboard xml
+    - Save to report - just calls save
+    - delete panel element
+    - reset to report format
+        - get the id of the report
+        - fetch the panel - Do you still want the delta from the panel?
+        - fetch the report - from the old id.
+        - layer the report onto the panel
+        - save the panel element
+    - clone panel
+        - extends this and clears the id
+        - call saave to panel element
+    - create new report
+        - extends this and clear the id
+        - call save
+    - Am I a pivot report?
+    - Am I a saved search?
+    - Am I a panel? - just an instance of DashboardReport?
+
+
+    Calling save/delete
+        - save panel element (this is what I think)
+            - This would allow you to reuse any component that would have already called save on the report objects.
+            - only the specific panel element to report views would need
+        OR
+        - save the report
+
+Manager in the DashboardReport
+    - Seems that the manager has a subset of the element of a report.
+    - If the id of the report is set, then it is a saved search
+        Otherwise it is an inline search

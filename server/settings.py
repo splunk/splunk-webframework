@@ -13,17 +13,20 @@ for contrib_package_path in os.listdir(contrib_dir):
     contrib_package_path = os.path.abspath(contrib_package_path)
     sys.path.insert(0, contrib_package_path)
 
-# Add the apps to the path
-apps_path = os.path.join(current_dir, 'apps')
-sys.path.insert(0, apps_path)
-
 # Get the config file
-APPFX_CONFIG = {}
-if 'APPFX_CONFIG' in os.environ and os.environ['APPFX_CONFIG'].strip():
-    APPFX_CONFIG = json.load(open(os.environ['APPFX_CONFIG'], 'r'))
+SPLUNKDJ_CONFIG = {}
+if 'SPLUNKDJ_CONFIG' in os.environ and os.environ['SPLUNKDJ_CONFIG'].strip():
+    SPLUNKDJ_CONFIG = json.load(open(os.environ['SPLUNKDJ_CONFIG'], 'r'))
+
+# Provide a way to access elements in the config that fails nicely
+def get_config(option):
+    if option not in SPLUNKDJ_CONFIG:
+        raise ValueError('Could not find expected "%s" setting in %s' % (
+            option, os.environ['SPLUNKDJ_CONFIG']))
+    return SPLUNKDJ_CONFIG[option]
 
 # Pickup the debug flag from the config file
-DEBUG = APPFX_CONFIG.get("debug")
+DEBUG = get_config("debug")
 TEMPLATE_DEBUG = DEBUG
 
 # Find out whether we are in test mode (best way to do this according
@@ -53,6 +56,18 @@ TIME_ZONE = 'America/Los_Angeles'
 # http://www.i18nguy.com/unicode/language-identifiers.html
 LANGUAGE_CODE = 'en-us'
 
+gettext = lambda s: s
+LANGUAGES = (
+    ('en-us', gettext('English')),
+    ('en-gb', gettext('British English')),
+    ('de-de', gettext('German')),
+    ('it-it', gettext('Italian')),
+    ('ko-kr', gettext('Korean')),
+    ('ja-jp', gettext('Japanese')),
+    ('zh-cn', gettext('Simplified Chinese')),
+    ('zh-tw', gettext('Traditional Chinese')),
+)
+
 SITE_ID = 1
 
 # If you set this to False, Django will make some optimizations so as not
@@ -76,10 +91,8 @@ MEDIA_ROOT = ''
 MEDIA_URL = ''
 
 # We will error out if there is no 'mount' set.
-if not 'mount' in APPFX_CONFIG:
-    raise Exception("You must have a 'mount' value defined in .appfxrc")
-    
-MOUNT = APPFX_CONFIG.get('mount')
+MOUNT = get_config('mount')
+RAW_MOUNT = get_config('raw_mount')
 
 # Absolute path to the directory static files should be collected to.
 # Don't put anything in this directory yourself; store your static files
@@ -99,36 +112,41 @@ STATICFILES_DIRS = (
 )
 
 SESSION_ENGINE='django.contrib.sessions.backends.signed_cookies'
+SESSION_COOKIE_NAME="sessionid_django"
+SESSION_COOKIE_PATH="/%s" % MOUNT.strip("/")
 
 # List of finder classes that know how to find static files in
 # various locations.
 STATICFILES_FINDERS = (
     'django.contrib.staticfiles.finders.FileSystemFinder',
     'django.contrib.staticfiles.finders.AppDirectoriesFinder',
-    'appfx.loaders.statics.StaticRootFinder',
+    'splunkdj.loaders.statics.StaticRootFinder',
+    'splunkdj.loaders.statics.SplunkWebStaticFinder',
 #    'django.contrib.staticfiles.finders.DefaultStorageFinder',
 )
 
 # Make this unique, and don't share it with anybody.
-SECRET_KEY = APPFX_CONFIG.get('secret_key')
+SECRET_KEY = get_config('secret_key')
 
 # List of callables that know how to import templates from various sources.
 TEMPLATE_LOADERS = (
-    'appfx.loaders.template_loader.SpecificAppLoader',
+    'splunkdj.loaders.template_loader.SpecificAppLoader',
     'django.template.loaders.filesystem.Loader',
     'django.template.loaders.app_directories.Loader',
 #     'django.template.loaders.eggs.Loader',
 )
 
 MIDDLEWARE_CLASSES = (
-    'django.middleware.common.CommonMiddleware',
+    'splunkdj.middlewares.SplunkDjangoRequestLoggingMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'splunkdj.middlewares.SplunkLocaleMiddleware',
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
+    'splunkdj.middlewares.SplunkWebSessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'appfx.auth.middleware.SplunkAuthenticationMiddleware',
-    'appfx.middlewares.SplunkCsrfMiddleware',
+    'splunkdj.auth.middleware.SplunkAuthenticationMiddleware',
+    'splunkdj.middlewares.SplunkCsrfMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    'debug_toolbar.middleware.DebugToolbarMiddleware',
     # Uncomment the next line for simple clickjacking protection:
     # 'django.middleware.clickjacking.XFrameOptionsMiddleware',
 )
@@ -144,7 +162,7 @@ TEMPLATE_CONTEXT_PROCESSORS = (
     "django.core.context_processors.tz",
     "django.core.context_processors.request",
     "django.contrib.messages.context_processors.messages",
-    "appfx.context_processors.appfx")
+    "splunkdj.context_processors.splunkdj")
 
 ROOT_URLCONF = 'urls'
 
@@ -157,23 +175,12 @@ TEMPLATE_DIRS = (
     # Don't forget to use absolute paths, not relative paths.
 )
 
-DEBUG_TOOLBAR_PANELS = (
-    'debug_toolbar.panels.version.VersionDebugPanel',
-    'debug_toolbar.panels.timer.TimerDebugPanel',
-    'debug_toolbar.panels.settings_vars.SettingsVarsDebugPanel',
-    'debug_toolbar.panels.headers.HeaderDebugPanel',
-    'debug_toolbar.panels.request_vars.RequestVarsDebugPanel',
-    #'debug_toolbar.panels.template.TemplateDebugPanel',
-    'debug_toolbar.panels.logger.LoggingPanel',
-    'appfx.debug.splunk_rest.SplunkRestDebugPanel',
-)
-
 DEBUG_TOOLBAR_CONFIG = {
     'INTERCEPT_REDIRECTS': False,
 }
 
 AUTHENTICATION_BACKENDS = (
-    'appfx.auth.backends.SplunkAuthenticationBackend',
+    'splunkdj.auth.backends.SplunkAuthenticationBackend',
 )
 
 # Only if we are in test mode should we use the model backend
@@ -184,6 +191,11 @@ if TEST_MODE:
         'NAME': 'testdb',
     }
 
+USER_APP_FINDERS = (
+    'splunkdj.loaders.apps_finder.BasicAppsFinder',
+    'splunkdj.loaders.apps_finder.SplunkWebAppsFinder',
+)
+
 INSTALLED_APPS = (
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -191,46 +203,85 @@ INSTALLED_APPS = (
     'django.contrib.sites',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'debug_toolbar',
-    'appfx',
+    'splunkdj',
 )
 
-# Auto-discover all user applications from the apps/ directory
-USER_APPS = ()
-for app_path in os.listdir(os.path.join(current_dir, "apps")):
-    full_app_path = os.path.join(current_dir, "apps", app_path)
-    is_dir = os.path.isdir(full_app_path)
-    
-    if not (is_dir or app_path.endswith(".py")):
-        continue
-    
-    USER_APPS += ((app_path if is_dir else app_path[:-3]),)
-    
+BUILTIN_APPS = (
+    'componentfx',
+    'examplesfx',
+    'homefx',
+    'quickstartfx',
+    'testfx',
+    'setupfx'
+)
+
+USER_APPS = (
+    # user defined apps go here - they need to be in the PYTHONPATH
+)
+
+# Use the loaders to find all the other user apps
+from splunkdj.loaders.apps_finder import find_user_apps
+USER_APPS += find_user_apps()
+
+DISCOVERED_APPS = set(USER_APPS) - set(BUILTIN_APPS)
+
+# Combine the USER_APPS into INSTALLED_APPS
 INSTALLED_APPS += USER_APPS
+
+SPLUNKD_SCHEME        = str(get_config('splunkd_scheme'))
+SPLUNKD_HOST          = str(get_config('splunkd_host'))
+SPLUNKD_PORT          = int(get_config('splunkd_port'))
+SPLUNK_WEB_SCHEME     = str(get_config('splunkweb_scheme'))
+SPLUNK_WEB_HOST       = str(get_config('splunkweb_host'))
+SPLUNK_WEB_PORT       = int(get_config('splunkweb_port'))
+SPLUNK_WEB_MOUNT      = str(get_config('splunkweb_mount'))
+SPLUNK_WEB_INTEGRATED = bool(get_config('splunkweb_integrated'))
 
 DEFAULT_APP = 'homefx'
 
-LOGIN_URL = "/%s/accounts/login/" % MOUNT
-LOGIN_REDIRECT_URL = "/%s" % MOUNT
-LOGOUT_URL = '/%s/accounts/logout/' % MOUNT
-if APPFX_CONFIG.get('quickstart'):
-    LOGIN_TEMPLATE = 'quickstartfx:login.html'
-else:
-    LOGIN_TEMPLATE = 'appfx:auth/registration/login.html'
+LOGIN_URL = None
+LOGIN_TEMPLATE = None
+LOGIN_REDIRECT_URL = None
+LOGOUT_URL = None
 
-SPLUNKD_HOST    = str(APPFX_CONFIG.get('splunkd_host'))
-SPLUNKD_PORT    = int(APPFX_CONFIG.get('splunkd_port'))
-SPLUNK_WEB_HOST = str(APPFX_CONFIG.get('splunkweb_host'))
-SPLUNK_WEB_PORT = int(APPFX_CONFIG.get('splunkweb_port'))
+if not SPLUNK_WEB_INTEGRATED:
+    LOGIN_URL = "/%s/accounts/login/" % MOUNT
+    LOGIN_REDIRECT_URL = "/%s" % MOUNT
+    LOGOUT_URL = '/%s/accounts/logout/' % MOUNT
+    if get_config('quickstart'):
+        LOGIN_TEMPLATE = 'quickstartfx:login.html'
+    else:
+        LOGIN_TEMPLATE = 'splunkdj:auth/registration/login.html'
+else:    
+    # If we are integrated into Splunkweb, then we are going to use it
+    # logging in/out.
+    splunkweb_mount = "%s/" % SPLUNK_WEB_MOUNT if SPLUNK_WEB_MOUNT else ""
+    
+    LOGIN_URL = "/%saccount/login/" % splunkweb_mount
+    LOGIN_REDIRECT_URL = "/%s" % MOUNT
+    LOGOUT_URL = '/%saccount/logout/' % splunkweb_mount
+    
+    import django.contrib.auth
+    
+    # Splunkweb uses "return_to", so we will as well.
+    django.contrib.auth.REDIRECT_FIELD_NAME = "return_to"
 
-PROXY_PATH = str(APPFX_CONFIG.get('proxy_path'))
+PROXY_PATH = str(get_config('proxy_path'))
+
+# Whether or not to use built and minified files
+USE_BUILT_FILES = bool(get_config('use_built_files'))
+USE_MINIFIED_FILES = bool(get_config('use_minified_files'))
+
+# Whether or not we are running on Splunk 5
+SPLUNK_5 = True
 
 # JS
 JS_CACHE_DIR = "JS_CACHE"
 
 CLIENT_CONFIG = {
     "STATIC_URL": str(STATIC_URL),
-    "PROXY_PATH": str(PROXY_PATH)
+    "PROXY_PATH": str(PROXY_PATH),
+    "ENABLE_PROTECTIONS": True
 }
 
 # To allow multi-line templatetags, we have to modify the regex in
@@ -241,31 +292,70 @@ tag_re_pattern = django.template.base.tag_re.pattern
 tag_re_flags = django.template.base.tag_re.flags
 django.template.base.tag_re = re.compile(tag_re_pattern, tag_re_flags | re.S)
 
-# A sample logging configuration. The only tangible logging
-# performed by this configuration is to send an email to
-# the site admins on every HTTP 500 error when DEBUG=False.
-# See http://docs.djangoproject.com/en/dev/topics/logging for
-# more details on how to customize your logging configuration.
+# For every app, we're going to try and load its models file. If none exists,
+# or we get an error, we just exit. We do this because some Django apps put
+# initialization code in models.py.
+import importlib
+for app in INSTALLED_APPS:
+    try:
+        app_urls_module = "%s.models" % app
+        app_urls = importlib.import_module(app_urls_module)
+    except:
+        pass
+
+# Logs
+
+import logging, logging.handlers
+
+BASE_LOG_PATH = os.path.join('var', 'log', 'splunk')
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters':{
+        'verbose': {
+            'format':'%(asctime)s %(levelname)-s %(module)s:%(lineno)d - %(message)s'
+        },
+        'simple' : {
+            'format': '%(message)s'
+        },
+    },
     'filters': {
         'require_debug_false': {
             '()': 'django.utils.log.RequireDebugFalse'
         }
     },
     'handlers': {
-        'mail_admins': {
-            'level': 'ERROR',
-            'filters': ['require_debug_false'],
-            'class': 'django.utils.log.AdminEmailHandler'
-        }
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+            'level' : 'INFO'
+        },
+        'file_access':{
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename' : os.path.join(os.environ['SPLUNK_HOME'], BASE_LOG_PATH, 'django_access.log'),
+            'formatter': 'simple',
+            'level' : 'INFO'
+        },
+        'file_service':{
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename' : os.path.join(os.environ['SPLUNK_HOME'], BASE_LOG_PATH, 'django_service.log'),
+            'formatter': 'verbose',
+            'level' : 'INFO'
+        }      
     },
     'loggers': {
-        'django.request': {
-            'handlers': ['mail_admins'],
+        'spl.django.access': {
+            'handlers': ['console', 'file_access'],
+            'level': 'INFO',
+        },
+        'spl.django.service': {
+            'handlers': ['console', 'file_service'],
+            'level': 'INFO',
+        },
+        'spl.django.error': {
+            'handlers': ['console', 'file_service'],
             'level': 'ERROR',
-            'propagate': True,
         },
     }
 }

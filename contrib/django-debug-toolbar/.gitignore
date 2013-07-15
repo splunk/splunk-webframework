@@ -1,6 +1,0 @@
-*.pyc
-*.DS_Store
-*~
-django_debug_toolbar.egg-info
-/dist
-/build

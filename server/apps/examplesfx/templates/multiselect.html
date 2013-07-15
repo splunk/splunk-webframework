@@ -1,0 +1,125 @@
+{% extends "splunkdj:base_with_app_bar.html" %}
+
+{% load splunkmvc %}
+
+{% block title %}{{app_name}} Home Page{% endblock title %}
+
+{% block css %}
+    <link rel="stylesheet" type="text/css" href="{{STATIC_URL}}splunkjs/css/dashboard.css">
+
+    <style>
+        .panel {
+            overflow: visible;
+        }
+        .panel-body h5, .splunk-multiselect, #select1-text{
+            margin-left: 10px;
+            margin-bottom: 5px;
+        }
+    </style>
+{% endblock css %}
+
+{% block content %}
+
+<div class="dashboard-body container-fluid main-section-body" data-role="main">
+    <div class="row">
+        <div class="span12 dashboard-header clearfix">
+            <h2>Multiselect</h2>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 100%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-body">
+                        <p>The <code>multiselect</code> control provides a dropdown selection menu similar to the <code>select</code> control but makes it possible to select multiple items from the list. </p>
+                        <div class="panel-head">
+                            <h3>Example</h3>
+                            <p>This multiselect is populated by a Splunk search. It's change event is hooked up to update the list of selected values.</p>
+                        </div>
+                        <div class="span3">
+                            {% multiselect id="multiselect1" managerid="sourceTypeSearch" valueField="sourcetype" %}
+                        </div>
+                        <div class="span6">
+                        <p><h5>Selected options</h5><span id="select1-text">None</span></p>
+                       </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="dashboard-row">
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Multiselect with table</h3>
+                    </div>
+                    <div class="panel-body">
+                        <p>This example shows a multiselect that updates the visible columns in a result table.</p>
+
+                        <h5>Select columns to add:</h5>
+                        {% multiselect id="multiselect2" managerid="fieldsSearch" valueField="field" %}
+                        
+                        {% resulttable id="rt1" managerid="rt-search" fields="_time sourcetype" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="dashboard-cell" style="width: 50%;">
+            <div class="dashboard-panel">
+                <div class="dashboard-element">
+                    <div class="panel-head">
+                        <h3>Multiselect with token binding</h3>
+                    </div>
+                    <div class="panel-body">
+                        <p>This example shows a multiselect which, on change, converts its values to a token used in a search.</p>
+                        <h5>Select sourcetypes:</h5>
+                        {% multiselect id="multiselect3" managerid="sourceTypeSearch" valueField="sourcetype" %}
+                        
+                        {% eventsviewer id="et1" managerid="et-search" count="4" %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content%}
+
+{% block managers %}
+    {% searchmanager id="sourceTypeSearch" search="index=_internal | head 5000 | stats count by sourcetype" %}
+    {% searchmanager id="fieldsSearch" search="index=_internal | head 5000 | fieldsummary | where count>3000" rf="*" %}
+    
+    {% searchmanager id="rt-search" search="index=_internal | head 5000" rf="*" %}
+    {% searchmanager id="et-search" search="index=_internal | head 5000 | search $sourceTypes$"|token_safe %}
+{% endblock managers %}
+
+{% block js %}
+<script>
+    require(["splunkjs/ready!"], function(mvc) {
+        var _ = require("underscore");
+        var multiselect1 = mvc.Components.getInstance("multiselect1"); 
+        var multiselect2 = mvc.Components.getInstance("multiselect2");
+        var multiselect3 = mvc.Components.getInstance("multiselect3");
+        var rt1 = mvc.Components.getInstance("rt1"); 
+        var et1 = mvc.Components.getInstance("et1"); 
+        var defaultNamespace = mvc.Components.getInstance("default"); 
+      
+        var selectionText = $("#select1-text");
+        multiselect1.on("change", function() {
+            selectionText.text(multiselect1.val().join(", "));
+        });
+        
+        multiselect2.on("change", function() {    
+            var newFields = _.union(["_time", "sourcetype"], multiselect2.val());
+            rt1.settings.set("fields", newFields);
+        });
+
+        multiselect3.on("change", function() {
+            var sourceTypeString = multiselect3.val().join(' OR ');
+            defaultNamespace.set("sourceTypes", sourceTypeString);
+        });
+    });
+</script>
+
+{% endblock js %}
