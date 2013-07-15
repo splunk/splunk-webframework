@@ -3942,44 +3942,152 @@ define('models/services/server/ServerInfo',
     }
 );
 
+define('helpers/user_agent',['underscore'], function(_) {
+
+    /*
+     * Based on following browsers supported by Splunk and sample user agent strings:
+     *
+     * Chrome 26 - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/537.31 (KHTML, like Gecko) Chrome/26.0.1410.65 Safari/537.31"
+     * Firefox 21 - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:21.0) Gecko/20100101 Firefox/21.0"
+     * Safari 5 - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/534.59.8 (KHTML, like Gecko) Version/5.1.9 Safari/534.59.8"
+     * IE 10 - "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; Trident/6.0)"
+     * IE 9 - "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)"
+     * IE 8 - "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; Trident/4.0)"
+     * IE 7 - "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1)"
+     */
+
+    var TESTS = {
+        Chrome: /chrome/i,
+        Firefox: /firefox/i,
+        Safari: /safari/i,
+        IE: /msie ([\d.]+)/i,
+        IE10: /msie 10\.0/i,
+        IE9: /msie 9\.0/i,
+        IE8: /msie 8\.0/i,
+        IE7: /msie 7\.0/i
+    };
+
+    var helper = {
+
+        // put this here so it can be mocked in unit tests
+        agentString: window.navigator.userAgent,
+
+        // add methods for each of the test regexes
+        isChrome: function() { return TESTS.Chrome.test(helper.agentString); },
+        isFirefox: function() { return TESTS.Firefox.test(helper.agentString); },
+        isIE: function() { return TESTS.IE.test(helper.agentString); },
+        isIE10: function() { return TESTS.IE10.test(helper.agentString); },
+        isIE9: function() { return TESTS.IE9.test(helper.agentString); },
+        isIE8: function() { return TESTS.IE8.test(helper.agentString); },
+        isIE7: function() { return TESTS.IE7.test(helper.agentString); },
+        // Safari is a little more complicated
+        isSafari: function() { return !helper.isChrome() && TESTS.Safari.test(helper.agentString); },
+
+        isIELessThan: function(testVersion) {
+            return helper.isIE() && parseFloat(TESTS.IE.exec(helper.agentString)[1]) < testVersion;
+        }
+
+    };
+
+    // memoize all of the things
+    _(_.functions(helper)).chain().each(function(fnName) { helper[fnName] = _(helper[fnName]).memoize(); });
+
+    return helper;
+
+});
 define('util/router_utils',
     [
         'jquery',
+        'underscore',
         'backbone',
-        'splunk.util'
+        'splunk.util',
+        'helpers/user_agent'
     ],
-    function($, Backbone, splunkutil) {
+    function($, _, Backbone, splunkutil, userAgent) {
         var exports = {},
-            routeStripper = /^[#\/]|\s+$/g;
+            routeStripper = /^[#\/]|\s+$/g,
+            // create an in-memory dictionary to store URL history when the URL itself would be too long
+            inMemoryHistory = {};
+
+        // visible for testing only
+        exports.AGENT_HAS_URL_LIMIT = userAgent.isIELessThan(10);
+        exports.URL_MAX_LENGTH = 2048;
+
+//        exports.AGENT_HAS_URL_LIMIT = true
+//        exports.URL_MAX_LENGTH = 10
+
+        var fragmentIsLegal = function(fragment) {
+            if(!exports.AGENT_HAS_URL_LIMIT) {
+                return true;
+            }
+            var loc = window.location,
+                urlMinusFragment = loc.href.split('#')[0];
+
+            return (urlMinusFragment.length + fragment.length) < exports.URL_MAX_LENGTH;
+        };
+
+        var historyIdCounter = 0;
+        var nextHistoryId = function() {
+            return '_suid_' + (++historyIdCounter);
+        };
+
+        var historyIdRegex = /^#?_suid_\d+$/;
+        var fragmentIsHistoryId = function(fragment) {
+            return historyIdRegex.test(fragment);
+        };
+
+        var storeFullFragment = function(fragment) {
+            var historyId = nextHistoryId();
+            inMemoryHistory[historyId] = fragment;
+            return historyId;
+        };
 
         //Introduced in 0.9.9, see https://github.com/documentcloud/backbone/issues/2440
         Backbone.history.getFragment = function(fragment, forcePushState) {
-          var trailingSlash = /\/$/;
-          if (fragment == null) {
-              if (this._hasPushState || !this._wantsHashChange || forcePushState) {
-                  fragment = this.location.pathname;
-                  var search = window.location.search;
-                  if (search) {
-                      fragment += search;
-                  }
-                  var root = this.root.replace(trailingSlash, '');
-                  if (!fragment.indexOf(root)) {
-                      fragment = fragment.substr(root.length);
-                  }
-              } else {
-                  fragment = this.getHash();
-              }
-          }
-          return exports.strip_route(fragment);
+            var trailingSlash = /\/$/;
+            if (fragment == null) {
+                if (this._hasPushState || !this._wantsHashChange || forcePushState) {
+                    fragment = this.location.pathname;
+                    var search = window.location.search;
+                    if (search) {
+                        fragment += search;
+                    }
+                    var root = this.root.replace(trailingSlash, '');
+                    if (!fragment.indexOf(root)) {
+                        fragment = fragment.substr(root.length);
+                    }
+                } else {
+                    fragment = this.getHash();
+                }
+            }
+            if(fragmentIsHistoryId(fragment)) {
+                fragment = inMemoryHistory[fragment] || '';
+            }
+            return exports.strip_route(fragment);
         };
+
+        Backbone.history._updateHash = _(Backbone.history._updateHash).wrap(function(originalFn, location, fragment, replace) {
+            if(!fragmentIsLegal(fragment)) {
+                fragment = storeFullFragment(fragment);
+                if(replace) {
+                    // if doing replace state operation, we can safely remove the old entry in the inMemoryHistory
+                    var currentHash = this.getHash();
+                    delete inMemoryHistory[currentHash];
+                }
+            }
+            originalFn.call(Backbone.history, location, fragment, replace);
+        });
 
         exports.strip_route = function(route) {
             return route.replace(routeStripper, '');
         };
 
-        exports.start_backbone_history = function() {
+        // the forceNoPushState argument is FOR TESTING ONLY
+        // in production, start_backbone_history should always be called with no arguments
+        exports.start_backbone_history = function(forceNoPushState) {
             var hasPushstate = "pushState" in window.history;
-            if (!hasPushstate) {
+//            hasPushstate = false
+            if (forceNoPushState || !hasPushstate) {
                 $(document).ready(function() {
                     var hash = Backbone.history.getHash(),
                         splitHash = hash.split('?'),
@@ -3987,10 +4095,14 @@ define('util/router_utils',
                         hashQuery = splunkutil.queryStringToProp(splitHash[1] || ''),
                         locationQuery = splunkutil.queryStringToProp(window.location.search.split('?')[1] || ''),
                         mergedQuery = $.extend(locationQuery, hashQuery),
-                        flattenedQuery = splunkutil.propToQueryString(mergedQuery);
-
-                    window.location.hash = (hashPath ? hashPath : exports.strip_route(window.location.pathname))
+                        flattenedQuery = splunkutil.propToQueryString(mergedQuery),
+                        adjustedHash = (hashPath && !fragmentIsHistoryId(hashPath) ? hashPath : exports.strip_route(window.location.pathname))
                                                 + (flattenedQuery ? ("?" + flattenedQuery) : "");
+
+                    if(!fragmentIsLegal(adjustedHash)) {
+                        adjustedHash = storeFullFragment(adjustedHash);
+                    }
+                    window.location.hash = adjustedHash;
                     Backbone.history.start();
                 });
             } else {
@@ -4057,7 +4169,7 @@ define('models/classicurl',
                 if (Backbone.history._hasPushState) {
                     return window.location.href.split('?')[1] || '';//not safe to read directly
                 }
-                fragment = window.location.href.split('#')[1] || '';//not safe to read directly
+                fragment = Backbone.history.getFragment(window.location.href.split('#')[1] || '');//not safe to read directly
                 return fragment.split('?')[1] || '';
             },
             pushState: function(data, options) {

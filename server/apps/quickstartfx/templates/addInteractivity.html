@@ -44,26 +44,26 @@
                         <div class="well well-white" id="well-main">
                             
                             <h3>Make an interactive map and table</h3>
-                            <p>The following example creates a <b>SplunkMap</b> and a <b>ResultTable</b> view, binds them to the same search manager, and uses JavaScript to listen to click events on the table. When a map marker is clicked, the result table is updated to show data about the corresponding event.</p>
+                            <p>The following example creates a <b>GoogleMap</b> and a <b>ResultTable</b> view, binds them to the same search manager, and uses JavaScript to listen to click events on the table. When a map marker is clicked, the result table is updated to show data about the corresponding event.</p>
 
-                            {% splunkmap id="example-map" managerid="mapsearch" %}
+                            {% googlemap id="example-map" managerid="mapsearch" %}
 
                             <h4>Event data:</h4>
                             {% resulttable id="example-table" managerid="tablesearch" count="1" %}
 
-                            {% searchmanager id="tablesearch" search="| inputlookup earthquakes.csv | rename Lat as latitude, Lon as longitude | fields latitude longitude Magnitude | head 1" preview=True cache=True %}
+                            {% searchmanager id="tablesearch" search="| inputlookup earthquakes.csv | rename Lat as lat Lon as lng | fields lat lng Magnitude | head 1" preview=True cache=True %}
 
-                            {% searchmanager id="mapsearch" search="| inputlookup earthquakes.csv | rename Lat as latitude, Lon as longitude | fields latitude longitude Magnitude" preview=True cache=True %}
+                            {% searchmanager id="mapsearch" search="| inputlookup earthquakes.csv | rename Lat as lat Lon as lng | fields lat lng Magnitude | head 1" preview=True cache=True %}
                             </br>
                             </br>
                             <p>This map, table, and search are declared with template tags:</p>
 
 <pre class="prettyprint linenums">
-&#123;% splunkmap id="example-map" managerid="geosearch" %&#125;
+&#123;% googlemap id="example-map" managerid="geosearch" %&#125;
 
 &#123;% resulttable id="example-table" managerid="geosearch" count="5" %&#125;
 
-&#123;% searchmanager id="geosearch" search="| inputlookup earthquakes.csv | rename Lat as latitude Lon as longitude | geostats count" preview=True cache=True autostart=True %&#125; 
+&#123;% searchmanager id="geosearch" search="| inputlookup earthquakes.csv | rename Lat as lat Lon as lng | stats count by lat, lng" preview=True cache=True autostart=True %&#125; 
 </pre>
                         <p>With JavaScript, the map and table are selected through the <b>splunkjs.mvc</b> object and a click handler is attached to the table. When a row in the table is clicked, the previous selection is cleared and a new marker is added to the map.</p>
 <pre class="prettyprint linenums">

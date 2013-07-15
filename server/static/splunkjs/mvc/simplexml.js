@@ -6234,7 +6234,11 @@ define('views/shared/reportcontrols/dialogs/AccelerationDialog',[
                     save: false,
                     toggleClassName: 'btn',
                     labelPosition: 'outside',
-                    elastic: true
+                    elastic: true,
+                    popdownOptions: {
+                        attachDialogTo: '.modal:visible',
+                        scrollContainer: '.modal:visible .modal-body:visible'
+                    }
                 },
                 label: _('Summary Range').t()
             });
