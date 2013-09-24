@@ -15,6 +15,13 @@ from signal import SIGTERM
 
 from splunk.util import normalizeBoolean
 
+# We use Splunk's cli library, and we force it to never use the merged
+# cached configs (it will still cache individual files). We cannot rely on 
+# the merged conf files as they may be out of date (they update when Splunkweb
+# starts up or other similar events). Given that, we will go to the source files.
+useCachedConfigs = False
+from splunk.clilib.cli_common import getConfKeyValue
+
 MAIN_DIR = path.abspath(path.join(path.dirname(__file__), ".."))
 HAS_LINK = hasattr(os, 'symlink')
 
@@ -50,7 +57,7 @@ except:
     print "The location for SPLUNK_HOME ('%s') is not valid. Run 'splunkdj setup' and try again." % os.environ['SPLUNK_HOME']
     sys.exit(1)
 
-app = App(description="App Framework")
+app = App(description="Web Framework")
 
 def grepsingle(txt, pattern):
     lines = txt.split("\n")
@@ -61,6 +68,14 @@ def grepsingle(txt, pattern):
 
 def get_splunk_home():
     return os.environ.get("SPLUNK_HOME", "")
+    
+def get_apps_base():
+    # Find the apps base relative to Splunk, respecting SHP/etc.
+    try:
+        import splunk.clilib.bundle_paths as bundle_paths
+        return bundle_paths.get_base_path()
+    except:
+        return os.path.join(get_splunk_home(), "etc", "apps")
 
 def get_splunk_path():
     splunk_bin_path = path.join(get_splunk_home(), "bin", "splunk" + (".exe" if is_win32 else ""))
@@ -68,34 +83,10 @@ def get_splunk_path():
         print "Could not find the splunk executable at '%s'.  Please check SPLUNK_HOME and try again." % splunk_bin_path
         sys.exit(1)
     return splunk_bin_path
-    
-    
         
-class GetConfValue(object):
-    def __init__(self):
-        self._cache = {}
-        self.splunk_path = get_splunk_path()
-
-    def key(self, command, separator):
-        return command + "\n" + separator
-
-    def __call__(self, command, separator = '='):
-        key = self.key(command, separator)
-        if self._cache.has_key(key):
-            return self._cache[key]
-        gcv_path = command.split('/')
-        gcv_key = gcv_path[-1]
-        gcv_command = [self.splunk_path, "btool"]
-        gcv_command.extend(gcv_path[0:-1])
-        exec_out = envoy.run([gcv_command])
-        std_out = grepsingle(exec_out.std_out, gcv_key)
-        value = std_out.strip()
-        value = value[value.rfind(separator) + 1:].strip()
-        self._cache[key] = value
-        return value
-    
-get_conf_value = GetConfValue()
-
+def get_conf_value(conf, stanza, key):
+    # This wrapper is here for future functionality
+    return getConfKeyValue(conf, stanza, key)
 
 def confirm(prompt_str="Confirm", allow_empty=True, default=False):
     fmt = (prompt_str, 'y', 'n') if default else (prompt_str, 'n', 'y')
@@ -382,9 +373,9 @@ def refresh_apps(username, password):
 
     try:    
         config = {
-            "splunkd_scheme": get_conf_value('server/list/sslConfig/enableSplunkdSSL') and 'https' or 'http',
-            "splunkd_port": get_conf_value('web/list/settings/mgmtHostPort').split(':')[1],
-            "splunkd_host": get_conf_value('web/list/settings/mgmtHostPort').split(':')[0]
+            "splunkd_scheme": get_conf_value('server', 'sslConfig', 'enableSplunkdSSL') and 'https' or 'http',
+            "splunkd_port": get_conf_value('web', 'settings', 'mgmtHostPort').split(':')[1],
+            "splunkd_host": get_conf_value('web', 'settings', 'mgmtHostPort').split(':')[0]
         }
     except Exception, e:
         print "There was an error retrieving configuration details from the Splunk instance specified."
@@ -421,7 +412,7 @@ def deploy(appname, force, file, username, password):
     try:        
         config = setup_environment(file)
         app_path = path.join(MAIN_DIR, "server", "apps", appname)
-        splunk_app_path = path.join(os.environ['SPLUNK_HOME'], "etc", "apps", appname)
+        splunk_app_path = path.join(get_apps_base(), appname)
         
         while not username or not password:
             username = raw_input("Splunk username: ")
@@ -476,7 +467,7 @@ def package(appname, packagename):
     elif packagename[0] != '/':
         packagename = path.join(os.getcwd(), packagename)
 
-    source_dir = path.join(get_splunk_home(), "etc", "apps")
+    source_dir = get_apps_base()
     splunk_app_path = path.join(source_dir, appname)
 
     if not path.exists(splunk_app_path):
@@ -521,7 +512,7 @@ def install(packagename, destination, username, password, norefresh):
         appname = appname.split('.')[0]
     
     if not destination:
-        destination = path.join(get_splunk_home(), "etc", "apps")
+        destination = get_apps_base()
 
     if packagename[0] != '/':
         packagename = path.join(os.getcwd(), packagename)
@@ -562,7 +553,7 @@ def install(packagename, destination, username, password, norefresh):
 @app.cmd_arg('--password',  type=str, help='The Splunk password to deploy with.')
 @app.cmd_arg('--norefresh', action='store_true', help='Refreshes the installed apps in Splunk.')
 def removeapp(appname, file, username, password, norefresh):
-    splunk_app_path = path.join(get_splunk_home(), "etc", "apps", appname)
+    splunk_app_path = path.join(get_apps_base(), appname)
         
     if not path.exists(splunk_app_path):
         print "An app named '%s' does not exist. Check the name and try again." % appname
@@ -602,7 +593,7 @@ def removeapp(appname, file, username, password, norefresh):
 def createapp(appname, username, password, norefresh):
     
     try:            
-        splunk_app_path = path.join(os.environ['SPLUNK_HOME'], "etc", "apps", appname)
+        splunk_app_path = path.join(get_apps_base(), appname)
         
         if path.exists(splunk_app_path):
             print "There is already a Splunk app called '%s'. Try again using a different name." % appname
@@ -620,7 +611,7 @@ def createapp(appname, username, password, norefresh):
         # NOTE: THIS MUST BE THE LAST EXTENSION!!
         # We depend on this to put the mount in the 
         # redirect.tmpl file in splunkd/appserver/templates
-        mount = "--extension=%s" % get_conf_value('web/list/settings/root_endpoint')
+        mount = "--extension=%s" % get_conf_value('web', 'settings', 'root_endpoint')
 
         if not norefresh:
             while not username or not password:
@@ -705,7 +696,7 @@ def test(appnames, noinput, failfast, testrunner, liveserver, file, username, pa
 @app.cmd
 @app.cmd_arg('--file', type=str, default=DEFAULT_SPLUNKDJ_CONFIG_FILE, help='Config file to read from')
 def run(file):
-    """Set up a new App Framework instance"""
+    """Set up a new Web Framework Django server instance"""
     
     try:
         config = setup_environment(file)
@@ -727,7 +718,7 @@ def run(file):
 @app.cmd
 @app.cmd_arg('--file', type=str, default=DEFAULT_SPLUNKDJ_CONFIG_FILE, help='Config file to read from.')
 def start(file):
-    """Start App Framework in daemon mode"""
+    """Start Web Framework Django server in daemon mode"""
     if is_win32:
         print "The 'start' command is not supported on Windows."
         sys.exit(1)
@@ -750,7 +741,7 @@ def start(file):
 @app.cmd
 @app.cmd_arg('--file', type=str, default=DEFAULT_SPLUNKDJ_CONFIG_FILE, help='Config file to read from.')
 def stop(file):
-    """Stop App Framework in daemon mode"""
+    """Stop Web Framework Django server in daemon mode"""
     if is_win32:
         print "The 'stop' command is not supported on Windows."
         sys.exit(1)
@@ -766,7 +757,7 @@ def stop(file):
 @app.cmd
 @app.cmd_arg('--file', type=str, default=DEFAULT_SPLUNKDJ_CONFIG_FILE, help='Config file to read from.')
 def restart(file):
-    """Restart App Framework in daemon mode"""
+    """Restart Web Framework Django server in daemon mode"""
     if is_win32:
         print "The 'restart' command is not supported on Windows."
         sys.exit(1)
@@ -794,23 +785,24 @@ def clean(file):
 @app.cmd_arg('--file', type=str, default=DEFAULT_SPLUNKDJ_CONFIG_FILE, help='Config file to write to.')
 @app.cmd_arg('--nodeploy', action='store_true', help='Deploys the default apps to Splunk.')
 def setup(file, nodeploy):
-    """Set up a new App Framework instance"""
+    """Set up a new Web Framework Django server instance"""
         
     print "\nSetting up the Splunk Application Framework..."
     try:
         splunk_home = os.environ.get("SPLUNK_HOME", "")
         
-        splunkd_scheme          = None
-        splunkweb_scheme        = None
-        splunkd_port            = None
-        splunkweb_port          = None
-        splunkd_host            = None
-        splunkweb_host          = None
-        splunkweb_mount         = None
-        splunkdj_mount          = None
-        splunkdj_appserver_port = None
-        splunkdj_proxy_port     = None
-        splunkdj_proxy_path     = None
+        splunk_5                   = None
+        splunkd_scheme             = None
+        splunkweb_scheme           = None
+        splunkd_port               = None
+        splunkweb_port             = None
+        splunkd_host               = None
+        splunkweb_host             = None
+        splunkweb_mount            = None
+        splunkdj_mount             = None
+        splunkdj_appserver_port    = None
+        splunkdj_proxy_port        = None
+        splunkdj_proxy_path        = None
 
         while True:
             version_info = envoy.run([['%s/bin/splunk' % splunk_home, 'version']])
@@ -819,6 +811,9 @@ def setup(file, nodeploy):
                 os.remove(path.join(MAIN_DIR, ".splunkhome"))
                 print "The version must be >= 'Splunk 5.0', found '%s' in '%s'. Run 'splunkdj setup' and try again." % (version, splunk_home)
                 sys.exit(1)
+
+            if splunk_5 == None:
+                splunk_5 = version.startswith("Splunk 5")
 
             # Get Python, Node and Splunk paths
             splunk_path = path.join(splunk_home, "bin", "splunk" + (".exe" if is_win32 else ""))
@@ -837,30 +832,22 @@ def setup(file, nodeploy):
                 print "No Node.js interpreter, exiting..."
                 sys.exit(1)
         
-            def get_conf_value(command, key, separator):
-                exec_out = envoy.run(command)
-                std_out = grepsingle(exec_out.std_out, key)
-                value = std_out.strip()
-                value = value[value.rfind(separator) + 1:].strip()
-                
-                return value
-        
             # Get Various information from Splunk
             if not splunkd_port:
-                splunkd_port = get_conf_value([[splunk_path, "btool", "web", "list", "settings"]], "mgmtHostPort", ":")
+                splunkd_port = get_conf_value("web", "settings", "mgmtHostPort").split(":")[1]
             
             if not splunkweb_port:
-                splunkweb_port = get_conf_value([[splunk_path, "btool", "web", "list", "settings"]], "httpport", "=")
+                splunkweb_port = get_conf_value("web", "settings", "httpport")
             
             if not splunkweb_mount:
-                splunkweb_mount = get_conf_value([[splunk_path, "btool", "web", "list", "settings"]], "root_endpoint", "=")
+                splunkweb_mount = get_conf_value("web", "settings", "root_endpoint")
                 
             if not splunkd_scheme:
-                is_splunkd_ssl = normalizeBoolean(get_conf_value([[splunk_path, "btool", "server", "list", "sslConfig"]], "enableSplunkdSSL", "="))
+                is_splunkd_ssl = normalizeBoolean(get_conf_value("server", "sslConfig", "enableSplunkdSSL"))
                 splunkd_scheme = "https" if is_splunkd_ssl else "http"
                 
             if not splunkweb_scheme:
-                is_splunkweb_ssl = normalizeBoolean(get_conf_value([[splunk_path, "btool", "web", "list", "settings"]], "enableSplunkWebSSL", "="))
+                is_splunkweb_ssl = normalizeBoolean(get_conf_value("web", "settings", "enableSplunkWebSSL"))
                 splunkweb_scheme = "https" if is_splunkweb_ssl else "http"
             
             splunkd_scheme = splunkd_scheme or "https"
@@ -881,11 +868,12 @@ def setup(file, nodeploy):
             print " - Splunk Web host: %s" % splunkweb_host
             print " - Splunk Web port: %s" % splunkweb_port
             print " - Splunk Web root endpoint: %s" % splunkweb_mount
-            print " - App Framework appserver port: %s" % splunkdj_appserver_port
-            print " - App Framework proxy port: %s" % splunkdj_proxy_port
-            print " - App Framework proxy path: %s" % splunkdj_proxy_path
-            print " - App Framework mount: %s" % splunkdj_mount
+            print " - Web Framework Django appserver port: %s" % splunkdj_appserver_port
+            print " - Web Framework proxy port: %s" % splunkdj_proxy_port
+            print " - Web Framework proxy path: %s" % splunkdj_proxy_path
+            print " - Web Framework mount: %s" % splunkdj_mount
             print " - Splunk installation (SPLUNK_HOME): %s" % splunk_home
+            print " - Splunk 5: %s" % splunk_5
             
             if confirm("\nAre these values correct ('y' to accept, 'n' to edit)", default=True):
                 break
@@ -899,27 +887,29 @@ def setup(file, nodeploy):
             splunkweb_port = raw_input("Splunk Web port [%s]: " % (splunkweb_port)) or splunkweb_port
             splunkweb_mount = raw_input("Splunk Web mount [%s]: " % (splunkweb_mount)) or splunkweb_mount
             
-            # Get information about App Framework ports
-            splunkdj_appserver_port = raw_input("App Framework appserver port [%s]: " % (splunkdj_appserver_port)) or splunkdj_appserver_port
+            # Get information about Web Framework ports
+            splunkdj_appserver_port = raw_input("Web Framework Django appserver port [%s]: " % (splunkdj_appserver_port)) or splunkdj_appserver_port
             while is_port_open("localhost", splunkdj_appserver_port):
-                if confirm("App Framework appserver port '%s' is taken. Would you like to change it" % splunkdj_appserver_port, default=True):
-                    splunkdj_appserver_port = raw_input("App Framework appserver port [%s]: " % (splunkdj_appserver_port)) or splunkdj_appserver_port
+                if confirm("Web Framework Django appserver port '%s' is taken. Would you like to change it" % splunkdj_appserver_port, default=True):
+                    splunkdj_appserver_port = raw_input("Web Framework appserver port [%s]: " % (splunkdj_appserver_port)) or splunkdj_appserver_port
                 else:
                     sys.exit(1)
             
-            splunkdj_proxy_port = raw_input("App Framework proxy port [%s]: " % (splunkdj_proxy_port)) or splunkdj_proxy_port
+            splunkdj_proxy_port = raw_input("Web Framework proxy port [%s]: " % (splunkdj_proxy_port)) or splunkdj_proxy_port
             while is_port_open("localhost", splunkdj_proxy_port):
-                if confirm("App Framework proxy port '%s' is taken. Would you like to change it" % splunkdj_proxy_port, default=True):
-                    splunkdj_proxy_port = raw_input("App Framework proxy port [%s]: " % (splunkdj_proxy_port)) or splunkdj_proxy_port
+                if confirm("Web Framework proxy port '%s' is taken. Would you like to change it" % splunkdj_proxy_port, default=True):
+                    splunkdj_proxy_port = raw_input("Web Framework proxy port [%s]: " % (splunkdj_proxy_port)) or splunkdj_proxy_port
                 else:
                     sys.exit(1)
         
-            splunkdj_proxy_path = raw_input("App Framework proxy path [%s]: " % splunkdj_proxy_path) or splunkdj_proxy_path
+            splunkdj_proxy_path = raw_input("Web Framework proxy path [%s]: " % splunkdj_proxy_path) or splunkdj_proxy_path
         
-            splunkdj_mount = raw_input("App Framework mount [%s]: " % splunkdj_mount) or splunkdj_mount
+            splunkdj_mount = raw_input("Web Framework mount [%s]: " % splunkdj_mount) or splunkdj_mount
             
             splunk_home = raw_input("Splunk installation (SPLUNK_HOME) [%s]: " % splunk_home) or splunk_home
             splunk_home = path.expanduser(splunk_home)
+            
+            splunk_5 = normalizeBoolean(raw_input("Splunk 5 [%s]: " % splunk_5) or splunk_5)
             
             # Write out SPLUNK_HOME
             dot_splunkhome = open(path.join(MAIN_DIR, '.splunkhome'), 'w')
@@ -928,22 +918,24 @@ def setup(file, nodeploy):
                         
         # Serialize configuration
         create_config_file(
-            config_file_path = path.join(MAIN_DIR, file),
-            splunkd_scheme   = splunkd_scheme,
-            splunk_home      = splunk_home,
-            splunkd_host     = splunkd_host,
-            splunkd_port     = int(splunkd_port),
-            splunkweb_scheme = splunkweb_scheme,
-            splunkweb_host   = splunkweb_host,
-            splunkweb_port   = int(splunkweb_port),
-            splunkweb_mount  = splunkweb_mount,
-            mount            = splunkdj_mount,
-            raw_mount        = splunkdj_mount,
-            splunkdj_port    = int(splunkdj_appserver_port),
-            proxy_port       = int(splunkdj_proxy_port),
-            proxy_path       = splunkdj_proxy_path,
-            debug            = True,
-            quickstart       = True
+            config_file_path           = path.join(MAIN_DIR, file),
+            splunkd_scheme             = splunkd_scheme,
+            splunk_home                = splunk_home,
+            splunkd_host               = splunkd_host,
+            splunkd_port               = int(splunkd_port),
+            splunkweb_scheme           = splunkweb_scheme,
+            splunkweb_host             = splunkweb_host,
+            splunkweb_port             = int(splunkweb_port),
+            splunkweb_mount            = splunkweb_mount,
+            x_frame_options_sameorigin = normalizeBoolean(get_conf_value("web", "settings", "x_frame_options_sameorigin")),
+            mount                      = splunkdj_mount,
+            raw_mount                  = splunkdj_mount,
+            splunkdj_port              = int(splunkdj_appserver_port),
+            proxy_port                 = int(splunkdj_proxy_port),
+            proxy_path                 = splunkdj_proxy_path,
+            debug                      = False,
+            quickstart                 = False,
+            splunk_5                   = splunk_5
         )
         
         if not nodeploy:
@@ -1005,20 +997,21 @@ def create_config_file(config_file_path=None, generate_secret_key=True, **kwargs
     # We have to strip all slashes to ensure we adhere to what splunkweb
     # does here
     splunkweb_mount = kwargs.get("splunkweb_mount", "").strip("/")
+    x_frame_options_sameorigin = kwargs.get("x_frame_options_sameorigin", True)
     mount = kwargs.get("mount", "").strip("/")
     raw_mount = kwargs.get("raw_mount", "")
     splunkdj_port = kwargs.get("splunkdj_port", 0)
     proxy_port = kwargs.get("proxy_port", 0)
     # only strip the leading slash
     proxy_path = kwargs.get("proxy_path", "").rstrip("/")
-    debug = kwargs.get("debug", True)
     quickstart = kwargs.get("quickstart", True)
     splunk_home = kwargs.get("splunk_home")
+    splunk_5 = kwargs.get("splunk_5")
     
-    # Always use the current value (if one exists) for using built files and 
-    # minified files
+    # Always use the current value (if one exists) for these settings
     use_built_files = original_config.get("use_built_files", True)
     use_minified_files = original_config.get("use_minified_files", True)
+    debug = original_config.get("debug", kwargs.get("debug", False))
     
     is_win32 = sys.platform == "win32"
 
@@ -1027,25 +1020,27 @@ def create_config_file(config_file_path=None, generate_secret_key=True, **kwargs
     node_path = path.join(splunk_home, "bin", "node" + (".exe" if is_win32 else ""))
     
     config = {
-        "splunkd_scheme"       : splunkd_scheme,
-        "splunkd_host"         : splunkd_host,
-        "splunkd_port"         : int(splunkd_port),
-        "splunkweb_scheme"     : splunkweb_scheme,
-        "splunkweb_host"       : splunkweb_host,
-        "splunkweb_port"       : int(splunkweb_port),
-        "splunkweb_mount"      : splunkweb_mount,
-        "splunkweb_integrated" : splunkweb_integrated,
-        "mount"                : mount,
-        "raw_mount"            : raw_mount,
-        "splunkdj_port"        : int(splunkdj_port),
-        "proxy_port"           : int(proxy_port),
-        "proxy_path"           : proxy_path,
-        "debug"                : debug,
-        "python"               : python_path,
-        "node"                 : node_path,
-        "quickstart"           : quickstart,
-        "use_built_files"      : use_built_files,
-        "use_minified_files"   : use_minified_files
+        "splunk_5"                   : splunk_5,
+        "splunkd_scheme"             : splunkd_scheme,
+        "splunkd_host"               : splunkd_host,
+        "splunkd_port"               : int(splunkd_port),
+        "splunkweb_scheme"           : splunkweb_scheme,
+        "splunkweb_host"             : splunkweb_host,
+        "splunkweb_port"             : int(splunkweb_port),
+        "splunkweb_mount"            : splunkweb_mount,
+        "splunkweb_integrated"       : splunkweb_integrated,
+        "x_frame_options_sameorigin" : x_frame_options_sameorigin,
+        "mount"                      : mount,
+        "raw_mount"                  : raw_mount,
+        "splunkdj_port"              : int(splunkdj_port),
+        "proxy_port"                 : int(proxy_port),
+        "proxy_path"                 : proxy_path,
+        "debug"                      : debug,
+        "python"                     : python_path,
+        "node"                       : node_path,
+        "quickstart"                 : quickstart,
+        "use_built_files"            : use_built_files,
+        "use_minified_files"         : use_minified_files
     }
     
     # Generate secret key

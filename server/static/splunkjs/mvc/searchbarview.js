@@ -1,18 +1,4 @@
 
-define('util/beacon',['jquery', 'uri/route', 'splunk.util'], function($, route, splunkutil) {
-    var exports = {
-        ping: function(root, locale, params) {
-            params || (params = {});
-            var path = route.img(root, locale, '@' + Math.random(), 'beacon.gif'),
-                img = new Image(),
-                defaults = {
-                    client_time: (new Date).getTime()
-                };
-            img.src = path + '?' + splunkutil.propToQueryString($.extend(true, {}, defaults, params || {}));
-        }
-    };
-    return exports;
-});
 define('views/shared/searchbar/Apps',
     [
         'underscore',
@@ -26,116 +12,82 @@ define('views/shared/searchbar/Apps',
             initialize: function() {
                 this.options = _.defaults({
                     className: 'btn-group',
-                    menuWidth: 'narrow',
                     toggleClassName: 'btn',
+                    iconURLClassName: "menu-icon",
+                    menuClassName: "dropdown-menu-tall dropdown-menu-apps",
+                    label: _("App: ").t(),
                     items: [],
                     model: this.model,
                     modelAttribute: 'display.prefs.searchContext',
                     popdownOptions: {attachDialogTo:'body'}
                 }, this.options);
 
-                this.collection.on('change', this.update, this);
+                this.collection.on('change', _.debounce(this.update, 0), this);
                 SyntheticSelectControl.prototype.initialize.call(this, this.options);
+
+                this.update();
             },
             update: function() {
-                this.options.items = [];
+                var items = [];
                 this.collection.each(function(model) {
                     var navData = model.get('navData');
                     if (navData && navData.searchView) {
                         var appmodel = this.options.applicationModel;
 
-                        var appIcon = route.appIcon(
+                        var appIcon = route.appIconAlt(
                             appmodel.get('root'),
                             appmodel.get('locale'),
                             appmodel.get('owner'),
                             model.get('appName')
                         );
 
-                        this.options.items.push({
+                        items.push({
                             value: model.get('appName'),
                             label: model.get('appLabel'),
-                            icon: appIcon
+                            iconURL: appIcon
                         });
                     }
                 }.bind(this));
-                this.$el.empty();
-                this.render();
-            },
-            template: '\
-                <a class="dropdown-toggle <%- options.toggleClassName %>" href="#">\
-                    <span class="label-prefix"><%= _("App: ").t() %></span> <span class="js-app-label link-label"><%- options.label %> <%- item.label %></span><span class="caret"></span>\
-                </a>\
-                <div class="dropdown-menu dropdown-menu-selectable dropdown-menu-tall <%- options.menuClassName %> <%- menuWidthClass %> ">\
-                <div class="arrow"></div>\
-                    <ul class="menu-list">\
-                    <% _.each(items, function(element, index, list) { %>\
-                        <li><a href="#" data-value="<%- element.value %>">\
-                            <i class="icon-check"></i>\
-                            <% if (element.icon) { %> <img src="<%-element.icon%>" alt="icon" class="menu-icon"><% } %>\
-                            <span class="menu-label"><%- element.label %></span>\
-                        </a></li>\
-                    <% }); %>\
-                    </ul>\
-                </div>\
-            '
+
+                this.setItems(items);
+            }
         });
     }
 );
 
-define('util/dom_utils',
-    [],
-    function() {
-        
-        //see: http://stackoverflow.com/questions/512528/set-cursor-position-in-html-textbox
-        //submission by mcpDESIGNS
-        var setCaretPosition = function(el, caretPos) {            
-            el.value = el.value;
-            // ^ this is used to not only get "focus", but
-            // to make sure we don't have it everything -selected-
-            // (it causes an issue in chrome, and having it doesn't hurt any other browser)
-
-            if (el !== null) {
-                if (el.createTextRange) {
-                    var range = el.createTextRange();
-                    range.move('character', caretPos);
-                    range.select();
-                    return true;
-                } else {
-                    // (el.selectionStart === 0 added for Firefox bug)
-                    if (el.setSelectionRange && (el.selectionStart || el.selectionStart === 0)) {
-                        el.focus();
-                        el.setSelectionRange(caretPos, caretPos);
-                        return true;
-                    } else { // fail city, fortunately this never happens (as far as I've tested) :)
-                        el.focus();
-                        return false;
-                    }
+define('models/SHelper',
+    [
+        'jquery',
+        'underscore',
+        'models/Base',
+        'backbone',
+        'splunk.util'
+    ],
+    function($, _, BaseModel, Backbone, splunkUtil) {
+        var SHelper = BaseModel.extend({
+            initialize: function() {
+                BaseModel.prototype.initialize.apply(this, arguments);
+            },
+            url: splunkUtil.make_url('api/shelper'),
+            sync: function(method, model, options) {
+                if (method!=='read') {
+                    throw new Error('invalid method: ' + method);
                 }
+                options = options || {};
+                var defaults = {
+                        data: {},
+                        dataType: 'text'
+                    },
+                    url = _.isFunction(model.url) ? model.url() : model.url || model.id;
+                defaults.url = url;
+                $.extend(true, defaults, options);
+                return Backbone.sync.call(this, method, model, defaults);
+            },
+            parse: function(response) {
+                return {raw: response};
             }
-        };
-        
-        //see: http://stackoverflow.com/questions/2897155/get-cursor-position-within-an-text-input-field
-        //sbumission by Max
-        var getCaretPosition = function(el) {
-            var caretPos, selection;
-
-            if (el.selectionStart || el.selectionStart === 0) {
-                caretPos = el.selectionStart;
-            } else if (document.selection) {
-                // IE Support
-                el.focus();
-                selection = document.selection.createRange();
-                selection.moveStart('character', -el.value.length);
-                caretPos = selection.text.length;
-            }
-            
-            return caretPos;
-        };
-        
-        return {
-            setCaretPosition: setCaretPosition,
-            getCaretPosition: getCaretPosition
-        };        
+        });
+        return SHelper;
     }
 );
 define('views/shared/searchbar/Input',
@@ -145,12 +97,13 @@ define('views/shared/searchbar/Input',
         'module',
         'views/Base',
         'views/shared/delegates/TextareaResize',
+        'models/SHelper',
         'splunk.util',
         'util/dom_utils',
         'jquery.bgiframe',
         'splunk.jquery.csrf'
     ],
-    function($, _, module, BaseView, TextareaResize, splunk_util, dom_utils /* remaining dependencies do not export */) {
+    function($, _, module, BaseView, TextareaResize, SHelperModel, splunk_util, dom_utils /* remaining dependencies do not export */) {
         var View = BaseView.extend({
            keys: {
                ENTER : 13,
@@ -174,6 +127,7 @@ define('views/shared/searchbar/Input',
            initialize: function(options) {
                if (!this.children) {
                    BaseView.prototype.initialize.apply(this, arguments);
+                   this.debouncedFillAssistant = _.debounce(this.fillAssistant, 250).bind(this);
                }
                
                this.options = $.extend(true, {}, this.options, (options || {}));
@@ -185,40 +139,44 @@ define('views/shared/searchbar/Input',
                    autoOpenAssistant: splunk_util.normalizeBoolean(this.model.get('display.prefs.autoOpenSearchAssistant')),
                    showCommandHelp: true,
                    showCommandHistory: true,
-                   showFieldInfo: true,
+                   showFieldInfo: false,
                    maxSearchBarLines: 80,
                    minWithForTwoColumns: 560,
                    singleton: false,
-                   disableOnSubmit: false
+                   disableOnSubmit: false,
+                   assistantDelay: 200
                };
                _.defaults(this.options, defaults);
 
                this.assistant = {
                    enabled: false,
                    rolloverEnabled: true, //required to override mouseenter function during keyboard scrolling.
-                   fillPending: false,
-                   needsUpdate: false,
                    cursor: 0,
-                   timer: 0,
                    rolloverTimer: 0
                };
                this.multiline = false;
-
+               
+               var reportContentModel = this.model;
+               this.model = {
+                    content: reportContentModel,
+                    sHelper: new SHelperModel()     
+               };
+               
                // None Contained Event Binding
-               this.model.on('change:search', function(){
-                   this.setSearchString(this.model.get('search') || "");
+               this.model.content.on('change:search', function(){
+                   this.setSearchString(this.model.content.get('search') || "");
                    if (this.hasOwnProperty("resize")) {
                        this.children.resize.resizeTextarea();
                        this.updateMultiline();
                    }
                }, this);
                
-               this.model.on('applied', function(options){
+               this.model.content.on('applied', function(options){
                    this._onFormSubmit(options);
                }, this);
                
                if (this.options.singleton) {
-                   this.model.on('enableSearchInput', function() {
+                   this.model.content.on('enableSearchInput', function() {
                        this.$('.search-field').attr('disabled', false);
                    }, this);                   
                }
@@ -238,6 +196,7 @@ define('views/shared/searchbar/Input',
                        }
                        this.closeAssistant();
                   }.bind(this));
+
               }
 
            },
@@ -251,8 +210,21 @@ define('views/shared/searchbar/Input',
                'keyup     a.sakeyword' :                   'onKeywordKeyUp',
                'keyup     .salink' :                       'onKeywordKeyUp',
                'click     .search-assistant-container a' : 'onSuggestionSelect',
-               'mousedown .search-assistant-resize' :       'resizeAssistant'
-           },
+               'mousedown .search-assistant-resize' :       'resizeAssistant',
+               //this is a port of the generated javascript from within the shelper mako template
+               'click .saMoreLink': function(evt) {
+                   var $element = $(evt.target);
+                   if ($element.hasClass('saMoreLinkOpen')) {
+                       $element.removeClass('saMoreLinkOpen')
+                              .html(_.t('More &raquo;'));
+                       $($element.attr('divToShow')).css('display','none');   
+                   } else {
+                       $element.addClass('saMoreLinkOpen')
+                              .html(_.t('&laquo; Less'));
+                       $($element.attr('divToShow')).css('display', 'block');
+                   }
+               }
+           }, 
            toggleAutoOpen: function(e) {
                this.setAutoOpen(!this.options.autoOpenAssistant);
                e.preventDefault();
@@ -264,8 +236,8 @@ define('views/shared/searchbar/Input',
                    this.options.autoOpenAssistant = isEnabled;
                }
 
-               if (splunk_util.normalizeBoolean(this.model.get('display.prefs.autoOpenSearchAssistant')) !== isEnabled) {
-                   this.model.set({'display.prefs.autoOpenSearchAssistant': isEnabled});
+               if (splunk_util.normalizeBoolean(this.model.content.get('display.prefs.autoOpenSearchAssistant')) !== isEnabled) {
+                   this.model.content.set({'display.prefs.autoOpenSearchAssistant': isEnabled});
                }
 
                this.$assistantAutoOpenToggle.find("i").toggleClass('icon-check', this.options.autoOpenAssistant);
@@ -294,13 +266,12 @@ define('views/shared/searchbar/Input',
                        this.openAssistant();
                    }
                } else {
-                   clearTimeout(this.assistant.timer);
-                   this.assistant.timer = setTimeout(this.fillAssistant.bind(this), this.options.assistantDelay);
+                   this.debouncedFillAssistant();
                }
                this.onSearchFieldChange();
 
                var searchInput = this.getSearchFieldValue();
-               this.model.set({search: searchInput}, {silent: true});
+               this.model.content.set({search: searchInput}, {silent: true});
 
                return true;
            },
@@ -391,6 +362,7 @@ define('views/shared/searchbar/Input',
                e.preventDefault();
            },
            closeAssistant: function() {
+               this.model.sHelper.fetchAbort();
                // Exit early if closeAssistant has been called before render has created all of the views
                if (!this.$assistantContainer)
                     return false;
@@ -398,7 +370,7 @@ define('views/shared/searchbar/Input',
                this.$assistantContainer.hide();
                this.$assistantAutoOpenToggle.hide();
                this.assistant.enabled = false;
-               this.assistant.fillPending = false;
+               this.model.sHelper.fetchAbort();
                this.$assistantActivator.addClass("icon-triangle-down-small").removeClass("icon-triangle-up-small");
                this.$assistantResize.removeClass("search-assistant-resize-active");
                this.$el.removeClass('search-assistant-open');
@@ -408,7 +380,6 @@ define('views/shared/searchbar/Input',
                if (!this.options.useAssistant) {
                    return false;
                }
-               if (this.assistant.fillPending) return false;
                this.assistant.enabled = true;
                this.$assistantActivator.addClass("icon-triangle-up-small").removeClass("icon-triangle-down-small");
                this.$assistantResize.addClass("search-assistant-resize-active");
@@ -423,18 +394,15 @@ define('views/shared/searchbar/Input',
            },
            fillAssistant: function() {
                if (!this.assistant.enabled) return false;
-               if (this.assistant.fillPending) {
-                   this.assistant.needsUpdate = true;
-                   return false;
-               }
-
                var searchString = this._getUserEnteredSearch();
+               
                //TODO: revisit multi app namespace support
                var namespace    = 'search';//Splunk.util.getCurrentApp();
-
-               this.$assistantContainer.load(
-            	   splunk_util.make_url('/api/shelper'), {
+               
+               this.model.sHelper.safeFetch({
+                   data: {
                        'snippet': 'true',
+                       'snippetEmbedJS': 'false',
                        'namespace': namespace,
                        'search': searchString,
                        'useTypeahead': this.options.useTypeahead,
@@ -443,21 +411,16 @@ define('views/shared/searchbar/Input',
                        'showCommandHistory': this.options.showCommandHistory,
                        'showFieldInfo': this.options.showFieldInfo
                    },
-                   this.fillAssistantCompleteCallback.bind(this)
-               );
-               this.assistant.fillPending = true;
-
+                   success: function() {
+                       this.$assistantContainer.html(this.model.sHelper.get('raw') || '');
+                       this.fillAssistantCompleteCallback();
+                   }.bind(this)
+               });
                return true;
            },
            fillAssistantCompleteCallback: function() {
-               this.assistant.fillPending = false;
                if (!this.assistant.enabled) {
-                   this.assistant.needsUpdate = false;
                    return false;
-               }
-               if (this.assistant.needsUpdate) {
-                   this.assistant.needsUpdate = false;
-                   this.fillAssistant();
                }
                this.setAssistantWidth();
                this.$assistantContainer.show().bgiframe().scrollTop(0);
@@ -522,8 +485,7 @@ define('views/shared/searchbar/Input',
                        this.openAssistant();
                    }
                } else {
-                   clearTimeout(this.assistant.timer);
-                   this.assistant.timer = setTimeout(this.fillAssistant.bind(this), this.options.assistantDelay);
+                   this.fillAssistant();
                }
                return true;
            },
@@ -585,15 +547,15 @@ define('views/shared/searchbar/Input',
                    if (this.options.disableOnSubmit) {
                        this.$('.search-field').attr('disabled', true);
                    }
-                   var currentSearch = this.model.get('search'),
+                   var currentSearch = this.model.content.get('search'),
                        searchInput = this.getSearchFieldValue();
 
                    if (currentSearch !== searchInput){
-                       this.model.set({ search: searchInput }, options);
+                       this.model.content.set({ search: searchInput }, options);
                    } else {
                        if (!options.silent) {
-                           this.model.unset("search", {silent: true});
-                           this.model.set({search: searchInput});
+                           this.model.content.unset("search", {silent: true});
+                           this.model.content.set({search: searchInput});
                        }
                    }
 
@@ -677,7 +639,7 @@ define('views/shared/searchbar/Input',
                var html = this.$el.html();
                if ((this.options.singleton && !html) || !this.options.singleton) {
                    var self = this,
-                       inputValue = this.model.get('search') || "";
+                       inputValue = this.model.content.get('search') || "";
 
                    var template = _.template(this.template, {
                        showButton: true,
@@ -699,6 +661,11 @@ define('views/shared/searchbar/Input',
                    this.$assistantResize = this.$('.search-assistant-resize');
 
                    this.setAutoOpen();
+                   this.paste = function() {
+                       this.onSearchFieldChange();
+                   };
+                    
+                    this.$('.search-field').bind('input propertychange', function() { this.paste(); }.bind(this));
 
                    _.defer(function(){
                        if (self.options.useAutoFocus) {
@@ -715,7 +682,7 @@ define('views/shared/searchbar/Input',
 
                    this.onSearchFieldChange();
                } else {
-                   this.$('.search-field').val(this.model.get('search') || '');
+                   this.$('.search-field').val(this.model.content.get('search') || '');
                }
                
                if (this.options.disableOnSubmit) {
@@ -726,7 +693,7 @@ define('views/shared/searchbar/Input',
            },
            reflow: function() {
                var el = this.$('.search-field').get(0),
-                   inputValue = this.model.get('search') || "",
+                   inputValue = this.model.content.get('search') || "",
                    currentCaretPos = dom_utils.getCaretPosition(el);
                dom_utils.setCaretPosition(el, (currentCaretPos || inputValue.length));
                BaseView.prototype.reflow.apply(this, arguments);
@@ -738,8 +705,10 @@ define('views/shared/searchbar/Input',
                    $(document).off('click.' + this.uniqueNS());
                    $(document).on('mousemove.assistantResizeActive');
                    $(document).on('mouseup.assistantResizeActive'); 
+                   this.$('.search-field').off('input propertychange', this.paste);
                    return BaseView.prototype.remove.apply(this, arguments);
                }
+               this.model.sHelper.fetchAbort();
                return this;
            },
            template: '\
@@ -816,14 +785,13 @@ define('views/shared/searchbar/Master',
         'underscore',
         'backbone',
         'module',
-        'util/beacon',
         'views/Base',
         'views/shared/searchbar/Apps',
         'views/shared/searchbar/Input',
         'views/shared/timerangepicker/Master',
         'views/shared/searchbar/Submit'
     ],
-    function($, _, Backbone, module, beacon, BaseView, Apps, Input, TimeRangePicker, Submit) {
+    function($, _, Backbone, module, BaseView, Apps, Input, TimeRangePicker, Submit) {
         return BaseView.extend({
             moduleId: module.id,
             className: 'search-bar-wrapper',
@@ -905,7 +873,6 @@ define('views/shared/searchbar/Master',
                     this.$('.search-timerange').append(this.children.timeRangePicker.render().el);
                 }
                 this.$('.search-button').append(this.children.submit.render().el);
-                beacon.ping(this.model.application.get('root'), this.model.application.get('locale'), {event: 'ui.searchbar.ready'});
                 return this;
             },
             template: '\
@@ -929,12 +896,13 @@ define('views/shared/searchbar/Master',
 );
 
 requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.addBuffer('splunkjs/css/search-bar.css'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick;
-define('splunkjs/mvc/searchbarview',['require','exports','module','underscore','./mvc','backbone','./basesplunkview','./timepickerview','views/shared/searchbar/Master','models/TimeRange','./utils','splunk.config','./sharedmodels','css!../css/search-bar'],function(require, exports, module) {
+define('splunkjs/mvc/searchbarview',['require','exports','module','underscore','./mvc','backbone','./basesplunkview','util/console','./timerangeview','views/shared/searchbar/Master','models/TimeRange','./utils','splunk.config','./sharedmodels','css!../css/search-bar'],function(require, exports, module) {
     var _ = require("underscore");
     var mvc = require('./mvc');
     var Backbone = require("backbone");
     var BaseSplunkView = require("./basesplunkview");
-    var TimePickerView = require("./timepickerview");
+    var console = require('util/console');
+    var TimeRangeView = require("./timerangeview");
     var InternalSearchBar = require("views/shared/searchbar/Master");
     var TimeRangeModel = require('models/TimeRange');
     var utils = require('./utils'), SplunkConfig = require('splunk.config');
@@ -952,7 +920,7 @@ define('splunkjs/mvc/searchbarview',['require','exports','module','underscore','
             options: {
                 "default": undefined,
                 managerid: null,
-                timepicker: true,
+                timerange: true,
                 value: undefined
             },
             
@@ -962,13 +930,16 @@ define('splunkjs/mvc/searchbarview',['require','exports','module','underscore','
                 this.configure();
                 this.settings.enablePush("value");
                 
-                // Initialize value with default, if provided
-                var defaultValue = this.settings.get("default");
-                if (defaultValue !== undefined &&
-                    this.settings.get("value") === undefined)
-                {
-                    this.settings.set("value", defaultValue);
+                if (this.settings.has('timepicker')) {
+                    console.warn(
+                        'The "%s" setting of class "%s" is deprecated. Use "%s" instead.',
+                        'timepicker', 'SearchBarView', 'timerange');
+                    this.settings.set('timerange', this.settings.get('timepicker'));
+                    this.settings.unset('timepicker');
                 }
+                
+                // Initialize value with default, if provided
+                this._onDefaultChange();
                 
                 this._state = new Backbone.Model({
                     'dispatch.earliest_time': this.settings.get("earliest_time"),
@@ -988,20 +959,29 @@ define('splunkjs/mvc/searchbarview',['require','exports','module','underscore','
                     'latest': this.settings.get("latest_time")
                 });
                 
-                var createTimepicker = function(settings, searchbar) {
+                var createTimeRange = function(settings, searchbar) {
+                    var timeRangeOptions = settings.extractWithPrefix('timerange_');
+                    var timePickerOptions = settings.extractWithPrefix('timepicker_');
+                    if (!_.isEmpty(timePickerOptions)) {
+                        console.warn(
+                            'The "%s" settings of class "%s" are deprecated. Use "%s" instead.',
+                            'timepicker_*', 'SearchBarView', 'timerange_*');
+                    }
+                    
                     var options = _.extend(
                         { managerid: settings.get("managerid") },
-                        settings.extractWithPrefix('timepicker_'));
+                        timeRangeOptions,
+                        timePickerOptions);
                     
                     if (searchbar) {
                         options["timepicker"] = searchbar.children.timeRangePicker;
                         options["el"] = searchbar.children.timeRangePicker.el;
                     }
                     
-                    return new TimePickerView(options);
+                    return new TimeRangeView(options);
                 };
                 
-                // We cannot create the searchbar/timepicker until these internal models
+                // We cannot create the searchbar/timerange until these internal models
                 // have been fetched, and so we wait on them being done.
                 this._dfd = $.when(timesCollection.dfd, userModel.dfd, appLocalModel.dfd).done(function() {
                     that.searchbar = new InternalSearchBar({
@@ -1020,28 +1000,34 @@ define('splunkjs/mvc/searchbarview',['require','exports','module','underscore','
                     that.searchbar.children.searchInput.options.useAssistant = false;
                     that.searchbar.children.searchInput.options.disableOnSubmit = false;
                     
-                    // We can either have the timepicker created or not by this 
+                    // We can either have the timerange created or not by this 
                     // point (depending on whether the deferred was done before
                     // $.when was called). We create it if it is not already created,
                     // otherwise we set the appropriate properties on it.
-                    if (that.timepicker) {
-                        // Set the appropriate things on the timepicker now that it is
+                    if (that.timerange) {
+                        // Set the appropriate things on the timerange now that it is
                         // created. Note that we are depending on the fact that this
-                        // will execute before the deferred handler in the timepicker.
-                        that.timepicker.setElement(that.searchbar.children.timeRangePicker.el);
-                        that.timepicker.settings.set("timepicker", that.searchbar.children.timeRangePicker);
+                        // will execute before the deferred handler in the timerange.
+                        that.timerange.setElement(that.searchbar.children.timeRangePicker.el);
+                        that.timerange.settings.set("timepicker", that.searchbar.children.timeRangePicker);
                     }
                     else {
-                        that.timepicker = createTimepicker(that.settings, that.searchbar);
+                        that.timerange = createTimeRange(that.settings, that.searchbar);
+                        
+                        // Permit deprecated access to the 'timepicker' field
+                        that.timepicker = that.timerange;
                     }
                 });
 
     
-                if (!this.timepicker) {
-                    // We create the timepicker wrapper ahead of time so that we can
-                    // reference it (e.g. mySearchbar.timepicker) before the deferreds
+                if (!this.timerange) {
+                    // We create the timerange wrapper ahead of time so that we can
+                    // reference it (e.g. mySearchbar.timerange) before the deferreds
                     // are resolved.
-                    this.timepicker = createTimepicker(this.settings);
+                    this.timerange = createTimeRange(this.settings);
+                    
+                    // Permit deprecated access to the 'timepicker' field
+                    this.timepicker = this.timerange;
                 }
                 
                 // Update view if model changes
@@ -1053,18 +1039,32 @@ define('splunkjs/mvc/searchbarview',['require','exports','module','underscore','
                     }
                 });
                 
-                this.bindToComponent(this.settings.get("managerid"), this._onManagerChange, this);
+                this.bindToComponentSetting('managerid', this._onManagerChange, this);
                 
                 this._state.on("change:search", this._onSearchChange, this);
-                this.settings.on("change:timepicker", this._onDisplayTimePickerChange, this);
+                this.settings.on("change:timerange", this._onDisplayTimeRangeChange, this);
+                this.settings.on("change:default", this._onDefaultChange, this);
             },
             
-            _onDisplayTimePickerChange: function() {
-                // We cannot work with the searchbar/timepicker until they
+            _onDefaultChange: function(model, value, options) {
+                // Initialize value with default, if provided
+                var oldDefaultValue = this.settings.previous("default");
+                var defaultValue = this.settings.get("default");
+                var currentValue = this.settings.get('value');
+                
+                if (defaultValue !== undefined &&
+                    (currentValue === oldDefaultValue || currentValue === undefined))
+                {
+                    this.settings.set('value', defaultValue);
+                }
+            },
+            
+            _onDisplayTimeRangeChange: function() {
+                // We cannot work with the searchbar/timerange until they
                 // are done being created.
                 var that = this;
                 $.when(this._dfd).done(function() {
-                    if (that.settings.get("timepicker")) {
+                    if (that.settings.get("timerange")) {
                         that.searchbar.children.timeRangePicker.$el.show();
                     }
                     else {
@@ -1092,7 +1092,7 @@ define('splunkjs/mvc/searchbarview',['require','exports','module','underscore','
             },
             
             render: function() {
-                // We cannot work with the searchbar/timepicker until they
+                // We cannot work with the searchbar/timerange until they
                 // are done being created.
                 var that = this;
                 $.when(this._dfd).done(function() {
@@ -1106,8 +1106,8 @@ define('splunkjs/mvc/searchbarview',['require','exports','module','underscore','
                     that.searchbar.render();
                     that.$el.append(that.searchbar.el);
                     
-                    // Ensure we properly show/hide the timepicker
-                    that._onDisplayTimePickerChange();
+                    // Ensure we properly show/hide the timerange
+                    that._onDisplayTimeRangeChange();
                 });
                                 
                 return this;
@@ -1166,4 +1166,4 @@ define('splunkjs/mvc/searchbarview',['require','exports','module','underscore','
     return SearchBarView;
 });
 
-requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.setBuffer('/*!\n * Splunk shoestrap\n * import and override bootstrap vars & mixins\n */\n.clearfix {\n  *zoom: 1;\n}\n.clearfix:before,\n.clearfix:after {\n  display: table;\n  content: \"\";\n  line-height: 0;\n}\n.clearfix:after {\n  clear: both;\n}\n.hide-text {\n  font: 0/0 a;\n  color: transparent;\n  text-shadow: none;\n  background-color: transparent;\n  border: 0;\n}\n.input-block-level {\n  display: block;\n  width: 100%;\n  min-height: 26px;\n  -webkit-box-sizing: border-box;\n  -moz-box-sizing: border-box;\n  box-sizing: border-box;\n}\n.ie7-force-layout {\n  *min-width: 0;\n}\n/* search bar\n\n    TODO: cleanup this markup\n\n    <div class=\"search-bar-wrapper views-shared-searchbar\">\n        <form class=\"search-form\" action=\"\" method=\"get\">\n            <table class=\"search-bar\">\n                <tbody>\n                    <tr>\n                        <td width=\"100%\" class=\"search-input\">\n                            <div id=\"search\" class=\"shared-searchbar-input\">\n                                <div class=\"search-field-background\"></div>\n                                <div class=\"search-field-wrapper\">\n                                    <label class=\"placeholder-text\" for=\"221845.81376217483\" style=\"display: block;\">enter search here...</label>\n                                    <textarea autocapitalize=\"off\" autocorrect=\"off\" id=\"221845.81376217483\" class=\"search-field\" spellcheck=\"false\" name=\"q\" value=\"\"></textarea>\n                                    <div class=\"shadowTextarea\" ></div>\n                                </div>\n                                <div class=\"search-assistant-wrapper\">\n                                    <div class=\"search-assistant-container-wrapper\">\n                                        <div class=\"search-assistant-container\"></div>\n                                    </div><a style=\"display:none;\" href=\"\" class=\"search-assistant-autoopen-toggle\">Auto Open</a>\n                                    <div class=\"search-assistant-resize\"></div><a class=\"search-assistant-activator icon-triangle-down-small\" href=\"#\"></a>\n                                </div>\n                            </div>\n                        </td>\n                        <td class=\"search-apps\">\n                            <!-- optional apps dropdwon here\n                            <div class=\"control btn-group shared-searchbar-apps\" data-name=\"app\" data-view=\"views/shared/searchbar/Apps\" data-render-time=\"0.005\">\n                                <a href=\"#\" class=\"dropdown-toggle btn\">App: <span class=\"link-label\">Search &amp; Reporting</span></a>\n                            </div> -->\n                        </td>\n                        <td class=\"search-timerange\">\n                            <div class=\"view-new-time-range-picker btn-group pull-left views-shared-timerangepicker\">\n                                <a href=\"#\" class=\"splBorder splBorder-nsew splBackground-primary btn\">\n                                    <span class=\"time-label\">All-time</span></a>\n                            </div>\n                        </td>\n                        <td class=\"search-button\">\n                            <div class=\"shared-searchbar-submit\" data-view=\"views/shared/searchbar/Submit\" data-render-time=\"0\">\n                                <button type=\"submit\" class=\"btn\"><i class=\"icon-search-thin\"></i></button>\n                            </div>\n                        </td>\n                    </tr>\n                </tbody>\n            </table>\n        </form>\n    </div><!-- /.search-bar-wrapper -->\n\n*/\nform.search-form {\n  margin-bottom: 0;\n}\n.search-bar .btn,\n.search-bar .btn.dropdown-toggle {\n  -webkit-border-radius: 0;\n  -moz-border-radius: 0;\n  border-radius: 0;\n  margin-right: -1px;\n  line-height: 28px;\n  white-space: nowrap;\n}\n.search-bar td {\n  padding: 0;\n  vertical-align: top;\n}\n.search-bar td.search-input {\n  width: 100%;\n}\n.search-bar .search-field-background {\n  height: 36px;\n  background-color: #e9e9e9;\n  background-color: #ebebeb;\n  background-image: -moz-linear-gradient(top, #f5f5f5, #dcdcdc);\n  background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#f5f5f5), to(#dcdcdc));\n  background-image: -webkit-linear-gradient(top, #f5f5f5, #dcdcdc);\n  background-image: -o-linear-gradient(top, #f5f5f5, #dcdcdc);\n  background-image: linear-gradient(to bottom, #f5f5f5, #dcdcdc);\n  background-repeat: repeat-x;\n  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#fff5f5f5\', endColorstr=\'#ffdcdcdc\', GradientType=0);\n  border: 1px solid #aeaeae;\n  border-top-color: #b7b7b7;\n  border-bottom-color: #989898;\n  text-shadow: 0 1px 0 #ffffff;\n  -webkit-box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.08);\n  -moz-box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.08);\n  box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.08);\n  text-shadow: none;\n  color: #333333;\n  border-right: none;\n  -webkit-border-top-left-radius: 4px;\n  -moz-border-radius-topleft: 4px;\n  border-top-left-radius: 4px;\n  -webkit-border-bottom-left-radius: 4px;\n  -moz-border-radius-bottomleft: 4px;\n  border-bottom-left-radius: 4px;\n  margin: -4px -4px -34px -4px;\n}\n.search-bar .search-timerange .btn {\n  white-space: nowrap;\n  -webkit-border-radius: 0;\n  -moz-border-radius: 0;\n  border-radius: 0;\n  min-width: 55px;\n  *display: inline;\n  *zoom: 1;\n  *height: 28px;\n  *position: relative;\n  *margin-top: -1px;\n}\n.search-bar .search-button .btn {\n  -webkit-border-top-right-radius: 4px;\n  -moz-border-radius-topright: 4px;\n  border-top-right-radius: 4px;\n  -webkit-border-bottom-right-radius: 4px;\n  -moz-border-radius-bottomright: 4px;\n  border-bottom-right-radius: 4px;\n  margin-left: -2px;\n  font-size: 26px;\n  *height: 28px;\n}\n.search-bar .time-label {\n  display: inline-block;\n  *display: inline;\n  vertical-align: middle;\n  line-height: 1.2em;\n  *line-height: 28px;\n  max-width: 10em;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n/* search input main form\n\n*/\n.shared-searchbar-input {\n  position: relative;\n  padding: 4px;\n}\n.shared-searchbar-input label.placeholder-text {\n  display: none;\n  padding: 4px 0 0 5px;\n  line-height: 16px;\n  display: block;\n  position: absolute;\n  margin: 0;\n  top: 6px;\n  left: 6px;\n  color: #999999;\n  z-index: 403;\n  cursor: text;\n  min-height: 30px;\n}\n.shared-searchbar-input textarea[disabled=\"disabled\"] {\n  background-color: #eeeeee;\n}\n.shared-searchbar-input textarea.search-field {\n  min-height: 30px;\n  width: 100%;\n  display: block;\n  line-height: 20px;\n  margin: 0;\n  overflow: hidden;\n  resize: none;\n  -webkit-box-sizing: border-box;\n  -moz-box-sizing: border-box;\n  box-sizing: border-box;\n  border: 1px solid #aeaeae;\n  border-top-color: #b7b7b7;\n  border-bottom-color: #989898;\n  box-shadow: inset 1px 1px 5px rgba(0, 0, 0, 0.35);\n  position: relative;\n  z-index: 402;\n  font-family: \'Droid Sans Mono\', Consolas, Monaco, \'Courier New\', Courier, monospace;\n  *padding: 0;\n  *height: 20px;\n  *vertical-align: middle;\n}\n.shared-searchbar-input.multiline .search-assistant-resize {\n  margin: 0;\n}\n.shared-searchbar-input.multiline textarea.search-field,\n.shared-searchbar-input.search-assistant-open textarea.search-field {\n  -webkit-border-bottom-right-radius: 0;\n  -moz-border-radius-bottomright: 0;\n  border-bottom-right-radius: 0;\n  -webkit-border-bottom-left-radius: 0;\n  -moz-border-radius-bottomleft: 0;\n  border-bottom-left-radius: 0;\n  border-bottom-color: #cccccc;\n}\n/* dropdown search helper for autocomplete and search language suggestions\n\n    FIXME: markup missing\n\n*/\n.search-assistant-wrapper {\n  position: relative;\n  z-index: 406;\n  width: 100%;\n  height: 0;\n}\n.search-assistant-wrapper .search-assistant-autoopen-toggle {\n  height: 20px;\n  position: absolute;\n  right: 17px;\n  top: 0;\n  padding: 5px 3px 5px 10px;\n  background-color: rgba(245, 245, 245, 0.8);\n}\n.search-assistant-wrapper .search-assistant-autoopen-toggle > .icon-check {\n  text-decoration: none;\n  display: inline-block;\n  margin-right: 3px;\n}\n.search-assistant-wrapper .search-assistant-container {\n  display: none;\n  position: relative;\n  border: 1px solid #cccccc;\n  border-bottom: none;\n  border-top: none;\n  overflow: auto;\n  background: #eeeeee url(\'/static/img/skins/default/bg_search_assistant.png\') left top repeat-y;\n  background: -moz-linear-gradient(left, #ffffff 369px, transparent 370px), #f5f5f5;\n  background: -ms-linear-gradient(left, #ffffff 369px, transparent 370px), #f5f5f5;\n  background: -webkit-gradient(linear, 369px 0, 370px 0, from(#ffffff), to(transparent)), #f5f5f5;\n  background: -webkit-linear-gradient(left, #ffffff 369px, transparent 370px), #f5f5f5;\n  background: linear-gradient(left, #ffffff 369px, transparent 370px), #f5f5f5;\n  background-position: 0 0;\n}\n.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper,\n.search-assistant-wrapper .search-assistant-container .saHelpWrapper {\n  float: left;\n  max-width: 50%;\n}\n.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper {\n  margin-right: -370px;\n  width: 370px;\n}\n.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper h4 {\n  font-size: inherit;\n  color: #333333;\n  font-weight: normal;\n  padding: 5px 10px 0 5px;\n}\n.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper a + h4 {\n  margin-top: 10px;\n}\n.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper a {\n  color: #1a799;\n  padding: 0 10px 0 5px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper a:hover {\n  text-decoration: none;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpWrapper {\n  margin-left: 370px;\n  max-width: 605px;\n}\n.search-assistant-wrapper .search-assistant-container .saNotice > strong {\n  font-weight: normal;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent {\n  padding: 9px;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent:before {\n  content: \'\';\n  display: block;\n  float: right;\n  height: 20px;\n  width: 85px;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .splFont-mono {\n  background: transparent;\n  border: none;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent h4 {\n  margin-top: 1px;\n  font-size: inherit;\n  color: #333333;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent h4:first-child {\n  margin-top: 0;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .intro > h4 {\n  color: #65a637;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .intro + h4 {\n  margin-top: 10px;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .saHeadingNav {\n  margin-top: 10px;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .saHeadingNav h4 {\n  color: #333333;\n  display: inline;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .saHeadingNav .splPipe {\n  display: inline-block;\n  width: 30px;\n  overflow: hidden;\n  text-indent: 50px;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent h4.saExamplesHeader {\n  margin-top: 10px;\n  color: #333333;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .saExamples {\n  margin-top: 0px;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent dt {\n  margin-top: 10px;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent dt,\n.search-assistant-wrapper .search-assistant-container .saHelpContent dt h4 {\n  font-weight: normal;\n  color: #333333;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent dd {\n  margin-left: 20px;\n}\n.search-assistant-wrapper .search-assistant-container .saHelpContent a {\n  cursor: pointer;\n}\n.search-assistant-wrapper .search-assistant-container code {\n  color: #73A550;\n}\n.search-assistant-wrapper .search-assistant-container .introstep {\n  font-weight: bold;\n  margin-top: 1em;\n  display: block;\n}\n.search-assistant-wrapper .search-assistant-container .sakeyword {\n  display: block;\n}\n.search-assistant-wrapper .search-assistant-container .sakeyword:focus,\n.search-assistant-wrapper .search-assistant-container .sakeyword:hover {\n  background-color: #eeeeee;\n  cursor: pointer;\n}\n.search-assistant-wrapper .search-assistant-container .saClearBottom {\n  *zoom: 1;\n}\n.search-assistant-wrapper .search-assistant-container .saClearBottom:before,\n.search-assistant-wrapper .search-assistant-container .saClearBottom:after {\n  display: table;\n  content: \"\";\n  line-height: 0;\n}\n.search-assistant-wrapper .search-assistant-container .saClearBottom:after {\n  clear: both;\n}\n.search-assistant-wrapper .search-assistant-resize {\n  height: 3px;\n  margin: 0 3px;\n  background-color: #dcdcdc;\n  border: 0 solid #b7b7b7;\n  border-top-color: #b7b7b7;\n  border-bottom-color: #989898;\n  border-bottom-width: 1px;\n}\n.search-assistant-wrapper .search-assistant-open .search-assistant-resize {\n  margin: 0;\n}\n.search-assistant-wrapper .search-assistant-resize-active {\n  margin: 0;\n  cursor: ns-resize;\n}\n.search-assistant-wrapper .search-assistant-resize-active:before {\n  content: \"\";\n  display: block;\n  height: 1px;\n  width: 10px;\n  margin: 0 auto;\n  border-width: 1px 0;\n  border-style: solid;\n  opacity: 0.8;\n  filter: alpha(opacity=80);\n}\n.search-assistant-wrapper .search-assistant-activator {\n  background-color: #dcdcdc;\n  cursor: pointer;\n  -webkit-border-radius: 4px;\n  -moz-border-radius: 4px;\n  border-radius: 4px;\n  -webkit-border-top-left-radius: 0;\n  -moz-border-radius-topleft: 0;\n  border-top-left-radius: 0;\n  -webkit-border-top-right-radius: 0;\n  -moz-border-radius-topright: 0;\n  border-top-right-radius: 0;\n  border: none;\n  width: 20px;\n  height: 10px;\n  line-height: 10px;\n  display: block;\n  color: #333333;\n  text-align: center;\n  margin-top: -1px;\n  text-decoration: none;\n  border: 1px solid #aeaeae;\n  border-bottom-color: 1px solid #989898;\n  border-top: none;\n}\n.search-assistant-wrapper.search-assistant-enabled {\n  -webkit-box-shadow: 0 3px 7px rgba(0, 0, 0, 0.3);\n  -moz-box-shadow: 0 3px 7px rgba(0, 0, 0, 0.3);\n  box-shadow: 0 3px 7px rgba(0, 0, 0, 0.3);\n}\n.multiline .search-assistant-resize,\n.search-assistant-open .search-assistant-resize {\n  border-width: 1px;\n}\n.search-bar-primary .btn {\n  background-color: #5c9732;\n  background-image: -moz-linear-gradient(top, #65a637, #4e802a);\n  background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#65a637), to(#4e802a));\n  background-image: -webkit-linear-gradient(top, #65a637, #4e802a);\n  background-image: -o-linear-gradient(top, #65a637, #4e802a);\n  background-image: linear-gradient(to bottom, #65a637, #4e802a);\n  background-repeat: repeat-x;\n  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#ff65a637\', endColorstr=\'#ff4e802a\', GradientType=0);\n  border-color: #426d24;\n  border-top-color: #4e802a;\n  border-bottom-color: #32521b;\n  color: #ffffff;\n  text-shadow: 0 -1px 0 rgba(51, 51, 51, 0.7);\n}\n.search-bar-primary .btn:hover {\n  background-color: #8cca5f;\n  background-color: #7db44d;\n  background-image: -moz-linear-gradient(top, #95ca5f, #599331);\n  background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#95ca5f), to(#599331));\n  background-image: -webkit-linear-gradient(top, #95ca5f, #599331);\n  background-image: -o-linear-gradient(top, #95ca5f, #599331);\n  background-image: linear-gradient(to bottom, #95ca5f, #599331);\n  background-repeat: repeat-x;\n  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#ff95ca5f\', endColorstr=\'#ff599331\', GradientType=0);\n  border-color: #55802a;\n  border-bottom-color: #36591e;\n  border-top-color: #629331;\n  background-position: 0 0;\n}\n.search-bar-primary .search-field-wrapper-inner {\n  background-color: #5c9732;\n  background-image: -moz-linear-gradient(top, #65a637, #4e802a);\n  background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#65a637), to(#4e802a));\n  background-image: -webkit-linear-gradient(top, #65a637, #4e802a);\n  background-image: -o-linear-gradient(top, #65a637, #4e802a);\n  background-image: linear-gradient(to bottom, #65a637, #4e802a);\n  background-repeat: repeat-x;\n  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#ff65a637\', endColorstr=\'#ff4e802a\', GradientType=0);\n  border-color: #426d24;\n  border-top-color: #4e802a;\n  border-bottom-color: #32521b;\n}\n.search-bar-primary .search-field-background {\n  background-color: #5c9732;\n  background-image: -moz-linear-gradient(top, #65a637, #4e802a);\n  background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#65a637), to(#4e802a));\n  background-image: -webkit-linear-gradient(top, #65a637, #4e802a);\n  background-image: -o-linear-gradient(top, #65a637, #4e802a);\n  background-image: linear-gradient(to bottom, #65a637, #4e802a);\n  background-repeat: repeat-x;\n  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#ff65a637\', endColorstr=\'#ff4e802a\', GradientType=0);\n  border-color: #426d24;\n  border-top-color: #4e802a;\n  border-bottom-color: #32521b;\n}\n.search-bar-primary .search-assistant-resize {\n  background-color: #primaryBackgroundColor;\n  border-top: 1px solid #primaryBorderTopColor;\n  border-bottom: 1px solid #32521b;\n}\n.search-bar-primary .search-assistant-activator {\n  background-color: #4e802a;\n  color: #ffffff;\n  border-color: #32521b;\n}\n.search-bar-primary .search-assistant-resize {\n  background-color: #4e802a;\n  color: #ffffff;\n  border-color: #32521b;\n}\n.search-bar-primary .multiline .search-assistant-resize {\n  border-right-color: #426d24;\n  border-left-color: #426d24;\n}\n.search-bar-primary .search-assistant-resize-active {\n  border-left: 1px solid #32521b;\n}\n.search-bar-primary textarea.search-field {\n  border: 1px solid #426d24;\n  border-top-color: #4e802a;\n  border-bottom-color: #32521b;\n}\n.search-bar-primary .search-apps .link-label,\n.search-bar-primary .search-apps .label-prefix {\n  display: inline-block;\n  *display: inline;\n  /* IE7 inline-block hack */\n\n  *zoom: 1;\n  vertical-align: middle;\n  line-height: 1.2em;\n  max-width: 10em;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n.search-bar-primary .search-apps .caret {\n  line-height: 1em;\n  vertical-align: middle;\n}\n.lt-ie9 .shared-search-input {\n  height: 28px;\n}\n.lt-ie9 .search-field-wrapper {\n  height: 28px;\n}\n.lt-ie9 .placeholder-text {\n  padding: 2px 0 !important;\n  min-height: 15px !important;\n}\n.lt-ie9 .search-field {\n  padding: 2px 5px 0 5px;\n  min-height: 26px !important;\n}\n.lt-ie9 .search-assistant-wrapper {\n  top: 2px;\n  *top: 1px;\n}\n.ie7 .search-bar-wrapper {\n  *position: relative;\n  *z-index: 1;\n}\n.ie7 .search-bar * {\n  *min-width: 1px;\n}\n.ie7 .icon-search-thin {\n  *line-height: 1.2em;\n}\n@media print {\n  .shared-searchbar-input {\n    padding: 0 !important;\n  }\n  .search-bar.search-bar-primary {\n    width: 100%;\n  }\n  .search-bar.search-bar-primary td {\n    display: block;\n    width: 100%;\n  }\n  .search-field {\n    border: none !important;\n    padding: 0 0 10px 0 !important;\n    -webkit-box-shadow: none !important;\n    -moz-box-shadow: none !important;\n    box-shadow: none !important;\n  }\n  .search-field-background,\n  .search-assistant-wrapper,\n  .search-button {\n    display: none !important;\n  }\n}\n'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick; 
+requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.setBuffer('.clearfix{*zoom:1;}.clearfix:before,.clearfix:after{display:table;content:\"\";line-height:0;}\n.clearfix:after{clear:both;}\n.hide-text{font:0/0 a;color:transparent;text-shadow:none;background-color:transparent;border:0;}\n.input-block-level{display:block;width:100%;min-height:26px;-webkit-box-sizing:border-box;-moz-box-sizing:border-box;box-sizing:border-box;}\n.ie7-force-layout{*min-width:0;}\nform.search-form{margin-bottom:0;}\n.search-bar .btn,.search-bar .btn.dropdown-toggle{-webkit-border-radius:0;-moz-border-radius:0;border-radius:0;margin-right:-1px;line-height:28px;height:28px;white-space:nowrap;}\n.search-bar td{padding:0;vertical-align:top;}\n.search-bar td.search-input{width:100%;}\n.search-bar .search-field-background{height:36px;background-color:#ebebeb;background-image:-moz-linear-gradient(top, #f5f5f5, #dcdcdc);background-image:-webkit-gradient(linear, 0 0, 0 100%, from(#f5f5f5), to(#dcdcdc));background-image:-webkit-linear-gradient(top, #f5f5f5, #dcdcdc);background-image:-o-linear-gradient(top, #f5f5f5, #dcdcdc);background-image:linear-gradient(to bottom, #f5f5f5, #dcdcdc);background-repeat:repeat-x;filter:progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#fff5f5f5\', endColorstr=\'#ffdcdcdc\', GradientType=0);background-color:#e9e9e9;border:1px solid #aeaeae;border-top-color:#b7b7b7;border-bottom-color:#989898;text-shadow:0 1px 0 #ffffff;-webkit-box-shadow:0px 1px 1px rgba(0, 0, 0, 0.08);-moz-box-shadow:0px 1px 1px rgba(0, 0, 0, 0.08);box-shadow:0px 1px 1px rgba(0, 0, 0, 0.08);text-shadow:none;color:#333333;border-right:none;-webkit-border-top-left-radius:4px;-moz-border-radius-topleft:4px;border-top-left-radius:4px;-webkit-border-bottom-left-radius:4px;-moz-border-radius-bottomleft:4px;border-bottom-left-radius:4px;margin:-4px -4px -34px -4px;}\n.search-bar .search-timerange .btn{white-space:nowrap;-webkit-border-radius:0;-moz-border-radius:0;border-radius:0;min-width:55px;*display:inline;*zoom:1;*position:relative;*margin-top:-1px;}\n.search-bar .search-button .btn{-webkit-border-top-right-radius:4px;-moz-border-radius-topright:4px;border-top-right-radius:4px;-webkit-border-bottom-right-radius:4px;-moz-border-radius-bottomright:4px;border-bottom-right-radius:4px;margin-left:-2px;font-size:26px;}\n.search-bar .search-timerange .shared-timerangepicker .btn .time-label{display:inline-block;*display:inline;vertical-align:middle;max-width:10em;overflow:hidden;text-overflow:ellipsis;}\n.shared-searchbar-input{position:relative;padding:4px;}.shared-searchbar-input label.placeholder-text{display:none;padding:4px 0 0 5px;line-height:16px;display:block;position:absolute;margin:0;top:6px;left:6px;color:#999999;z-index:403;cursor:text;min-height:30px;}\n.shared-searchbar-input textarea[disabled=\"disabled\"]{background-color:#eeeeee;}\n.shared-searchbar-input textarea.search-field{min-height:30px;width:100%;display:block;line-height:20px;margin:0;overflow:hidden;resize:none;-webkit-box-sizing:border-box;-moz-box-sizing:border-box;box-sizing:border-box;border:1px solid #aeaeae;border-top-color:#b7b7b7;border-bottom-color:#989898;box-shadow:inset 1px 1px 5px rgba(0, 0, 0, 0.35);position:relative;z-index:402;font-family:\'Droid Sans Mono\',Consolas,Monaco,\'Courier New\',Courier,monospace;*padding:0;*height:20px;*vertical-align:middle;}\n.shared-searchbar-input .shadowTextarea{*white-space:pre;*word-wrap:break-word;}\n.shared-searchbar-input.multiline .search-assistant-resize{margin:0;}\n.shared-searchbar-input.multiline textarea.search-field,.shared-searchbar-input.search-assistant-open textarea.search-field{-webkit-border-bottom-right-radius:0;-moz-border-radius-bottomright:0;border-bottom-right-radius:0;-webkit-border-bottom-left-radius:0;-moz-border-radius-bottomleft:0;border-bottom-left-radius:0;border-bottom-color:#cccccc;}\n.search-assistant-wrapper{position:relative;z-index:406;width:100%;height:0;}.search-assistant-wrapper .search-assistant-autoopen-toggle{height:20px;position:absolute;right:17px;top:0;padding:5px 3px 5px 10px;background-color:rgba(245, 245, 245, 0.8);}.search-assistant-wrapper .search-assistant-autoopen-toggle>.icon-check{text-decoration:none;display:inline-block;margin-right:3px;}\n.search-assistant-wrapper .search-assistant-container{display:none;position:relative;border:1px solid #cccccc;border-bottom:none;border-top:none;overflow:auto;background:#eeeeee url(\'/static/img/skins/default/bg_search_assistant.png\') left top repeat-y;background:-moz-linear-gradient(left, #ffffff 369px, transparent 370px),#f5f5f5;background:-ms-linear-gradient(left, #ffffff 369px, transparent 370px),#f5f5f5;background:-webkit-gradient(linear, 369px 0, 370px 0, from(#ffffff), to(transparent)),#f5f5f5;background:-webkit-linear-gradient(left, #ffffff 369px, transparent 370px),#f5f5f5;background:linear-gradient(left, #ffffff 369px, transparent 370px),#f5f5f5;background-position:0 0;}.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper,.search-assistant-wrapper .search-assistant-container .saHelpWrapper{float:left;max-width:50%;}\n.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper{margin-right:-370px;width:370px;}.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper h4{font-size:inherit;color:#333333;font-weight:normal;padding:5px 10px 0 5px;}\n.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper a+h4{margin-top:10px;}\n.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper a{padding:0 10px 0 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}\n.search-assistant-wrapper .search-assistant-container .saTypeaheadWrapper a:hover{text-decoration:none;}\n.search-assistant-wrapper .search-assistant-container .saHelpWrapper{margin-left:370px;max-width:605px;}\n.search-assistant-wrapper .search-assistant-container .saNotice>strong{font-weight:normal;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent{padding:9px;}.search-assistant-wrapper .search-assistant-container .saHelpContent:before{content:\'\';display:block;float:right;height:20px;width:85px;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .splFont-mono{background:transparent;border:none;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent h4{margin-top:1px;font-size:inherit;color:#333333;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent h4:first-child{margin-top:0;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .intro>h4{color:#65a637;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .intro+h4{margin-top:10px;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .saHeadingNav{margin-top:10px;}.search-assistant-wrapper .search-assistant-container .saHelpContent .saHeadingNav h4{color:#333333;display:inline;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .saHeadingNav .splPipe{display:inline-block;width:30px;overflow:hidden;text-indent:50px;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent h4.saExamplesHeader{margin-top:10px;color:#333333;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent .saExamples{margin-top:0px;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent dt{margin-top:10px;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent dt,.search-assistant-wrapper .search-assistant-container .saHelpContent dt h4{font-weight:normal;color:#333333;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent dd{margin-left:20px;}\n.search-assistant-wrapper .search-assistant-container .saHelpContent a{cursor:pointer;}\n.search-assistant-wrapper .search-assistant-container code{color:#65a637;}\n.search-assistant-wrapper .search-assistant-container .introstep{font-weight:bold;margin-top:1em;display:block;}\n.search-assistant-wrapper .search-assistant-container .sakeyword{display:block;}.search-assistant-wrapper .search-assistant-container .sakeyword:focus,.search-assistant-wrapper .search-assistant-container .sakeyword:hover{background-color:#eeeeee;cursor:pointer;}\n.search-assistant-wrapper .search-assistant-container .saClearBottom{*zoom:1;}.search-assistant-wrapper .search-assistant-container .saClearBottom:before,.search-assistant-wrapper .search-assistant-container .saClearBottom:after{display:table;content:\"\";line-height:0;}\n.search-assistant-wrapper .search-assistant-container .saClearBottom:after{clear:both;}\n.search-assistant-wrapper .search-assistant-resize{height:3px;margin:0 3px;background-color:#dcdcdc;border:0 solid #b7b7b7;border-top-color:#b7b7b7;border-bottom-color:#989898;border-bottom-width:1px;}\n.search-assistant-wrapper .search-assistant-open .search-assistant-resize{margin:0;}\n.search-assistant-wrapper .search-assistant-resize-active{margin:0;cursor:ns-resize;}\n.search-assistant-wrapper .search-assistant-resize-active:before{content:\"\";display:block;height:1px;width:10px;margin:0 auto;border-width:1px 0;border-style:solid;opacity:0.8;filter:alpha(opacity=80);}\n.search-assistant-wrapper .search-assistant-activator{background-color:#dcdcdc;cursor:pointer;-webkit-border-radius:4px;-moz-border-radius:4px;border-radius:4px;-webkit-border-top-left-radius:0;-moz-border-radius-topleft:0;border-top-left-radius:0;-webkit-border-top-right-radius:0;-moz-border-radius-topright:0;border-top-right-radius:0;border:none;width:20px;height:10px;line-height:10px;display:block;color:#333333;text-align:center;margin-top:-1px;text-decoration:none;border:1px solid #aeaeae;border-bottom-color:1px solid #989898;border-top:none;}\n.search-assistant-wrapper.search-assistant-enabled{-webkit-box-shadow:0 3px 7px rgba(0, 0, 0, 0.3);-moz-box-shadow:0 3px 7px rgba(0, 0, 0, 0.3);box-shadow:0 3px 7px rgba(0, 0, 0, 0.3);}\n.multiline .search-assistant-resize,.search-assistant-open .search-assistant-resize{border-width:1px;}\n.search-bar-primary .btn{background-color:#5c9732;background-image:-moz-linear-gradient(top, #65a637, #4e802a);background-image:-webkit-gradient(linear, 0 0, 0 100%, from(#65a637), to(#4e802a));background-image:-webkit-linear-gradient(top, #65a637, #4e802a);background-image:-o-linear-gradient(top, #65a637, #4e802a);background-image:linear-gradient(to bottom, #65a637, #4e802a);background-repeat:repeat-x;filter:progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#ff65a637\', endColorstr=\'#ff4e802a\', GradientType=0);border-color:#426d24;border-top-color:#4e802a;border-bottom-color:#32521b;color:#ffffff;text-shadow:0 -1px 0 rgba(51, 51, 51, 0.7);}.search-bar-primary .btn:hover{background-color:#7db44d;background-image:-moz-linear-gradient(top, #95ca5f, #599331);background-image:-webkit-gradient(linear, 0 0, 0 100%, from(#95ca5f), to(#599331));background-image:-webkit-linear-gradient(top, #95ca5f, #599331);background-image:-o-linear-gradient(top, #95ca5f, #599331);background-image:linear-gradient(to bottom, #95ca5f, #599331);background-repeat:repeat-x;filter:progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#ff95ca5f\', endColorstr=\'#ff599331\', GradientType=0);background-color:#8cca5f;border-color:#55802a;border-bottom-color:#36591e;border-top-color:#629331;background-position:0 0;}\n.search-bar-primary .search-field-wrapper-inner{background-color:#5c9732;background-image:-moz-linear-gradient(top, #65a637, #4e802a);background-image:-webkit-gradient(linear, 0 0, 0 100%, from(#65a637), to(#4e802a));background-image:-webkit-linear-gradient(top, #65a637, #4e802a);background-image:-o-linear-gradient(top, #65a637, #4e802a);background-image:linear-gradient(to bottom, #65a637, #4e802a);background-repeat:repeat-x;filter:progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#ff65a637\', endColorstr=\'#ff4e802a\', GradientType=0);border-color:#426d24;border-top-color:#4e802a;border-bottom-color:#32521b;}\n.search-bar-primary .search-field-background{background-color:#5c9732;background-image:-moz-linear-gradient(top, #65a637, #4e802a);background-image:-webkit-gradient(linear, 0 0, 0 100%, from(#65a637), to(#4e802a));background-image:-webkit-linear-gradient(top, #65a637, #4e802a);background-image:-o-linear-gradient(top, #65a637, #4e802a);background-image:linear-gradient(to bottom, #65a637, #4e802a);background-repeat:repeat-x;filter:progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#ff65a637\', endColorstr=\'#ff4e802a\', GradientType=0);border-color:#426d24;border-top-color:#4e802a;border-bottom-color:#32521b;}\n.search-bar-primary .search-assistant-resize{border-bottom:1px solid #32521b;}\n.search-bar-primary .search-assistant-activator{background-color:#4e802a;color:#ffffff;border-color:#32521b;}\n.search-bar-primary .search-assistant-resize{background-color:#4e802a;color:#ffffff;border-color:#32521b;}\n.search-bar-primary .multiline .search-assistant-resize{border-right-color:#426d24;border-left-color:#426d24;}\n.search-bar-primary .search-assistant-resize-active{border-left:1px solid #32521b;}\n.search-bar-primary textarea.search-field{border:1px solid #426d24;border-top-color:#4e802a;border-bottom-color:#32521b;}\n.search-bar-primary .search-apps .link-label,.search-bar-primary .search-apps .label-prefix{display:inline-block;*display:inline;*zoom:1;vertical-align:middle;line-height:1.2em;max-width:10em;overflow:hidden;text-overflow:ellipsis;}\n.search-bar-primary .search-apps .caret{line-height:1em;vertical-align:middle;}\n.dropdown-menu-apps li{line-height:20px;position:relative;}\n.dropdown-menu-apps .link-label{display:block;white-space:nowrap;word-wrap:normal;overflow:hidden;text-overflow:ellipsis;padding-right:28px;}\n.dropdown-menu-apps .menu-icon{width:18px;height:18px;position:absolute;right:10px;top:7px;}\n.lt-ie9 .shared-search-input{min-height:28px;}\n.lt-ie9 .search-field-wrapper{min-height:28px;}\n.lt-ie9 .placeholder-text{padding:2px 0 !important;min-height:15px !important;}\n.lt-ie9 .search-field{padding:2px 5px 0 5px;min-height:26px !important;}\n.lt-ie9 .search-assistant-wrapper{*top:1px;}\n.ie7 .search-bar-wrapper{*position:relative;*z-index:1;}\n.ie7 .search-bar *{*min-width:1px;}\n.ie7 .icon-search-thin{*line-height:1.2em;}\n@media print{.shared-searchbar-input{padding:0 !important;} .search-bar.search-bar-primary{width:100%;display:block;}.search-bar.search-bar-primary td,.search-bar.search-bar-primary tbody,.search-bar.search-bar-primary tr{display:block;width:100%;} .search-field{display:none !important;} .shadowTextarea{width:100% !important;left:auto !important;top:auto !important;position:static !important;border-color:transparent !important;} .search-field-background,.search-assistant-wrapper,.search-button{display:none !important;}}\n'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick; 

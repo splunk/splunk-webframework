@@ -127,7 +127,7 @@ class CommonMiddleware(object):
             elif response.streaming:
                 etag = None
             else:
-                etag = '"%s"' % hashlib.md5(response.content).hexdigest()
+                etag = '"%s"' % hashlib.sha1(response.content).hexdigest()
             if etag is not None:
                 if (200 <= response.status_code < 300
                     and request.META.get('HTTP_IF_NONE_MATCH') == etag):

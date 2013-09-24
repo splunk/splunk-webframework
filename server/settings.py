@@ -50,7 +50,7 @@ DATABASES = {
 # timezone as the operating system.
 # If running in a Windows environment this must be set to the same as your
 # system time zone.
-TIME_ZONE = 'America/Los_Angeles'
+TIME_ZONE = None
 
 # Language code for this installation. All choices can be found here:
 # http://www.i18nguy.com/unicode/language-identifiers.html
@@ -112,8 +112,6 @@ STATICFILES_DIRS = (
 )
 
 SESSION_ENGINE='django.contrib.sessions.backends.signed_cookies'
-SESSION_COOKIE_NAME="sessionid_django"
-SESSION_COOKIE_PATH="/%s" % MOUNT.strip("/")
 
 # List of finder classes that know how to find static files in
 # various locations.
@@ -138,6 +136,7 @@ TEMPLATE_LOADERS = (
 
 MIDDLEWARE_CLASSES = (
     'splunkdj.middlewares.SplunkDjangoRequestLoggingMiddleware',
+    'splunkdj.middlewares.SplunkResolvedUrlMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'splunkdj.middlewares.SplunkLocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -145,13 +144,17 @@ MIDDLEWARE_CLASSES = (
     'splunkdj.middlewares.SplunkWebSessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'splunkdj.auth.middleware.SplunkAuthenticationMiddleware',
+    'splunkdj.middlewares.SplunkAppEnabledMiddleware',
     'splunkdj.middlewares.SplunkCsrfMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    # Uncomment the next line for simple clickjacking protection:
-    # 'django.middleware.clickjacking.XFrameOptionsMiddleware',
 )
 
+if 'x_frame_options_sameorigin' in SPLUNKDJ_CONFIG and get_config('x_frame_options_sameorigin'):
+    MIDDLEWARE_CLASSES += ('django.middleware.clickjacking.XFrameOptionsMiddleware',)
+
 INTERNAL_IPS = ('127.0.0.1', 'localhost')
+
+ALLOWED_HOSTS = ['*']
 
 TEMPLATE_CONTEXT_PROCESSORS = (
     "django.contrib.auth.context_processors.auth",
@@ -237,6 +240,12 @@ SPLUNK_WEB_PORT       = int(get_config('splunkweb_port'))
 SPLUNK_WEB_MOUNT      = str(get_config('splunkweb_mount'))
 SPLUNK_WEB_INTEGRATED = bool(get_config('splunkweb_integrated'))
 
+DJANGO_PORT = int(get_config('splunkdj_port'))
+
+CSRF_COOKIE_NAME = "django_csrftoken_%s" % DJANGO_PORT
+SESSION_COOKIE_NAME = "django_sessionid_%s" % DJANGO_PORT
+SESSION_COOKIE_PATH="/%s" % MOUNT.strip("/")
+
 DEFAULT_APP = 'homefx'
 
 LOGIN_URL = None
@@ -273,7 +282,10 @@ USE_BUILT_FILES = bool(get_config('use_built_files'))
 USE_MINIFIED_FILES = bool(get_config('use_minified_files'))
 
 # Whether or not we are running on Splunk 5
-SPLUNK_5 = True
+try:
+    SPLUNK_5 = get_config('splunk_5')
+except ValueError:
+    SPLUNK_5 = False
 
 # JS
 JS_CACHE_DIR = "JS_CACHE"
@@ -291,6 +303,15 @@ import re
 tag_re_pattern = django.template.base.tag_re.pattern
 tag_re_flags = django.template.base.tag_re.flags
 django.template.base.tag_re = re.compile(tag_re_pattern, tag_re_flags | re.S)
+
+# To allow _ in the domain name, we have to modify the host validation
+# regex
+import django.http.request
+django.http.request.host_validation_re = re.compile(r"^([a-z0-9._\-]+|\[[a-f0-9]*:[a-f0-9:]+\])(:\d+)?$")
+
+# Add our default tags
+from django.template import add_to_builtins
+add_to_builtins('splunkdj.templatetags.defaulttags')
 
 # For every app, we're going to try and load its models file. If none exists,
 # or we get an error, we just exit. We do this because some Django apps put
@@ -314,35 +335,41 @@ LOGGING = {
     'disable_existing_loggers': False,
     'formatters':{
         'verbose': {
-            'format':'%(asctime)s %(levelname)-s %(module)s:%(lineno)d - %(message)s'
+            'format':'%(asctime)s %(levelname)-s %(module)s:%(lineno)d - %(message)s',
         },
-        'simple' : {
-            'format': '%(message)s'
+        'simple': {
+            'format': '%(message)s',
         },
     },
     'filters': {
         'require_debug_false': {
-            '()': 'django.utils.log.RequireDebugFalse'
-        }
+            '()': 'django.utils.log.RequireDebugFalse',
+        },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
-            'level' : 'INFO'
+            'level': 'INFO',
         },
-        'file_access':{
+        'file_access': {
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename' : os.path.join(os.environ['SPLUNK_HOME'], BASE_LOG_PATH, 'django_access.log'),
+            'filename': os.path.join(os.environ['SPLUNK_HOME'], BASE_LOG_PATH, 'django_access.log'),
             'formatter': 'simple',
-            'level' : 'INFO'
+            'level': 'INFO',
         },
-        'file_service':{
+        'file_service': {
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename' : os.path.join(os.environ['SPLUNK_HOME'], BASE_LOG_PATH, 'django_service.log'),
+            'filename': os.path.join(os.environ['SPLUNK_HOME'], BASE_LOG_PATH, 'django_service.log'),
             'formatter': 'verbose',
-            'level' : 'INFO'
-        }      
+            'level': 'INFO',
+        },
+        'file_error': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(os.environ['SPLUNK_HOME'], BASE_LOG_PATH, 'django_error.log'),
+            'formatter': 'simple',
+            'level': 'INFO',
+        },
     },
     'loggers': {
         'spl.django.access': {
@@ -357,5 +384,12 @@ LOGGING = {
             'handlers': ['console', 'file_service'],
             'level': 'ERROR',
         },
+        'spl.django.request_error': {
+            'handlers': ['console', 'file_error'],
+            'level': 'ERROR',
+        },
     }
 }
+
+# Clear out the SPLUNKDJ_CONFIG settings
+SPLUNKDJ_CONFIG = None

@@ -42,9 +42,8 @@ define('async',[],function(){
     };
 });
 requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.addBuffer('splunkjs/css/googlemap.css'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick;
-// 
-
-define('splunkjs/mvc/googlemapview',['require','exports','module','./mvc','./basesplunkview','./messages','async!http://maps.googleapis.com/maps/api/js?sensor=false','css!../css/googlemap.css'],function(require, exports, module) {
+define('splunkjs/mvc/googlemapview',['require','exports','module','underscore','./mvc','./basesplunkview','./messages','async!http://maps.googleapis.com/maps/api/js?sensor=false','css!../css/googlemap.css'],function(require, exports, module) {
+    var _ = require('underscore');
     var mvc = require('./mvc');
     var BaseSplunkView = require("./basesplunkview");
     var Messages = require("./messages");
@@ -65,10 +64,17 @@ define('splunkjs/mvc/googlemapview',['require','exports','module','./mvc','./bas
         initialize: function() {
             this.configure();
             
-            this.bindToComponent(this.settings.get("managerid"), this._onManagerChange, this);
+            this.bindToComponentSetting('managerid', this._onManagerChange, this);
             
             this.map = null;
             this.markers = [];
+            
+            // If we don't have a manager by this point, then we're going to
+            // kick the manager change machinery so that it does whatever is
+            // necessary when no manager is present.
+            if (!this.manager) {
+                this._onManagerChange(mvc.Components, null);
+            }
         },
         
         _onManagerChange: function(managers, manager) {
@@ -86,6 +92,9 @@ define('splunkjs/mvc/googlemapview',['require','exports','module','./mvc','./bas
                 this.message('no-search');
                 return;
             }
+            
+            // Clear any messages, since we have a new manager.
+            this.message("empty");
 
             this.manager = manager;            
             this.resultsModel = manager.data(this.settings.get("data"), {
@@ -96,17 +105,26 @@ define('splunkjs/mvc/googlemapview',['require','exports','module','./mvc','./bas
             manager.on("search:cancelled", this._onSearchCancelled, this);
             manager.on("search:error", this._onSearchError, this);
             this.resultsModel.on("data", this.render, this);
+            this.resultsModel.on("error", this._onSearchError, this);
+            
+            manager.replayLastSearchEvent(this);
         },
 
         _onSearchCancelled: function() { 
+            this._isJobDone = false;
             this.message('cancelled');
         },
 
-        _onSearchError: function(message) {
+        _onSearchError: function(message, err) {
+            this._isJobDone = false;
+            var msg = message;
+            if (err && err.data && err.data.messages && err.data.messages.length) {
+                msg = _(err.data.messages).pluck('text').join('; ');
+            }
             this.message({
-                level: "warning",
+                level: "error",
                 icon: "warning-sign",
-                message: message
+                message: msg
             });
         },
 
@@ -114,7 +132,7 @@ define('splunkjs/mvc/googlemapview',['require','exports','module','./mvc','./bas
             properties = properties || {};
             var content = properties.content || {};
             var previewCount = content.resultPreviewCount || 0;
-            var isJobDone = content.isDone || false;
+            var isJobDone = this._isJobDone = content.isDone || false;
             
             if (previewCount === 0 && isJobDone) {
                 this.message('no-results');
@@ -128,6 +146,7 @@ define('splunkjs/mvc/googlemapview',['require','exports','module','./mvc','./bas
         },
 
         _onSearchStart: function() { 
+            this._isJobDone = false;
             this.message('waiting');
         },
 
@@ -153,11 +172,19 @@ define('splunkjs/mvc/googlemapview',['require','exports','module','./mvc','./bas
         },
 
         render: function() {
-            if (!this.map)
-                this.createMap();
-
+            if (!this.manager) {
+                return;
+            }
+            
             if (!this.resultsModel || !this.resultsModel.hasData()) {
+                if (this.resultsModel && !this.resultsModel.hasData() && this._isJobDone) {
+                    this.message("no-results");
+                }
                 return this;
+            }
+            
+            if (!this.map) {
+                this.createMap();
             }
 
             var that = this;

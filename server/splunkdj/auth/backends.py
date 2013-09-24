@@ -39,11 +39,6 @@ class SplunkUser(AbstractUser):
         self.realname = realname
         self.service = service
         self.tz = tz
-    
-        if self.tz:
-            print "Setting timezone to: %s" % self.tz
-            os.environ['TZ'] = self.tz
-            time.tzset()
             
     def save(self, *args, **kwargs):
         #TODO:remove if implemented

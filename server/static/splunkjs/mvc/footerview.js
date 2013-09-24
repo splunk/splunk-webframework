@@ -1,5 +1,5 @@
 
-define('contrib/text!views/shared/footer/AboutDialog.html',[],function () { return '<dl class="list-dotted">\n    <dt><%= _(\'Splunk Version\').t() %></dt>\n    <dd><%= version %></dd>\n    <dt><%= _(\'Splunk Build\').t() %></dt>\n    <dd><%= build %></dd>\n</dl>\n<dl class="list-dotted">\n    <dt><%= _(\'Current App\').t() %></dt>\n    <dd><%= currentApp %></dd>\n    <% if (appVersion) { %>\n        <dt><%= _(\'App Version\').t() %></dt>\n        <dd><%= appVersion %></dd>\n    <% } %>\n    <% if (appBuild) { %>\n        <dt><%= _(\'App Build\').t() %></dt>\n        <dd><%= appBuild %></dd>\n    <% } %>\n</dl>\n';});
+define('contrib/text!views/shared/footer/AboutDialog.html',[],function () { return '<dl class="list-dotted">\n    <dt><%= _(\'Splunk Version\').t() %></dt>\n    <dd><%= version %></dd>\n    <dt><%= _(\'Splunk Build\').t() %></dt>\n    <dd><%= build %></dd>\n</dl>\n<dl class="list-dotted">\n    <dt><%= _(\'Current App\').t() %></dt>\n    <dd><%= currentApp %></dd>\n    <% if (appVersion) { %>\n        <dt><%= _(\'App Version\').t() %></dt>\n        <dd><%= appVersion %></dd>\n    <% } %>\n    <% if (appBuild) { %>\n        <dt><%= _(\'App Build\').t() %></dt>\n        <dd><%= appBuild %></dd>\n    <% } %>\n</dl>\n<% if (listOfProducts) { %>\n<dl class="list-dotted">\n    <dt><%= _(\'List of Products: \').t() %></dt>\n    <dd><%= listOfProducts %></dd>\n</dl>\n<% } %>\n<dl class="list-dotted">\n    <dt><%= _(\'Server Name\').t() %></dt>\n    <dd><%= serverName %></dd>\n</dl>\n';});
 
 define('views/shared/footer/AboutDialog',
     [
@@ -37,16 +37,27 @@ define('views/shared/footer/AboutDialog',
                     this.render();
                 }, this);
             },
+            getListOfProducts: function() {
+                var addOns = this.model.serverInfo.entry.content.get('addOns'),
+                    result;
+
+                if (addOns && !$.isEmptyObject(addOns)) {
+                    result = _(addOns).keys().join(', ');
+                }
+                return result;
+            },
             render: function() {
                 this.$el.html(Modal.TEMPLATE);
 
                 this.$(Modal.HEADER_TITLE_SELECTOR).html(_("About Splunk").t());
 
                 var template = this.compiledTemplate({
+                    serverName: this.model.serverInfo.entry.content.get('serverName') || _('N/A').t(),
                     version: this.model.serverInfo.entry.content.get('version') || _('N/A').t(),
                     build: this.model.serverInfo.entry.content.get('build') || _('N/A').t(),
                     appVersion: this.model.appLocal.entry.content.get('version') || null,
                     appBuild: this.model.appLocal.entry.content.get('build') || null,
+                    listOfProducts: this.getListOfProducts(),
                     currentApp: this.currentAppLabel
                 });
                 this.$(Modal.BODY_SELECTOR).html(template);
@@ -131,7 +142,7 @@ define('views/shared/footer/Master',[
                     }
                 },
                 makeDocLink: function(location) {
-                    return route.docHelp(
+                    return route.docHelpInAppContext(
                         this.model.application.get("root"),
                         this.model.application.get("locale"),
                         location,
@@ -178,21 +189,18 @@ define('views/shared/footer/Master',[
 
                     if(!options.model.appLocal) {
                         options.model.appLocal = new AppLocalModel();
+                        applicationDfd.done(function() {
+                            if (options.model.application.get("app") !== 'system') {
+                                options.model.appLocal.fetch({
+                                    url: splunkDUtils.fullpath(options.model.appLocal.url + "/" + options.model.application.get("app")),
+                                    data: {
+                                        app: options.model.application.get("app"),
+                                        owner: options.model.application.get("owner")
+                                    }
+                                });
+                            }
+                        });
                     }
-
-                    applicationDfd.done(function() {
-                        if (options.model.application.get("app") !== 'system') {
-                            options.model.appLocal.fetch({
-                                url: splunkDUtils.fullpath(options.model.appLocal.url + "/" + options.model.application.get("app")),
-                                data: {
-                                    app: options.model.application.get("app"),
-                                    owner: options.model.application.get("owner")
-                                }
-                            });
-                        }
-                    });
-
-
 
                     if (!options.collection.apps) {
                         options.collection.apps = new AppsCollection();
@@ -214,7 +222,9 @@ define('views/shared/footer/Master',[
         return View;
     });
 
-define('splunkjs/mvc/footerview',['require','exports','module','./mvc','./basesplunkview','views/shared/footer/Master','./sharedmodels'],function (require, exports, module) {
+define('splunkjs/mvc/footerview',['require','exports','module','jquery','underscore','./mvc','./basesplunkview','views/shared/footer/Master','./sharedmodels'],function (require, exports, module) {
+    var $ = require('jquery');
+    var _ = require('underscore');
     var mvc = require('./mvc');
     var BaseSplunkView = require("./basesplunkview");
     var Footer = require('views/shared/footer/Master');
@@ -227,13 +237,32 @@ define('splunkjs/mvc/footerview',['require','exports','module','./mvc','./basesp
         initialize: function() {
             var appModel = sharedModels.get("app");
             var appLocalModel = sharedModels.get("appLocal");
-            this.footer = Footer.create({model: {
-                application: appModel,
-                appLocal: appLocalModel
-            }});
+            var serverInfoModel = sharedModels.get("serverInfo");
+            var appLocals = sharedModels.get("appLocals");
+
+            this.dfd = $.when.apply($, [
+                appModel.dfd,
+                appLocalModel.dfd,
+                serverInfoModel.dfd,
+                appLocals.dfd
+            ]);
+            this.dfd.done(_.bind(function(){
+                this.footer = Footer.create({
+                    model: {
+                        application: appModel,
+                        appLocal: appLocalModel,
+                        serverInfo: serverInfoModel
+                    },
+                    collection: {
+                        apps: appLocals
+                    }
+                });
+            }, this));
         },
         render: function() {
-            this.$el.append(this.footer.render().el);
+            this.dfd.done(_.bind(function(){
+                this.$el.append(this.footer.render().el);
+            }, this));
             return this;
         }
     });

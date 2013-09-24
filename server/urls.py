@@ -38,6 +38,10 @@ def redirect_to_home(app):
     
     return redirect_internal
     
+# Set the Django error views
+handler404 = 'splunkdj.views.handle404'
+handler500 = 'splunkdj.views.handle500'
+    
 urlpatterns = i18n_patterns('',
     # Examples:
     # url(r'^$', 'testsite.views.home', name='home'),
@@ -88,21 +92,23 @@ for app in settings.USER_APPS:
         # we add one for them. This one will never be hit if the user
         # defined one.
         urls.append(url(r'^$', redirect_to_home(app)))
+        
+        # We're going to add some catch-all routes, namely:
+        # /<app>/flashtimeline -> /<locale>/app/<app>/flashtimeline
+        # /<app>/search -> /<locale>/app/<app>/search
+        # /<app>/<template_name> -> will render that template in that app
+        # Again, if the user has defined anything that matches these, then the
+        # catch-all ones will never be hit.
+        urls += (
+            url(r'^flashtimeline/$', 'splunkdj.views.default_flashtimeline', name="flashtimeline"),
+            url(r'^search/$', 'splunkdj.views.default_search', name="search"),
+            url(r'^(?P<template_name>[\w_\-/]+)/$', 'splunkdj.views.default_template_render', name="template_render"),
+        )
     
         urlpatterns += i18n_patterns('', 
             (app_prefix, include(urls, namespace=app, app_name=app))
         )
         
-# Now that we are done adding the app-specific URLs, we're going to add
-# some catch-all routes, namely:
-# /<app>/flashtimeline -> /<locale>/app/<app>/flashtimeline
-# /<app>/search -> /<locale>/app/<app>/search
-# /<app>/<template_name> -> will render that template in that app
-urlpatterns += i18n_patterns('',
-    url(r'^(?P<app>\w+)/flashtimeline/$', 'splunkdj.views.default_flashtimeline', name="flashtimeline"),
-    url(r'^(?P<app>\w+)/search/$', 'splunkdj.views.default_search', name="search"),
-    url(r'^(?P<app>\w+)/(?P<template_name>\w+)/$', 'splunkdj.views.default_template_render', name="template_render"),
-)
         
 from splunkdj.utility import jsurls, config
 jsurls.create_javascript_urlpatterns()

@@ -1,5 +1,5 @@
 
-define('contrib/text!views/shared/splunkbar/AppMenu.html',[],function () { return '<%\n    currentAppname = currentApp ? currentApp.name : \'search\';   // TODO: search fallback is not always safe assumption\n%>\n<a href="#" class="dropdown-toggle"><%- currentApp ? _(\'App\').t()+\': \' + currentApp.label : _(\'Apps\').t() %><b class="caret"></b></a>\n<div class="dropdown-menu dropdown-menu-selectable dropdown-menu-tall" id="global-apps-menu">\n    <div class="arrow"></div>\n    <ul class="menu-list">\n        <% _.each(apps, function(i) { %>\n        <li>\n            <a href="<%- i.href %>">\n                <% if (currentApp && i.name === currentApp.name) { %> <i class="icon-check"></i><% } %>\n                <% if (i.icon) { %> <img data-icosrc="<%-i.icon%>" alt="menu icon" class="menu-icon"><% } %>\n                <span class="menu-label"><%= i.label %></span>\n            </a>\n        </li>\n        <% }); %>\n    </ul>\n\n    <a class="btn nav-btn" href="<%- make_url(\'manager\', currentAppname, \'apps\',\'remote\') %>"><%- _("Find More Apps").t() %></a>\n    <a class="btn nav-btn" href="<%- make_url(\'manager\', currentAppname, \'apps\',\'local\') %>"><%- _("Manage Apps").t() %></a>\n</div>\n';});
+define('contrib/text!views/shared/splunkbar/AppMenu.html',[],function () { return '<%\n    currentAppname = currentApp ? currentApp.name : \'search\';   // TODO: search fallback is not always safe assumption\n%>\n<a href="#" class="dropdown-toggle"><%- currentApp ? _(\'App: \').t() + _(currentApp.label).t() : _(\'Apps\').t() %><b class="caret"></b></a>\n<div class="dropdown-menu dropdown-menu-selectable dropdown-menu-tall" id="global-apps-menu">\n    <div class="arrow"></div>\n    <ul class="menu-list">\n        <% _.each(apps, function(i) { %>\n        <li>\n            <a href="<%- i.href %>">\n                <% if (currentApp && i.name === currentApp.name) { %> <i class="icon-check"></i><% } %>\n                <% if (i.icon) { %> <img data-icosrc="<%-i.icon%>" alt="menu icon" class="menu-icon" style="display:none;"><% } %>\n                <span class="menu-label"><%= _(i.label).t() %></span>\n            </a>\n        </li>\n        <% }); %>\n    </ul>\n\n    <a class="btn nav-btn" href="<%- make_url(\'manager\', currentAppname, \'apps\',\'remote\') %>"><%- _("Find More Apps").t() %></a>\n    <a class="btn nav-btn" href="<%- make_url(\'manager\', currentAppname, \'apps\',\'local\') %>"><%- _("Manage Apps").t() %></a>\n</div>\n';});
 
 define('views/shared/splunkbar/AppMenu',
     [
@@ -21,28 +21,31 @@ define('views/shared/splunkbar/AppMenu',
         route
     ){
         return BaseView.extend({
-            events:{
-                'click': 'setIcons'
-            },
             moduleId: module.id,
             template: appsTemplate,
             tagName: 'li',
             className: 'dropdown menu-apps',
             initialize: function() {
+                this.haveIcons = false;
                 BaseView.prototype.initialize.apply(this, arguments);
-                this.currentApp = this.model.application.get('app') === 'launcher' ? null : this.model.application.get('app');
-                this.collection.apps.on('change reset', this.render, this);
+
+                if(this.options.activeMenu && this.options.activeMenu.name === 'app'){
+                    this.currentApp = this.model.application.get('app');
+                }
+                this.render();
+                this.collection.apps.on('ready change', this.debouncedRender, this);
                 // handle the case when collection.apps is already set
                 if (this.collection.apps.length > 0) {
-                    this.render();
+                    this.debouncedRender();
                 }
             },
             render: function() {
+                this.haveIcons = false;
                 var that = this,
                     app,
                     curApp = null,
                     apps = this.collection.apps.map(function(model, key, list) {
-                        var appIcon = route.appIcon(
+                        var appIcon = route.appIconAlt(
                             that.model.application.get('root'),
                             that.model.application.get('locale'),
                             that.model.application.get('owner'),
@@ -67,6 +70,7 @@ define('views/shared/splunkbar/AppMenu',
                     });
                 this.$el.html(html);
                 this.popdown = new Popdown({el:this.$('#global-apps-menu').parent(), mode: 'dialog'});
+                this.popdown.on('show', this.setIcons, this);
                 return this;
             },
             setIcons: function(){
@@ -77,7 +81,7 @@ define('views/shared/splunkbar/AppMenu',
                 var icons = this.$el.find('.menu-icon');
                 icons.each(function(index, ico){
                     ico = $(ico);
-                    ico.attr('src', ico.attr('data-icosrc'));
+                    ico.attr('src', ico.attr('data-icosrc')).show();
                 });
             }
         });
@@ -158,8 +162,13 @@ function(
             var html = this.compiledTemplate({});
             var $html = $(html);
             var $menu = $html.find('.popdown-dialog-body');
+                
             this.addSections($menu);
+            if(this.sectionCount < 2) {
+                $menu.parent().addClass('mega-menu-narrow');
+            }
             this.$el.html($html);
+            
             var popup = this.$el.find('#global-system-menu');
             this.children.popdown = new Popdown({el:popup.parent(), mode: 'dialog'});
 
@@ -167,6 +176,7 @@ function(
         },
         addSections: function($menu){
             var self = this;
+            this.sectionCount = 0;
             this.collection.sections.each(function(section){
                 if (section.get('items') && section.get('items').length === 0) {
                     return;
@@ -174,6 +184,8 @@ function(
                 var sectionView = self.children[section.get('id')] = new SystemMenuSection({
                     model: section
                 });
+                
+                self.sectionCount++;
                 $menu.append(sectionView.render().el);
             });
         }
@@ -264,7 +276,8 @@ define('views/shared/splunkbar/messages/Message',
     'backbone',
     'module',
     'views/Base',
-    'splunk.util'
+    'splunk.util',
+    'util/time_utils'
 ],
 function(
     $,
@@ -272,7 +285,8 @@ function(
     Backbone,
     module,
     BaseView,
-    splunk_util
+    splunk_util,
+    time_utils
 ){
     /**
      * View Hierarchy:
@@ -298,18 +312,24 @@ function(
             } else {
                 msg = this.model.entry.content.get("message") || "";
             }
+
+            var msgTime = this.model.entry.content.get("timeCreated_epochSecs");
+            msgTime = msgTime ? time_utils.convertToLocalTime(msgTime) : "";
             var html = this.compiledTemplate({
                 msgId: msgId,
                 msgFullId: msgFullId,
                 msg: splunk_util.getWikiTransform(msg),
-                msgLevel: msgLevel
+                msgLevel: msgLevel,
+                msgTime: msgTime
             });
             this.$el = $(html);
             return this;
         },
         template: '<li class="<%- msgLevel %>" data-id="<%- msgFullId %>">\
-            <span class="message-content"><%= msg %></span>\
-            <a href="#" class="delete-message icon-x-circle ir">x</a>\
+                <i class="message-icon icon-<%- msgLevel %>"></i>\
+                <span class="message-content"><%= msg %></span>\
+                <span class="message-time"><%= msgTime %></span>\
+                <a href="#" class="delete-message"><i class="icon-x-circle"></i></a>\
             </li>'
     });
 });
@@ -365,8 +385,8 @@ define('views/shared/splunkbar/messages/LegacyMessage',
                 return this;
             },
             template: '<li class="<%- msgLevel %>" data-islegacy="1" data-id="<%- msgId %>">\
-            <span><%= msg %></span>\
-            <a href="#" class="delete-message icon-x-circle ir">x</a>\
+                <span class="message-content"><%= msg %></span>\
+                <a href="#" class="delete-message"><i class="icon-x-circle"></i></a>\
             </li>'
         });
     });
@@ -384,9 +404,10 @@ define('views/shared/splunkbar/messages/Master',
         'collections/services/Messages',
         'views/shared/splunkbar/messages/Message',
         'views/shared/splunkbar/messages/LegacyMessage',
-        'contrib/text!views/shared/splunkbar/messages/Master.html'
+        'contrib/text!views/shared/splunkbar/messages/Master.html',
+        'util/general_utils'
     ],
-    function($, _, module, BaseView, Popdown, StopScrollPropagation, MessagesCollection, MessageView, LegacyMessageView, MasterTemplate) {
+    function($, _, module, BaseView, Popdown, StopScrollPropagation, MessagesCollection, MessageView, LegacyMessageView, MasterTemplate, general_utils) {
         return BaseView.extend({
             moduleId: module.id,
             template: MasterTemplate,
@@ -396,15 +417,19 @@ define('views/shared/splunkbar/messages/Master',
                 BaseView.prototype.initialize.apply(this, arguments);
                 this.legacyMessages = this.collection.legacyMessages || false;
                 this.collection = this.collection.messages;
-                this.collection.on('reset remove', this.renderMessages, this);
-
+                this.collection.on('change reset remove', this.renderMessages, this);
                 if(this.legacyMessages){
                     this.legacyMessages.on('reset remove', this.renderMessages, this);
                 }
+                this.isLocalMouseSelection = false;
             },
             events: {
                 'click .message-list .delete-message': 'deleteMessage',
-                'click .delete-all-messages': 'deleteAllMessages'
+                'click .delete-all-messages': 'deleteAllMessages',
+                'mouseup .message-list': function() {
+                    // this is to stop message refresh only when selection is LOCAL to .message-list
+                    this.isLocalMouseSelection = true;
+                }
             },
             render: function() {
                 //destroy already existing popdowns...
@@ -412,17 +437,23 @@ define('views/shared/splunkbar/messages/Master',
                 this.$el.html(html);
                 this.children.popdown = new Popdown({el:this.el, mode: 'dialog'});
                 this.children.stopScrollPropagation = new StopScrollPropagation({el:this.$('#global-messages-menu ul'), mode: 'dialog'});
-                
+
                 return this;
             },
-            renderMessages: function() {
+            renderMessages: function(forceUpdate) {
+                if(forceUpdate !== true &&
+                    this.isLocalMouseSelection &&
+                    general_utils.getMouseSelection() && general_utils.getMouseSelection().length>0) {
+                    return;
+                }
+                this.isLocalMouseSelection = false;
                 var numMessages = this.collection.length;
                 if(this.legacyMessages){
                     numMessages = numMessages + this.legacyMessages.length;
                 }
 
                 this.$('.label-warning').text(numMessages);
-                
+
                 //remove existing message children
                 _.each(this.children, function(view, key){
                     if (key.substr(0, 7) == 'message') {
@@ -430,10 +461,10 @@ define('views/shared/splunkbar/messages/Master',
                         delete this.children[key];
                     }
                 }, this);
-                
+
                 //iterate through collection
                 var messageView;
-                
+
                 this.collection.each(function(model, key){
                     //create view
                     messageView = new MessageView({model: model});
@@ -457,7 +488,7 @@ define('views/shared/splunkbar/messages/Master',
                     this.$(".label-warning, .delete-all-messages, .message-list").show();
                     this.$('#global-messages-menu').addClass('dropdown-menu-wide');
                     this.$(".no-messages").hide();
-                    
+
                     if(this.$('#global-messages-menu').is(':visible')) {
                         this.children.popdown.adjustPosition();
                     }
@@ -470,7 +501,7 @@ define('views/shared/splunkbar/messages/Master',
             },
             deleteMessage: function(evt) {
                 evt.preventDefault();
-                var $li = $(evt.target).parent();
+                var $li = $(evt.currentTarget).parent();
                 var id = $li.data('id');
                 var isLegacy = $li.data('islegacy');
 
@@ -487,9 +518,11 @@ define('views/shared/splunkbar/messages/Master',
                     }
                 }
 
-                if (this.collection.length === 0 && this.legacyMessages!==false && this.legacyMessages.length === 0) {
+                if (this.collection.length === 0 && (this.legacyMessages === false || this.legacyMessages.length === 0)) {
                     this.children.popdown.hide();
                 }
+
+                this.renderMessages(true);
             },
             deleteAllMessages: function(evt) {
                 evt.preventDefault();
@@ -586,7 +619,64 @@ function(
     });
 });
 
-define('contrib/text!views/shared/splunkbar/HelpMenu.html',[],function () { return '<a href="#" class="dropdown-toggle"><%- _("Help").t() %><b class="caret"></b></a>\n<div class="dropdown-menu" id="global-help-menu">\n    <div class="arrow"></div>\n    <ul>\n        <li><a class="external" href="<%- makeDocLink(\'search_app.tutorial\') %>" target="_blank"><%- _("Tutorials").t() %></a></li>\n        <li><a class="external" href="http://splunk-base.splunk.com/" target="_blank"><%- _("Splunk Answers").t() %></a></li>\n        <li><a class="external" href="http://www.splunk.com/support" target="_blank"><%- _("Contact Support").t() %></a></li>\n        <li><a class="external" href="<%- makeDocLink(currentPageDocLocation) %>" target="_blank"><%- _("Documentation").t() %></a></li>\n    </ul>\n    <form class="form-search" action="#help" method="get">\n    </form>\n</div>\n';});
+define('contrib/text!views/shared/whatsnewdialog/Master.html',[],function () { return '<h2><%=_("Powerful Analytics").t()%></h2>\n<div class="feature">\n    <h3><%=_("Data Models & Pivot").t()%></h3>\n    <img src="<%=imgPath%>/skins/default/whatsnew/pivot.png">\n    <p><%=_("Define semantic models to represent data meaningfully and consistently. Explore and visualize data without the search language.").t()%></p>\n    <a href="<%=docLink%>whatsnew.pivot" class="external" target="_blank"><%=_("Documentation").t()%></a>\n</div>\n\n<div class="feature">\n    <h3><%=_("High Performance Analytics Store").t()%></h3>\n    <img src="<%=imgPath%>/skins/default/whatsnew/columnar.png">\n    <p><%=_("High performance store that accelerates data models by delivering extremely high performance data retrieval for analytical operations.").t()%></p>\n    <a href="<%=docLink%>whatsnew.columnaranalytics" class="external" target="_blank"><%=_("Documentation").t()%></a>\n</div>\n\n<div class="feature">\n    <h3><%=_("Predictive Analytics").t()%></h3>\n    <img src="<%=imgPath%>/skins/default/whatsnew/predictive.png">\n    <p><%=_("Find patterns in data to predict system capacity and resource utilization.").t()%></p>\n    <a href="<%=docLink%>whatsnew.predictiveanalytics" class="external" target="_blank"><%=_("Documentation").t()%></a>\n</div>\n\n<h2><%=_("More Intuitive User Experience").t()%></h2>\n<div class="feature">\n    <h3><%=_("New Home Experience").t()%></h3>\n    <img src="<%=imgPath%>/skins/default/whatsnew/home.png">\n    <p><%=_("New menu system enabling rapid navigation to key functions.").t()%></p>\n    <a href="<%=docLink%>whatsnew.newhome" class="external" target="_blank"><%=_("Documentation").t()%></a>\n</div>\n\n<div class="feature">\n    <h3><%=_("New Search Experience").t()%></h3>\n    <img src="<%=imgPath%>/skins/default/whatsnew/search.png">\n    <p><%=_("New interactive experience for rich report authoring and searching.").t()%></p>\n    <a href="<%=docLink%>whatsnew.newsearch" class="external" target="_blank"><%=_("Documentation").t()%></a>\n</div>\n\n\n\n\n<h2><%=_("Simplified Management").t()%></h2>\n<div class="feature">\n    <h3><%=_("Simplified Cluster Management").t()%></h3>\n    <img src="<%=imgPath%>/skins/default/whatsnew/clustering.png">\n    <p><%=_("Monitor Splunk high availability services for business critical deployments at scale.").t()%></p>\n    <a href="<%=docLink%>whatsnew.simplifiedclustermanagement" class="external" target="_blank"><%=_("Documentation").t()%></a>\n</div>\n\n<div class="feature">\n    <h3><%=_("Forwarder Management").t()%></h3>\n    <img src="<%=imgPath%>/skins/default/whatsnew/forwarders.png">\n    <p><%=_("New visual management interface to deploy and monitor thousands of configurations.").t()%></p>\n    <a href="<%=docLink%>whatsnew.forwardermanagement" class="external" target="_blank"><%=_("Documentation").t()%></a>\n</div>\n\n<div class="feature">\n    <h3><%=_("Dynamic File Headers").t()%></h3>\n    <img src="<%=imgPath%>/skins/default/whatsnew/fileheaders.png">\n    <p><%=_("Automatic mapping of fields from file headers either locally or from forwarders.").t()%></p>\n    <a href="<%=docLink%>whatsnew.dynamicfileheaders" class="external" target="_blank"><%=_("Documentation").t()%></a>\n</div>\n\n<h2><%=_("Rich Developer Experience").t()%></h2>\n<div class="feature">\n    <h3><%=_("Simple XML Editing").t()%></h3>\n    <img src="<%=imgPath%>/skins/default/whatsnew/simplexml.png">\n    <p><%=_("Build more interactive dashboards and user workflows with ease.").t()%></p>\n    <a href="<%=docLink%>whatsnew.simplexmlediting" class="external" target="_blank"><%=_("Documentation").t()%></a>\n</div>\n\n<div class="feature">\n    <h3><%=_("Integrated Web Framework").t()%></h3>\n    <img src="<%=imgPath%>/skins/default/whatsnew/webframework.png">\n    <p><%=_("New framework for building custom Splunk web applications using HTML, JavaScript, and Django.").t()%></p>\n    <a href="<%=docLink%>whatsnew.integratedwebframework" class="external" target="_blank"><%=_("Documentation").t()%></a>\n</div>\n\n<div class="feature">\n    <h3><%=_("Native Splunk Maps").t()%></h3>\n    <img src="<%=imgPath%>/skins/default/whatsnew/maps.png">\n    <p><%=_("Integrated maps that display geographic data and summaries.").t()%></p>\n    <a href="<%=docLink%>whatsnew.nativemaps" class="external" target="_blank"><%=_("Documentation").t()%></a>\n</div>';});
+
+define('views/shared/whatsnewdialog/Master',
+[
+    'jquery',
+    'underscore',
+    'module',
+    'views/Base',
+    'views/shared/Modal',
+    'uri/route',
+    'splunk.util',
+    'contrib/text!views/shared/whatsnewdialog/Master.html'
+],
+function(
+    $,
+    _,
+    module,
+    Base,
+    Modal,
+    route,
+    splunk_util,
+    Template
+){
+    return Modal.extend({
+        moduleId: module.id,
+        template: Template,
+        initialize: function() {
+            Modal.prototype.initialize.apply(this, arguments);
+            var self = this;
+            this.on('hidden', function(){
+                self.$el.remove();
+                self.modalWrapper.remove();
+                if(self.model.userPref && self.model.userPref.entry && self.model.userPref.entry.content){
+                    self.model.userPref.entry.content.set('showWhatsNew', 0);
+                    self.model.userPref.save();
+                }
+            });
+            this.render();
+        },
+        render: function() {
+            var imgPath = splunk_util.make_url('/static/img/');
+            var docLink = route.docHelp(this.model.application.get("root"), this.model.application.get("locale"), '');
+            var template = this.compiledTemplate({imgPath: imgPath, docLink: docLink});
+
+            this.$el.html(Modal.TEMPLATE);
+            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("What's new in 6.0").t());
+            this.$(Modal.FOOTER_SELECTOR).append('<a href="http://splunk.com/goto/splunk6demoapp" class="btn btn-primary external btn-large modal-btn-primary pull-right" target="_blank">' + _('Learn More').t() + '</a>');
+            this.$(Modal.BODY_SELECTOR).html(template);
+            this.modalWrapper = $('<div class="splunk-components"></div>');
+            $(this.el).appendTo(this.modalWrapper);
+            this.modalWrapper.appendTo('body');
+            this.show();
+            return this;
+        }
+    });
+});
+
+define('contrib/text!views/shared/splunkbar/HelpMenu.html',[],function () { return '<a href="#" class="dropdown-toggle"><%- _("Help").t() %><b class="caret"></b></a>\n<div class="dropdown-menu" id="global-help-menu">\n    <div class="arrow"></div>\n    <ul>\n        <li><a class="whatsnew" href="#"><%- _("What\'s New in 6.0").t() %></a></li>\n        <li><a class="external" href="<%- makeDocLink(\'search_app.tutorial\') %>" target="_blank"><%- _("Tutorials").t() %></a></li>\n        <li><a class="external" href="http://splunk-base.splunk.com/" target="_blank"><%- _("Splunk Answers").t() %></a></li>\n        <li><a class="external" href="http://www.splunk.com/support" target="_blank"><%- _("Contact Support").t() %></a></li>\n        <li><a class="external" href="<%- makeDocLink(currentPageDocLocation) %>" target="_blank"><%- _("Documentation").t() %></a></li>\n    </ul>\n    <form class="form-search" action="#help" method="get">\n    </form>\n</div>\n';});
 
 define('views/shared/splunkbar/HelpMenu',
 [
@@ -596,6 +686,7 @@ define('views/shared/splunkbar/HelpMenu',
     'views/Base',
     'views/shared/delegates/Popdown',
     'views/shared/controls/TextControl',
+    'views/shared/whatsnewdialog/Master',
     'contrib/text!views/shared/splunkbar/HelpMenu.html',
     'splunk.util',
     'uri/route'
@@ -607,6 +698,7 @@ function(
     BaseView,
     Popdown,
     TextControl,
+    WhatsNewDialogView,
     helpMenuTemplate,
     splunk_util,
     route
@@ -618,11 +710,17 @@ function(
         className: 'dropdown help',
         initialize: function(){
             BaseView.prototype.initialize.apply(this, arguments);
-            this.children.searchInput = new TextControl({placeholder: _('Search Documentation').t(), inputClassName: 'input-medium search-query'});
-            this.model.appLocal.on('change reset', this.render, this);
+            this.children.searchInput = new TextControl({
+                placeholder: _('Search Documentation').t(),
+                inputClassName: 'input-medium search-query'
+            });
+            this.model.appLocal.on('change reset', this.debouncedRender, this);
+            this.debouncedRender();
         },
         events: {
-            'keypress input': "onDocsSearch"
+            'keypress input': "onDocsSearch",
+            'click .whatsnew': 'onWhatsNew',
+            'click .dropdown-menu a': 'closePopdown'
         },
         render: function(){
             // location is in form: app.<app_name>.<page_name>
@@ -640,7 +738,6 @@ function(
             var popup = this.$('#global-help-menu');
             popup.find('.form-search').append(this.children.searchInput.render().el);
             this.children.popdown = new Popdown({el:popup.parent(), mode: 'dialog'});
-
             return this;
         },
         onDocsSearch: function(evt){
@@ -653,12 +750,12 @@ function(
                     window.open(url);
                 }.bind(this));
                 $(evt.target).val('');
-                this.children.popdown.hide();
+                this.closePopdown();
                 evt.preventDefault();
             }
         },
         makeDocLink: function(location) {
-            return route.docHelp(
+            return route.docHelpInAppContext(
                 this.model.application.get("root"),
                 this.model.application.get("locale"),
                 location,
@@ -667,370 +764,65 @@ function(
                 this.model.appLocal.appAllowsDisable(),
                 this.model.appLocal.entry.content.get('docs_section_override')
             );
+        },
+        onWhatsNew: function(e){
+            if(e){
+                e.preventDefault();
+            }
+            this.children.whatsNewDialog = new WhatsNewDialogView({
+                model: this.model
+            });
+        },
+        closePopdown: function(e){
+            this.children.popdown.hide();
         }
     });
 });
 
-//fgnass.github.com/spin.js#v1.2.7
-!function(window, document, undefined) {
-
-  /**
-   * Copyright (c) 2011 Felix Gnass [fgnass at neteye dot de]
-   * Licensed under the MIT license
-   */
-
-  var prefixes = ['webkit', 'Moz', 'ms', 'O'] /* Vendor prefixes */
-    , animations = {} /* Animation rules keyed by their name */
-    , useCssAnimations
-
-  /**
-   * Utility function to create elements. If no tag name is given,
-   * a DIV is created. Optionally properties can be passed.
-   */
-  function createEl(tag, prop) {
-    var el = document.createElement(tag || 'div')
-      , n
-
-    for(n in prop) el[n] = prop[n]
-    return el
-  }
-
-  /**
-   * Appends children and returns the parent.
-   */
-  function ins(parent /* child1, child2, ...*/) {
-    for (var i=1, n=arguments.length; i<n; i++)
-      parent.appendChild(arguments[i])
-
-    return parent
-  }
-
-  /**
-   * Insert a new stylesheet to hold the @keyframe or VML rules.
-   */
-  var sheet = function() {
-    var el = createEl('style', {type : 'text/css'})
-    ins(document.getElementsByTagName('head')[0], el)
-    return el.sheet || el.styleSheet
-  }()
-
-  /**
-   * Creates an opacity keyframe animation rule and returns its name.
-   * Since most mobile Webkits have timing issues with animation-delay,
-   * we create separate rules for each line/segment.
-   */
-  function addAnimation(alpha, trail, i, lines) {
-    var name = ['opacity', trail, ~~(alpha*100), i, lines].join('-')
-      , start = 0.01 + i/lines*100
-      , z = Math.max(1 - (1-alpha) / trail * (100-start), alpha)
-      , prefix = useCssAnimations.substring(0, useCssAnimations.indexOf('Animation')).toLowerCase()
-      , pre = prefix && '-'+prefix+'-' || ''
-
-    if (!animations[name]) {
-      sheet.insertRule(
-        '@' + pre + 'keyframes ' + name + '{' +
-        '0%{opacity:' + z + '}' +
-        start + '%{opacity:' + alpha + '}' +
-        (start+0.01) + '%{opacity:1}' +
-        (start+trail) % 100 + '%{opacity:' + alpha + '}' +
-        '100%{opacity:' + z + '}' +
-        '}', sheet.cssRules.length)
-
-      animations[name] = 1
-    }
-    return name
-  }
-
-  /**
-   * Tries various vendor prefixes and returns the first supported property.
-   **/
-  function vendor(el, prop) {
-    var s = el.style
-      , pp
-      , i
-
-    if(s[prop] !== undefined) return prop
-    prop = prop.charAt(0).toUpperCase() + prop.slice(1)
-    for(i=0; i<prefixes.length; i++) {
-      pp = prefixes[i]+prop
-      if(s[pp] !== undefined) return pp
-    }
-  }
-
-  /**
-   * Sets multiple style properties at once.
-   */
-  function css(el, prop) {
-    for (var n in prop)
-      el.style[vendor(el, n)||n] = prop[n]
-
-    return el
-  }
-
-  /**
-   * Fills in default values.
-   */
-  function merge(obj) {
-    for (var i=1; i < arguments.length; i++) {
-      var def = arguments[i]
-      for (var n in def)
-        if (obj[n] === undefined) obj[n] = def[n]
-    }
-    return obj
-  }
-
-  /**
-   * Returns the absolute page-offset of the given element.
-   */
-  function pos(el) {
-    var o = { x:el.offsetLeft, y:el.offsetTop }
-    while((el = el.offsetParent))
-      o.x+=el.offsetLeft, o.y+=el.offsetTop
-
-    return o
-  }
-
-  var defaults = {
-    lines: 12,            // The number of lines to draw
-    length: 7,            // The length of each line
-    width: 5,             // The line thickness
-    radius: 10,           // The radius of the inner circle
-    rotate: 0,            // Rotation offset
-    corners: 1,           // Roundness (0..1)
-    color: '#000',        // #rgb or #rrggbb
-    speed: 1,             // Rounds per second
-    trail: 100,           // Afterglow percentage
-    opacity: 1/4,         // Opacity of the lines
-    fps: 20,              // Frames per second when using setTimeout()
-    zIndex: 2e9,          // Use a high z-index by default
-    className: 'spinner', // CSS class to assign to the element
-    top: 'auto',          // center vertically
-    left: 'auto',         // center horizontally
-    position: 'relative'  // element position
-  }
-
-  /** The constructor */
-  var Spinner = function Spinner(o) {
-    if (!this.spin) return new Spinner(o)
-    this.opts = merge(o || {}, Spinner.defaults, defaults)
-  }
-
-  Spinner.defaults = {}
-
-  merge(Spinner.prototype, {
-    spin: function(target) {
-      this.stop()
-      var self = this
-        , o = self.opts
-        , el = self.el = css(createEl(0, {className: o.className}), {position: o.position, width: 0, zIndex: o.zIndex})
-        , mid = o.radius+o.length+o.width
-        , ep // element position
-        , tp // target position
-
-      if (target) {
-        target.insertBefore(el, target.firstChild||null)
-        tp = pos(target)
-        ep = pos(el)
-        css(el, {
-          left: (o.left == 'auto' ? tp.x-ep.x + (target.offsetWidth >> 1) : parseInt(o.left, 10) + mid) + 'px',
-          top: (o.top == 'auto' ? tp.y-ep.y + (target.offsetHeight >> 1) : parseInt(o.top, 10) + mid)  + 'px'
-        })
-      }
-
-      el.setAttribute('aria-role', 'progressbar')
-      self.lines(el, self.opts)
-
-      if (!useCssAnimations) {
-        // No CSS animation support, use setTimeout() instead
-        var i = 0
-          , fps = o.fps
-          , f = fps/o.speed
-          , ostep = (1-o.opacity) / (f*o.trail / 100)
-          , astep = f/o.lines
-
-        ;(function anim() {
-          i++;
-          for (var s=o.lines; s; s--) {
-            var alpha = Math.max(1-(i+s*astep)%f * ostep, o.opacity)
-            self.opacity(el, o.lines-s, alpha, o)
-          }
-          self.timeout = self.el && setTimeout(anim, ~~(1000/fps))
-        })()
-      }
-      return self
-    },
-
-    stop: function() {
-      var el = this.el
-      if (el) {
-        clearTimeout(this.timeout)
-        if (el.parentNode) el.parentNode.removeChild(el)
-        this.el = undefined
-      }
-      return this
-    },
-
-    lines: function(el, o) {
-      var i = 0
-        , seg
-
-      function fill(color, shadow) {
-        return css(createEl(), {
-          position: 'absolute',
-          width: (o.length+o.width) + 'px',
-          height: o.width + 'px',
-          background: color,
-          boxShadow: shadow,
-          transformOrigin: 'left',
-          transform: 'rotate(' + ~~(360/o.lines*i+o.rotate) + 'deg) translate(' + o.radius+'px' +',0)',
-          borderRadius: (o.corners * o.width>>1) + 'px'
-        })
-      }
-
-      for (; i < o.lines; i++) {
-        seg = css(createEl(), {
-          position: 'absolute',
-          top: 1+~(o.width/2) + 'px',
-          transform: o.hwaccel ? 'translate3d(0,0,0)' : '',
-          opacity: o.opacity,
-          animation: useCssAnimations && addAnimation(o.opacity, o.trail, i, o.lines) + ' ' + 1/o.speed + 's linear infinite'
-        })
-
-        if (o.shadow) ins(seg, css(fill('#000', '0 0 4px ' + '#000'), {top: 2+'px'}))
-
-        ins(el, ins(seg, fill(o.color, '0 0 1px rgba(0,0,0,.1)')))
-      }
-      return el
-    },
-
-    opacity: function(el, i, val) {
-      if (i < el.childNodes.length) el.childNodes[i].style.opacity = val
-    }
-
-  })
-
-  /////////////////////////////////////////////////////////////////////////
-  // VML rendering for IE
-  /////////////////////////////////////////////////////////////////////////
-
-  /**
-   * Check and init VML support
-   */
-  ;(function() {
-
-    function vml(tag, attr) {
-      return createEl('<' + tag + ' xmlns="urn:schemas-microsoft.com:vml" class="spin-vml">', attr)
-    }
-
-    var s = css(createEl('group'), {behavior: 'url(#default#VML)'})
-
-    if (!vendor(s, 'transform') && s.adj) {
-
-      // VML support detected. Insert CSS rule ...
-      sheet.addRule('.spin-vml', 'behavior:url(#default#VML)')
-
-      Spinner.prototype.lines = function(el, o) {
-        var r = o.length+o.width
-          , s = 2*r
-
-        function grp() {
-          return css(
-            vml('group', {
-              coordsize: s + ' ' + s,
-              coordorigin: -r + ' ' + -r
-            }),
-            { width: s, height: s }
-          )
-        }
-
-        var margin = -(o.width+o.length)*2 + 'px'
-          , g = css(grp(), {position: 'absolute', top: margin, left: margin})
-          , i
-
-        function seg(i, dx, filter) {
-          ins(g,
-            ins(css(grp(), {rotation: 360 / o.lines * i + 'deg', left: ~~dx}),
-              ins(css(vml('roundrect', {arcsize: o.corners}), {
-                  width: r,
-                  height: o.width,
-                  left: o.radius,
-                  top: -o.width>>1,
-                  filter: filter
-                }),
-                vml('fill', {color: o.color, opacity: o.opacity}),
-                vml('stroke', {opacity: 0}) // transparent stroke to fix color bleeding upon opacity change
-              )
-            )
-          )
-        }
-
-        if (o.shadow)
-          for (i = 1; i <= o.lines; i++)
-            seg(i, -2, 'progid:DXImageTransform.Microsoft.Blur(pixelradius=2,makeshadow=1,shadowopacity=.3)')
-
-        for (i = 1; i <= o.lines; i++) seg(i)
-        return ins(el, g)
-      }
-
-      Spinner.prototype.opacity = function(el, i, val, o) {
-        var c = el.firstChild
-        o = o.shadow && o.lines || 0
-        if (c && i+o < c.childNodes.length) {
-          c = c.childNodes[i+o]; c = c && c.firstChild; c = c && c.firstChild
-          if (c) c.opacity = val
-        }
-      }
-    }
-    else
-      useCssAnimations = vendor(s, 'animation')
-  })()
-
-  if (typeof define == 'function' && define.amd)
-    define('spin',[],function() { return Spinner })
-  else
-    window.Spinner = Spinner
-
-}(window, document);
-
-define('views/shared/WaitSpinner',['underscore', 'module', 'views/Base', 'spin'], function(_, module, BaseView, Spinner) {
+define('views/shared/WaitSpinner',['underscore', 'module', 'views/Base'], function(_, module, BaseView, splunkUtil) {
+    
+    
     return BaseView.extend({
         moduleId: module.id,
         tagName: 'div',
         initialize: function(){
             var defaults = {
-              lines: 8, // The number of lines to draw
-              length: 2, // The length of each line
-              width: 2, // The line thickness
-              radius: 3, // The radius of the inner circle
-              corners: 1, // Corner roundness (0..1)
-              rotate: 0, // The rotation offset
-              color: '#333', // #rgb or #rrggbb
-              speed: 1, // Rounds per second
-              trail: 60, // Afterglow percentage
-              shadow: false, // Whether to render a shadow
-              hwaccel: false, // Whether to use hardware acceleration
-              className: 'spinner', // The CSS class to assign to the spinner
-              zIndex: 0, // The z-index (defaults to 2000000000)
-              top: '0', // Top position relative to parent in px
-              left: '0' // Left position relative to parent in px
+              size: 'small',
+              color: 'gray',
+              frameWidth: 14, //px
+              frameCount: 8,
+              fps: 10
             };
             
             _.defaults(this.options, defaults);
         
-            BaseView.prototype.initialize.apply(this, arguments);            
-            this.spinner = new Spinner(this.options);
-            this.active=false;
+            BaseView.prototype.initialize.apply(this, arguments);
             
+            this.$el.addClass('spinner-' + this.options.size + '-' + this.options.color);
+            this.frame=0;
         },
         stop:  function() {
             this.active=false;
-            this.spinner.stop();
+            this.interval && window.clearInterval(this.interval);
             return this;
         },
         start:  function() {
             this.active=true;
-            this.spinner.spin(this.el);
+            this.interval && window.clearInterval(this.interval);
+            this.interval=setInterval(this.step.bind(this), 1000/this.options.fps);
             return this;
+        },
+        step:  function() {
+            this.$el.css('backgroundPosition', '-' + (this.frame * this.options.frameWidth) + 'px top ');
+            
+            this.frame++;
+            this.frame = this.frame == this.options.frameCount ? 0 : this.frame; 
+        
+            return this;
+        },
+        remove: function() {
+            this.stop();
+            BaseView.prototype.remove.apply(this, arguments);
         },
         render: function() {
             return this;
@@ -1038,22 +830,31 @@ define('views/shared/WaitSpinner',['underscore', 'module', 'views/Base', 'spin']
     });
 });
 
-define('contrib/text!views/shared/splunkbar/messages/NoConnectionOverlay.html',[],function () { return '<div class="modal-backdrop fade in"></div>\n<div class="modal disconnection-warning-modal">\n\t<h3>Reconnecting to Splunk server</h3>\n\t<p>Your network connection may have been lost or Splunk server may be down.</p>\n</div>';});
+define('contrib/text!views/shared/splunkbar/messages/NoConnectionOverlay.html',[],function () { return '<div class="modal-backdrop fade in"></div>\n<div class="modal disconnection-warning-modal">\n\t<h3><%= _("Reconnecting to Splunk server").t() %></h3>\n\t<p><%= _("Your network connection may have been lost or Splunk server may be down.").t() %></p>\n</div>\n';});
 
 define('views/shared/splunkbar/messages/NoConnectionOverlay',[
     'underscore',
     'module',
     'views/Base',
     'views/shared/WaitSpinner',
-    'contrib/text!views/shared/splunkbar/messages/NoConnectionOverlay.html'
+    'contrib/text!views/shared/splunkbar/messages/NoConnectionOverlay.html',
+    'splunk.util'
 ],
     function(
         _,
         module,
         BaseView,
         WaitSpinnerView,
-        Template
+        Template,
+        splunkUtil
         ){
+        
+        var image = new Image();
+        image.src = splunkUtil.make_url("/static/img/skins/default/loading_medium_green.png");
+        var image2x = new Image();
+        image2x.src = splunkUtil.make_url("/static/img/skins/default/loading_medium_green_2x.png");
+        
+        
         return BaseView.extend({
             moduleId: module.id,
             template: Template,
@@ -1062,17 +863,13 @@ define('views/shared/splunkbar/messages/NoConnectionOverlay',[
                 BaseView.prototype.initialize.apply(this, arguments);
                 
                 var spinnerOptions = {
-                  lines: 9, // The number of lines to draw
-                  length: 6, // The length of each line
-                  width: 3, // The line thickness
-                  radius: 6, // The radius of the inner circle
-                  corners: 1, // Corner roundness (0..1)
-                  color: '#569A23', // #rgb or #rrggbb
-                  className: 'disconnection-warning-spinner'
+                    color: 'green',
+                    size: 'medium',
+                    frameWidth: 19
                 };
                 
                 this.children.spinner = new WaitSpinnerView(spinnerOptions);
-                this.visible = true;
+                this.visible = false;
                 this.$el.hide();
             },
             show: function() {
@@ -1101,169 +898,61 @@ define('views/shared/splunkbar/messages/NoConnectionOverlay',[
         });
     });
 
-define('models/services/configs/Web',
+define('contrib/text!views/shared/splunkbar/Master.html',[],function () { return '\n<div class="navbar-inner">\n    <div class="no_connection-overlay"></div>\n    <a href="<%-homeLink%>" class="brand" title="splunk &gt; <%- _(\'listen to your data\').t() %>">splunk<strong>&gt;</strong></a>\n    <ul class="navbar-global-nav nav">\n        <li class="dropdown apps">\n            <a href="#" class="dropdown-toggle"><%- _("Apps").t() %><b class="caret"></b></a>\n        </li>\n    </ul>\n\n    <ul class="navbar-global-nav nav pull-right">\n        <li class="dropdown user"></li>\n        <li class="dropdown messages"><a href="#" class="dropdown-toggle"><%- _("Messages").t() %><b class="caret"></b></a></li>\n        <li class="dropdown system<%- options.section==\'system\' ? \' active \' : \'\'%>">\n            <a href="#" class="dropdown-toggle"><%- _("System").t() %><b class="caret"></b></a>\n        </li>\n        <li class="dropdown activity"><a href="#"><%- _("Activity").t() %></a></li>\n        <li class="dropdown help"><a href="#" class="dropdown-toggle"><%- _("Help").t() %><b class="caret"></b></a></li>\n    </ul><!-- /.user-nav -->\n</div><!-- /.navbar-inner -->\n';});
+
+define('util/csrf_protection',
     [
-        'models/SplunkDBase'
+        'jquery',
+        'splunk.util'
     ],
-    function(SplunkDBaseModel) {
-        return SplunkDBaseModel.extend({
-            url: "configs/conf-web",
-            urlRoot: "configs/conf-web",
-            initialize: function() {
-                SplunkDBaseModel.prototype.initialize.apply(this, arguments);
-            }
-        });
+    function($, splunkUtils) {
+        var HEADER_NAME = 'X-Splunk-Form-Key';
+        var FORM_KEY = splunkUtils.getFormKey();
+
+        if ($) {
+            $.ajaxPrefilter(function(options, originalOptions, jqXHR) {
+                if (options['type'] && options['type'].toUpperCase() == 'GET') return;
+                jqXHR.setRequestHeader(HEADER_NAME, FORM_KEY);
+            });
+
+            $(document).ready(function() {
+                $(document).bind('ajaxError', function(event, xhr, opts, err) {
+                    // because we'll get a 401 when logout is clicked, prevent 
+                    // /en-US/account/login?return_to=/en-US/account/logout from happening
+                    var pathname = window.location.pathname;
+                    if (xhr.status === 401 && pathname.indexOf('/account/logout') === -1) {
+                        document.location = splunkUtils.make_url('account/login?return_to=' + encodeURIComponent(pathname + document.location.search));
+                        return;
+                    }
+                });
+            });
+        } else {
+            throw "Splunk's jQuery.ajax extension requires jQuery.";   
+        }
     }
 );
-// (c) 2012 Uzi Kilon, Splunk Inc.
-// Backbone Poller may be freely distributed under the MIT license.
-define('helpers/polling_manager',[
-    'underscore',
-    'jquery',
-    'backbone'
-],
-function(
-    _,
-    $,
-    Backbone
-){
-        // Private variables
-        var pollerDefaults = {
-            delay: 1000,
-            stopOnError: true,
-            condition: function(){return true;}
-        };
-        var eventTypes = ['start', 'stop', 'success', 'error', 'complete'];
 
-        /**
-         * Private Poller
-         */
-        var Poller = function Poller(model, options) {
-            this.set(model, options);
-        };
-        _.extend(Poller.prototype, Backbone.Events, {
-            set: function(model, options) {
-                this.model = model;
-                this.options = _.extend(_.clone(pollerDefaults), options || {});
+/* Insert a jQuery ajax prefilter that sets options.cache=false for all GET requests
+ * This is a preventative measure to avoid an intermittent bug in Chrome 28 (see SPL-71743)
+ */ 
 
-                _.each(eventTypes, function(eventName){
-                    var handler = this.options[eventName];
-                    if(typeof handler === 'function') {
-                        this.on(eventName, handler, this);
-                    }
-                }, this);
-
-                if ( this.model instanceof Backbone.Model ) {
-                    this.model.on('destroy', this.stop, this);
-                }
-
-                return this.stop({silent: true});
-            },
-            start: function(options){
-                if(this.active() === true) {
-                    return this;
-                }
-                options = options || {};
-                if(!options.silent) {
-                    this.trigger('start');
-                }
-                this.options.active = true;
-                run(this);
-                return this;
-            },
-            stop: function(options){
-                options = options || {};
-                if(!options.silent) {
-                    this.trigger('stop');
-                }
-                this.options.active = false;
-                clearTimeout(this.timeoutId);
-                if(this.xhr && typeof this.xhr.abort === 'function') {
-                    this.xhr.abort();
-                }
-                this.xhr = null;
-                return this;
-            },
-            active: function(){
-                return this.options.active === true;
-            }
-        });
-
-        // private methods
-        function run(poller) {
-            if ( poller.active() !== true ) {
-                window.clearTimeout(poller.timeoutId);
-                return ;
-            }
-
-            var onSuccess = function(){
-                poller.trigger('success');
-                poller.model.off('sync', onSuccess);
-            };
-            
-            var options = $.extend(true, {}, poller.options || {}, {
-                success: function(model, response, options) {
-                    poller.trigger('success');
-                    if( poller.options.condition(poller.model) !== true ) {
-                        poller.trigger('complete');
-                        poller.stop({silent: true});
-                    }
-                    else {
-                        poller.timeoutId = window.setTimeout(function(){ run(poller); }, poller.options.delay);
-                    }
-                },
-                error: function(model, response, options){
-                    poller.trigger('error');
-                    if (poller.options.stopOnError) {
-                        poller.stop({silent: true});
-                    } else {
-                        poller.timeoutId = window.setTimeout(function(){ run(poller); }, poller.options.delay);
-                    }
+define('util/ajax_no_cache',
+    [
+        'jquery'
+    ],
+    function($) {
+        if ($) {
+            $.ajaxPrefilter(function(options, originalOptions, jqXHR) {
+                if (options.type && options.type.toUpperCase() == 'GET' && options.cache === undefined) {
+                    options.cache = false;
                 }
             });
-            poller.xhr = poller.model.fetch(options);
+
+        } else {
+            throw "ajax_no_cache requires jQuery.";   
         }
-
-        /**
-         * Polling Manager
-         */
-        var pollers = [];
-
-        return {
-            get: function(model) {
-                return _.find(pollers, function(poller){
-                    return poller.model === model;
-                });
-            },
-            getPoller: function(model, options){
-                var poller = this.get(model);
-                if( poller ) {
-                    poller.set(model, options);
-                }
-                else {
-                    poller = new Poller(model, options);
-                    pollers.push(poller);
-                }
-                return poller;
-            },
-            start: function(model, options) {
-                return this.getPoller(model, options).start({silent: true});
-            },
-            stop: function(model) {
-                var poller = this.get(model);
-                if( poller ) {
-                    poller.stop();
-                    return true;
-                }
-                return false;
-            },
-            size: function(){
-                return pollers.length;
-            }
-        };
     }
 );
-define('contrib/text!views/shared/splunkbar/Master.html',[],function () { return '\n<div class="navbar-inner">\n    <div class="no_connection-overlay"></div>\n    <a href="<%-homeLink%>" class="brand" title="splunk &gt; <%- _(\'listen to your data\').t() %>">splunk<strong>&gt;</strong></a>\n    <ul class="navbar-global-nav nav">\n        <li class="dropdown apps">\n            <a href="#" class="dropdown-toggle"><%- _("Apps").t() %><b class="caret"></b></a>\n        </li>\n    </ul>\n\n    <ul class="navbar-global-nav nav pull-right">\n        <li class="dropdown user"><a href="#" class="dropdown-toggle"><%- _("Admin").t() %><b class="caret"></b></a></li>\n        <li class="dropdown messages"><a href="#" class="dropdown-toggle"><%- _("Messages").t() %><b class="caret"></b></a></li>\n        <li class="dropdown system<%- options.section==\'system\' ? \' active \' : \'\'%>">\n            <a href="#" class="dropdown-toggle"><%- _("System").t() %><b class="caret"></b></a>\n        </li>\n        <li class="dropdown activity"><a href="#"><%- _("Activity").t() %></a></li>\n        <li class="dropdown help"><a href="#" class="dropdown-toggle"><%- _("Help").t() %><b class="caret"></b></a></li>\n    </ul><!-- /.user-nav -->\n</div><!-- /.navbar-inner -->\n';});
 
 // splunk bar
 define('views/shared/splunkbar/Master',[
@@ -1272,6 +961,7 @@ define('views/shared/splunkbar/Master',[
     'backbone',
     'module',
     'splunk.util',
+    'helpers/Session',
     'views/Base',
     'views/shared/delegates/Popdown',
     'views/shared/splunkbar/AppMenu',
@@ -1295,7 +985,10 @@ define('views/shared/splunkbar/Master',[
     'helpers/polling_manager',
     'contrib/text!views/shared/splunkbar/Master.html',
     'uri/route',
-    'util/splunkd_utils'
+    'splunk.util',
+    'util/splunkd_utils',
+    'util/csrf_protection',
+    'util/ajax_no_cache'
 ],
 function(
     $,
@@ -1303,6 +996,7 @@ function(
      Backbone,
      module,
      splunk_util,
+     Session,
      BaseView,
      Popdown,
      AppMenuView,
@@ -1326,6 +1020,7 @@ function(
      polling_manager,
      globalTemplate,
      route,
+     splunkUtil,
      splunkDUtils
 ){
     var View = BaseView.extend({
@@ -1334,7 +1029,37 @@ function(
         className: 'navbar',
         initialize: function() {
             BaseView.prototype.initialize.apply(this, arguments);
-            this.MAX_RETRIES_BEFORE_FAIL = 2;
+            this.MAX_RETRIES_BEFORE_FAIL = 3;
+            this.MESSAGES_POLLING_DELAY_STANDARD = 60000;
+            this.MESSAGES_POLLING_DELAY_HI_FREQ = 1000;
+            this.isFreeDfd = $.Deferred();
+            this.cntRetries = 0;
+            if (this.model.serverInfo.entry.content.has('isFree')){
+                if (splunkUtil.normalizeBoolean(this.model.serverInfo.entry.content.get('isFree'))) {
+                    this.isFreeDfd.resolve();
+                } else {
+                    this.isFreeDfd.reject();
+                }
+            } else {
+                this.model.serverInfo.on('change reset', function() {
+                    if (splunkUtil.normalizeBoolean(this.model.serverInfo.entry.content.get('isFree'))) {
+                        this.isFreeDfd.resolve();
+                    } else {
+                        this.isFreeDfd.reject();
+                    }
+                }.bind(this));
+            }
+            Session.on('restart timeout', function() {
+                polling_manager.stop(this.collection.messages);
+            }, this);
+            Session.on('start', function() {
+                polling_manager.start(this.collection.messages);
+            }, this);
+        },
+        remove: function() {
+            BaseView.prototype.remove.apply(this, arguments);
+            Session.off('restart timeout start', null, this);
+            return this;
         },
         render: function() {
             var homeLink = route.page(
@@ -1343,7 +1068,6 @@ function(
                 'launcher',
                 'home'
             );
-            var cntRetries = 0;
             var html = this.compiledTemplate({
                 makeUrl: splunk_util.make_url,
                 options: this.options,
@@ -1351,9 +1075,12 @@ function(
             });
             this.$el.html(html);
 
+            var activeMenu = this.getActiveMenu();
+
             this.children.apps = new AppMenuView({
                 collection: this.collection,
-                model: this.model
+                model: this.model,
+                activeMenu: activeMenu
             });
             this.$('.apps.dropdown').replaceWith(this.children.apps.el);
 
@@ -1367,17 +1094,19 @@ function(
             });
             this.$('.system.dropdown').replaceWith(this.children.systemMenu.el);
 
-            this.children.userMenu = new UserMenu({
-                collection: {
-                    currentContext: this.model.currentContext //this represents the current logged in user
-                },
-                model: {
-                    user: this.model.user,
-                    application: this.model.application,
-                    webConf: this.model.webConf
-                }
-            });
-            this.$('.user.dropdown').replaceWith(this.children.userMenu.el);
+            this.isFreeDfd.fail(function() {
+                this.children.userMenu = new UserMenu({
+                    collection: {
+                        currentContext: this.model.currentContext //this represents the current logged in user
+                    },
+                    model: {
+                        user: this.model.user,
+                        application: this.model.application,
+                        webConf: this.model.webConf
+                    }
+                });
+                this.$('.user.dropdown').replaceWith(this.children.userMenu.el);
+            }.bind(this));
 
             this.children.messages = new MessagesView({
                 collection: {
@@ -1390,24 +1119,27 @@ function(
             $('body').append(this.children.noConnectionOverlay.render().el);
 
             this.collection.messages.on('serverValidated', function(success, context, messages) {
-                if (success) {
+                if (success && this.cntRetries > 0) {
+                    this.restartMessagePolling(this.MESSAGES_POLLING_DELAY_STANDARD);
                     this.children.noConnectionOverlay.hide();
-                    cntRetries = 0;
+                    this.cntRetries = 0;
                     return;
                 }
                 var netErrorMsg = _.find(messages, function(msg) {
                     return msg.type == splunkDUtils.NETWORK_ERROR || 'network_error';
                 });
                 if (netErrorMsg) {
-                    if (cntRetries == this.MAX_RETRIES_BEFORE_FAIL) {
-                        this.children.noConnectionOverlay.show();
-                    } else {
-                        cntRetries += 1;
+                    if (this.cntRetries == 0) {
+                        this.restartMessagePolling(this.MESSAGES_POLLING_DELAY_HI_FREQ);
                     }
+                    if (this.cntRetries >= this.MAX_RETRIES_BEFORE_FAIL) {
+                        this.children.noConnectionOverlay.show();
+                    }
+                    this.cntRetries += 1;
                 }
             }, this);
             this.$('.messages.dropdown').replaceWith(this.children.messages.render().el);
-
+            this.restartMessagePolling(this.MESSAGES_POLLING_DELAY_STANDARD);
 
             this.children.activityMenu = new ActivityMenu({
                 model: {
@@ -1418,26 +1150,23 @@ function(
             this.$('.activity').replaceWith(this.children.activityMenu.el);
 
             this.children.helpMenu = new HelpMenu({
-                model: {
-                    application: this.model.application,
-                    appLocal: this.model.appLocal,
-                    serverInfo: this.model.serverInfo
-                }
+                model: this.model
             });
-            this.$('.help').replaceWith(this.children.helpMenu.render().el);
-    
-            // highlight the active menu
-            var activeMenu = this.getActiveMenu();
+            this.$('.help').replaceWith(this.children.helpMenu.el);
 
-            if (activeMenu) {
-                activeMenu.addClass("active");
+            // highlight the active menu
+            if (activeMenu){
+                this.$(activeMenu.selector).addClass("active");
             }
 
             return this;
         },
+        restartMessagePolling: function(interval) {
+            polling_manager.stop(this.collection.messages);
+            polling_manager.start(this.collection.messages, {delay: interval, ui_inactivity: true,  stopOnError: false, data: {count: 1000}});
+        },
         getActiveMenu: function() {
-            // the active menu is based on the current page            
-
+            // the active menu is based on the current page
             // get path
             var path = Backbone.history.location.pathname;
             var pathComponents = path.split("/"),
@@ -1445,40 +1174,47 @@ function(
             var appAndPageComponents = [pathComponents[pathComponentsLen-2], pathComponents[pathComponentsLen-1]];
             var appAndPage = appAndPageComponents.join("/");
             var locale = this.model.application.get('locale');
-            var app = this.model.application.get('app');  
- 
-            var activityPages = ["search/status_index", 
+            var app = this.model.application.get('app');
+
+            var activityPages = ["search/status_index",
                                  "search/search_status", "search/search_detail_activity", "search/search_activity_by_user",
                                  "search/splunkweb_status", "search/internal_messages",
                                  "search/scheduler_status", "search/scheduler_user_app", "search/scheduler_savedsearch", "search/scheduler_status_errors", "search/pdf_activity"];
-            var changePasswordPage = "authentication/changepassword";           
-            var jobManagerPage = app + '/job_management'; 
+            var changePasswordPage = "authentication/changepassword";
+            var jobManagerPage = app + '/job_management';
             var triggeredAlertsPage = locale + '/alerts';
             var homePage = "launcher/home";
             var managerPage = locale + "/manager";
 
-            var activeMenu = null; 
+            var activeMenuSelector = null;
+            var activeMenuName = '';
             if (activityPages.indexOf(appAndPage) > -1 ||
                 path.indexOf(jobManagerPage) > -1 ||
                 path.indexOf(triggeredAlertsPage) > -1) {
-                activeMenu = this.$(".activity");
+                activeMenuSelector = '.activity';
+                activeMenuName = "activity";
             } else if (path.indexOf(changePasswordPage) > -1) {
-                activeMenu = this.$('.user');
+                activeMenuSelector = '.user';
+                activeMenuName = "user";
             } else if (path.indexOf(managerPage) > -1) {
-                activeMenu = this.$(".menu-system");
+                activeMenuSelector = 'menu-system';
+                activeMenuName = "manager";
             } else if (path.indexOf(homePage) > -1) {
-                activeMenu = this.$(".brand");
+                activeMenuSelector = '.brand';
+                activeMenuName = "home";
             } else {
-                activeMenu = this.$(".menu-apps");
+                activeMenuSelector = '.menu-apps';
+                activeMenuName = "app";
             }
-            return activeMenu; 
+
+            return {
+                selector: activeMenuSelector,
+                name: activeMenuName
+            };
         }
     },
-        
     {
         create: function(options){
-            var MESSAGES_POLLING_DELAY = 2000;
-
             options = options || {};
             options.collection = options.collection || {};
             options.model = options.model || {};
@@ -1494,31 +1230,32 @@ function(
                 applicationDfd.resolve();
             } else {
                 options.model.application.on('change', applicationDfd.resolve);
-            } 
+            }
 
             if(!options.model.appLocal) {
                 options.model.appLocal = new AppLocalModel();
+                applicationDfd.done(function() {
+                    if (options.model.application.get("app") !== 'system') {
+                        options.model.appLocal.fetch({
+                            url: splunkDUtils.fullpath(options.model.appLocal.url + "/" + options.model.application.get("app")),
+                            data: {
+                                app: options.model.application.get("app"),
+                                owner: options.model.application.get("owner")
+                            }
+                        });
+                    }
+                });
             }
-
-            applicationDfd.done(function() {
-                if (options.model.application.get("app") !== 'system') {
-                    options.model.appLocal.fetch({
-                        url: splunkDUtils.fullpath(options.model.appLocal.url + "/" + options.model.application.get("app")),
-                        data: {
-                            app: options.model.application.get("app"),
-                            owner: options.model.application.get("owner")
-                        }
-                    });
-                }
-            });
 
             var currentUserIdDfd = $.Deferred();
             currentUserIdDfd.resolve(options.model.application.get('owner'));
 
+            var appsDfd = $.Deferred();
+
+            var appsCollection;
             if(!options.collection.apps){
-                var appsCollection = options.collection.apps = new AppsCollection();
+                appsCollection = options.collection.apps = new AppsCollection();
                 $.when(currentUserIdDfd).done(function(){
-                    var appsDfd = $.Deferred();
                     appsCollection.fetch({
                         data: {
                             sort_key: 'name',
@@ -1530,13 +1267,19 @@ function(
                         }
                     });
                     appsCollection.on('reset sort', appsDfd.resolve);
+                });
+            } else {
+                appsDfd.resolve();
+            }
 
-                    var userPrefModel = new UserPrefModel();
-                    userPrefModel.fetch({data: {app:'user-prefs', owner: options.model.application.get('owner'), count:-1}});
-                    userPrefModel.on('change', function(){
-                        appsDfd.done(function(){
-                            appsCollection.sortWithString(userPrefModel.entry.content.get('appOrder'));
-                        });
+            if (!options.model.userPref){
+                options.model.userPref = new UserPrefModel();
+                options.model.userPref.fetch({data: {app:'user-prefs', owner: options.model.application.get('owner'), count:-1}});
+                appsCollection = options.collection.apps;
+                options.model.userPref.on('change', function(){
+                    appsDfd.done(function(){
+                        appsCollection.sortWithString(options.model.userPref.entry.content.get('appOrder'));
+                        appsCollection.trigger('ready');
                     });
                 });
             }
@@ -1556,7 +1299,6 @@ function(
             if (!options.collection.messages) {
                 options.collection.messages = new MessagesCollection();
             }
-            var messagePoller = polling_manager.start(options.collection.messages, {delay: MESSAGES_POLLING_DELAY, stopOnError: false, data: {count: 1000}});
 
             if (!options.collection.managers){
                 options.collection.managers = new ManagersCollection();
@@ -1609,11 +1351,12 @@ function(
                 options.collection.managers.each(function(manager){
                     var menuUrl = manager.entry.content.get('menu.url') || '',
                         sectionName = manager.entry.content.get('menu.name'),
+                        disabledByLicense = splunkUtil.normalizeBoolean(manager.entry.content.get('disabled_by_license') || false),
                         order = manager.entry.content.get('menu.order') || 1000,
                         pageStart = route.encodeRoot(options.model.application.get('root'), options.model.application.get('locale')),
                         url = pageStart + splunk_util.sprintf(menuUrl, {namespace: options.model.application.get('app') || 'NOTHING'});
 
-                    if(sectionName){
+                    if(!disabledByLicense && sectionName){
                         var section = sections.get(sectionName);
                         if(section){
                             var sectionItems = section.get('items');
@@ -1648,20 +1391,20 @@ function(
 
 define('contrib/text!views/shared/appbar/NavItem.html',[],function () { return '<% var hasSubmenu = item.submenu && item.submenu.length && item.submenu.length > 0; %>\n<a href="<%-item.uri%>" title="<%-item.label%>" class="<%=hasSubmenu ? \'dropdown-toggle\' : \'\'%>" <%=hasSubmenu ? \'data-toggle="popdown"\' : \'\'%>>\n    <%=_(item.label).t()%>\n    <%if(hasSubmenu){%>\n       <b class="caret"></b>\n    <%}%>\n</a>\n<%if(hasSubmenu){%>\n    <div class="dropdown-menu">\n    \t<div class="arrow"></div>\n    \t<div class="slideNavPlaceHolder"></div>\n    </div>\n<%}%>\n';});
 
-define('contrib/text!views/shared/AppNav-SlideNavTemplate.html',[],function () { return '<%if(!submenu){return "";}%>\n<ul class="slidenavList scroll-group">\n    <% _.each(submenu, function(i, index) { %>\n    <li data-index="<%=index%>" class="<%=i.divider ? \'divider\':\'\'%>">\n        <% if(!i.divider){ %>\n            <% if(i.submenu && i.submenu.length>0){ %>\n                <a href="#">\n                    <%- _(i.label).t() %>\n                </a>\n                <i class="icon-triangle-right-small"></i>\n            <%}else if (i.hasOwnProperty(\'reportUri\')) { %>\n                <a href="<%=i.reportUri%>" class="primary-link">\n                    <%- _(i.label).t() %>\n                </a>\n                <a href="<%=i.uri%>" class="secondary-link">\n                    <i class="icon-<%= i.hasOwnProperty(\'dispatchView\') && i.dispatchView === \'pivot\' ? \'pivot\' : \'search\' %>"></i>\n                </a>\n            <%} else { %>\n                <a href="<%=i.uri%>">\n                    <%- _(i.label).t() %>\n                </a>\n            <%}%>\n        <%}%>\n    </li>\n    <% }); %>\n</ul>\n';});
+define('contrib/text!views/shared/AppNav-SlideNavTemplate.html',[],function () { return '<%if(!submenu){return "";}%>\n<ul class="slidenavList scroll-group">\n    <% _.each(submenu, function(i, index) { %>\n    <li data-index="<%=index%>" class="<%=i.divider ? \'divider\':\'\'%>">\n        <% if(!i.divider){ %>\n            <% if(i.submenu && i.submenu.length>0){ %>\n                <a href="#">\n                    <%- _.unescape(_(i.label).t()) %>\n                </a>\n                <i class="icon-triangle-right-small"></i>\n            <%}else if (i.hasOwnProperty(\'reportUri\')) { %>\n                <a href="<%=i.reportUri%>" class="primary-link">\n                    <%- _.unescape(_(i.label).t()) %>\n                </a>\n                <a href="<%=i.uri%>" class="secondary-link">\n                    <i class="icon-<%= i.hasOwnProperty(\'dispatchView\') && i.dispatchView === \'pivot\' ? \'pivot\' : \'search\' %>"></i>\n                </a>\n            <%} else { %>\n                <a href="<%=i.uri%>">\n                    <%- _.unescape(_(i.label).t()) %>\n                </a>\n            <%}%>\n        <%}%>\n    </li>\n    <% }); %>\n</ul>\n';});
 
 define('splunk.widget.slidenav',['jquery', 'jquery.ui.widget', 'jquery.ui.position'], function($){
     return $.widget( "splunk.slidenav", {
         options: {
             levelTemplate: '',
             navData: {},
-            childPropertyName: 'children'
+            childPropertyName: 'children',
+            backText: 'Back'
         },
         _create: function(){
             var self = this;
             this.isAnimating = false;
             this.$el = $(this.element);
-            //TODO pete lets figure out how to remove this class
             this.$wrap = $('<div class="auto"></div>');
             this.$el.append(this.$wrap);
             this._chain = [this.addLevel(this.options.navData)];
@@ -1709,8 +1452,12 @@ define('splunk.widget.slidenav',['jquery', 'jquery.ui.widget', 'jquery.ui.positi
             }
         },
         next: function(selected){
+            var current = this._chain[this._chain.length-1] || null;
             selected.domReference = selected.domReference || this.addLevel(selected);
-            this._chain.push(this.slide(selected.domReference.show()));
+            this._chain.push(this.slide(selected.domReference.show(), function(){
+                current.find('a').prop('tabindex', '-1');
+                selected.domReference.find('a').first().focus();
+            }));
             this.$backButton.show();
         },
         back: function(){
@@ -1720,9 +1467,11 @@ define('splunk.widget.slidenav',['jquery', 'jquery.ui.widget', 'jquery.ui.positi
             if(this._chain.length === 2){
                 this.$backButton.hide();
             }
-            var $hide = this._chain.pop();
-            this.slide(this._chain[this._chain.length-1], function(){
+            var $hide = this._chain.pop(),
+                to = this._chain[this._chain.length-1];
+            this.slide(to, function(){
                 $hide.scrollTop(0).hide();
+                to.find('a').prop('tabindex', '0');
             });
         },
         slide: function(to, callback){
@@ -1743,7 +1492,7 @@ define('splunk.widget.slidenav',['jquery', 'jquery.ui.widget', 'jquery.ui.positi
             return to;
         },
         templateBack: function(){
-            return this.options.templateBack || '<div class="backbutton" style="display: none;"><a href="#" class="slidenavback "><i class="icon-triangle-left-small"></i>Back</a></div>';
+            return this.options.templateBack || '<div class="backbutton" style="display: none;"><a href="#" class="slidenavback "><i class="icon-triangle-left-small"></i>'+this.options.backText+'</a></div>';
         }
     });
 });
@@ -1794,7 +1543,8 @@ function(
                     this.slideNav = this.$el.find('.slideNavPlaceHolder').slidenav({
                         navData: this.options.navItemObj,
                         levelTemplate: templateSlideNavCompiled,
-                        childPropertyName: 'submenu'
+                        childPropertyName: 'submenu',
+                        backText: _('Back').t()
                     });
 
                     this.popdown = new Popdown({
@@ -1836,15 +1586,16 @@ function(
         className: 'nav nav-pills',
         initialize: function() {
             BaseView.prototype.initialize.apply(this, arguments);
-            this.model.appNav.on('change:nav', this.render, this);
+            this.model.appNav.on('change:nav', this.debouncedRender, this);
             this.model.application.on('change:page', this.setActiveItem, this);
-            this.render();
+            this.debouncedRender();
         },
         render: function() {
             var self = this;
             var navData = this.model.appNav.get('nav');
             if(!navData){return this;}
 
+            this.$el.html('');
             $.each(navData, function(index, navItemObj){
                 var navItemView = new NavItem({
                     navItemObj: navItemObj
@@ -1868,7 +1619,7 @@ function(
     });
 });
 
-define('contrib/text!views/shared/appbar/AppLabel.html',[],function () { return '<a class="app-link" href="<%=appLink%>">\n    <div class="app-logo" style="display:none">\n        <img class="app-logo-img" src="<%=appLogo%>" alt="<%-appLabel%>" />\n    </div>\n\n    <div class="app-name" style="display:none">\n        <span class="app-label">\n            <%-_(appLabel).t()%>\n        </span>\n    </div>\n</a>\n';});
+define('contrib/text!views/shared/appbar/AppLabel.html',[],function () { return '<a class="app-link" href="<%=appLink%>">\n    <div class="app-logo" style="display: none;">\n        <img class="app-logo-img" src="<%=appLogo%>" alt="<%-appLabel%>" />\n    </div>\n\n    <div class="app-name" style="display:none">\n        <span class="app-label">\n            <%-_(appLabel).t()%>\n        </span>\n    </div>\n</a>\n';});
 
 define('views/shared/appbar/AppLabel',[
     'underscore',
@@ -1888,6 +1639,20 @@ function(
         initialize: function() {
             BaseView.prototype.initialize.apply(this, arguments);
             this.model.appNav.on('change', this.render, this);
+            if (this.model.appNav.get('label') ||
+                this.model.appNav.get('logo') ||
+                this.model.appNav.get('icon'))
+            {
+                this.render();
+            }
+        },
+        showLogo: function(){
+            this.$el.find('.app-logo').show();
+            this.$el.find('.app-name').hide();
+        },
+        showName: function(){
+            this.$el.find('.app-name').show();
+            this.$el.find('.app-logo').hide();
         },
         render: function() {
             var self = this;
@@ -1902,18 +1667,19 @@ function(
 
             if (this.model.appNav.get('logo')) {
                 var img = this.$el.find('.app-logo-img');
+                if(parseInt(img.width, 10) > 2){
+                    this.showLogo();
+                }else{
+                    this.showName();
+                }
+
                 img.load(function(){
                     if(parseInt(this.width, 10) > 2){
-                        self.$el.find('.app-logo').show();
-                        self.$el.find('.app-name').hide();
-                    }else{
-                        self.$el.find('.app-logo').hide();
-                        self.$el.find('.app-name').show();
+                        self.showLogo();
                     }
                 });
             } else {
-                this.$el.find('.app-logo').hide();
-                this.$el.find('.app-name').show();
+                this.showName();
             }
 
             return this;
@@ -1941,213 +1707,233 @@ function (
     Backbone,
     splunk_util
 ){
-        var app,
-            views,
-            rootEndpoint,
-            searches,
-            nav,
-            seenViews = [],
-            seenSearches = [];
+    var app,
+        views,
+        rootEndpoint,
+        searches,
+        nav,
+        seenViews = [],
+        seenSearches = [];
 
-        /**
-         * Filters the collection to models belonging to the current app, optionally with name matching a string and
-         * optionally among those that haven't been processed yet.
-         *
-         * @param collection Input collection
-         * @param match {String} optional String to match
-         * @param seen {Array} optional list of already processed objects that should be skipped
-         * @return {Array} filtered array of models
-         */
-        function getMatchingItems(collection, match, seen) {
-            return collection.filter(function(it) {
-                var itApp =  it.entry.acl.get('app'),
-                    itName = it.entry.get('name');
-                if (itApp != app) {
-                    return false;
+    /**
+     * Filters the collection to models belonging to the current app, optionally with name matching a string and
+     * optionally among those that haven't been processed yet.
+     *
+     * @param collection Input collection
+     * @param match {String} optional String to match
+     * @param seen {Array} optional list of already processed objects that should be skipped
+     * @return {Array} filtered array of models
+     */
+    function getMatchingItems(collection, match, seen) {
+        return collection.filter(function(it) {
+            var itApp =  it.entry.acl.get('app'),
+                itName = it.entry.get('name'),
+                isGlobal = it.entry.acl.get('sharing') === 'global';
+            if (!isGlobal && itApp !== app) {
+                return false;
+            }
+            if (match) {
+                return (itName.toLowerCase().indexOf(match.toLowerCase())>-1 && !(seen && seen.indexOf(app+'/'+itName)>-1));
+            } else {
+                return !(seen && seen.indexOf(app+'/'+itName)>-1);
+            }
+        });
+    }
+
+    /**
+     * Searches views collection for a view name to get its label
+     *
+     * @param name {String} view name
+     * @return {Object} containing view label
+     */
+    function getViewProps(viewName) {
+        var obj, view, i, v;
+        views = views || [];
+        for (i=0; i<views.length; i++) {
+            v = views.at(i);
+            if (v.entry.get('name').toLowerCase() === viewName.toLowerCase()) {
+                // allow either a view local to the current app
+                if (v.entry.acl.get('app') == app) {
+                    view = v;
+                    break; // local views have priority over global ones
+
+                // or a globally shared view from another app
+                } else if (v.entry.acl.get('sharing') == 'global') {
+                    view = v;
                 }
-                if (match) {
-                    return (match && itName.toLowerCase().indexOf(match.toLowerCase())>-1);
-                } else {
-                    return !(seen && seen.indexOf(app+'/'+itName)>-1);
-                }
+            }
+        }
+
+        if (view) {
+            if (!view.entry.content.get('isVisible')) {
+                return false;
+            }
+            obj = {
+                label: view.entry.content.get('label') || viewName,
+                uri: splunk_util.make_url('app', app, viewName),
+                viewName: viewName,
+                app: app
+            };
+        } else {
+            return false;
+        }
+        return obj;
+    }
+
+    /**
+     * Searches saved searches collection for a search name to get its properties
+     * @param name {String} search name
+     * @return {Object} containing search properties
+     */
+    function getSavedProps(name) {
+        var obj,
+            saved = searches.find(function(s) {
+                return (s.entry.get('name').toLowerCase() === name.toLowerCase());
             });
-        }
-
-        /**
-         * Searches views collection for a view name to get its label
-         *
-         * @param name {String} view name
-         * @return {Object} containing view label
-         */
-        function getViewProps(viewName) {
-            var obj, view, i, v;
-            views = views || [];
-            for (i=0; i<views.length; i++) {
-                v = views.at(i);
-                if (v.entry.get('name').toLowerCase() === viewName.toLowerCase()) {
-                    // allow either a view local to the current app
-                    if (v.entry.acl.get('app') == app) {
-                        view = v;
-                        break; // local views have priority over global ones
-
-                    // or a globally shared view from another app
-                    } else if (v.entry.acl.get('sharing') == 'global') {
-                        view = v;
-                    }
-                }
+        if (saved) {
+            obj = {
+                uri: splunk_util.make_full_url('app/'+app+'/@go', {'s': saved.id}),
+                sharing: saved.get('sharing'),
+                label: name,
+                reportUri: splunk_util.make_full_url('app/'+app+'/report', {'s': saved.id})
+            };
+            if (saved.entry.content.get('request.ui_dispatch_view')) {
+                obj.dispatchView = saved.entry.content.get('request.ui_dispatch_view');
             }
+        } else {
+            return false;
+        }
+        return obj;
+    }
 
-            if (view) {
-                if (!view.entry.content.get('isVisible')) {
-                    return false;
-                }
+    function sanatizeHref(href){
+        if(typeof href !== 'string'){
+            return false;
+        }
+        var decodedhref = $("<div></div>").html(href).text();
+        decodedhref = window.decodeURI(decodedhref);
+        decodedhref = decodedhref.replace(/(\r\n|\n|\r|\s)/gm,'').toLowerCase();
+        if(decodedhref.indexOf(':') > -1 &&
+            decodedhref.indexOf('javascript:') > -1 ||
+            decodedhref.indexOf('vbscript:') > -1 ||
+            decodedhref.indexOf('data:') > -1 ||
+            decodedhref.indexOf('livescript:') > -1){
+            href = false;
+        }
+        return href;
+    }
+
+    /**
+     * Recursively go through nav xml, building a json object
+     *
+     * @param nav {xml}
+     * @return {Object} JSON object
+     */
+    function parseNavXml(nav) {
+        var output = [],
+            c;
+        for (c=0; c<nav.length; c++) {
+            var node = nav[c],
+                $node = $(node),
+                nodeName = splunk_util.lowerTrimStr(node.nodeName),
+                obj;
+
+            if (nodeName === 'collection') {
                 obj = {
-                    label: view.entry.content.get('label') || viewName,
-                    uri: splunk_util.make_url('app', app, viewName),
-                    viewName: viewName,
-                    app: app
+                    label: $node.attr('label'),
+                    uri: '#'
                 };
-            } else {
-                return false;
-            }
-            return obj;
-        }
-
-        /**
-         * Searches saved searches collection for a search name to get its properties
-         * @param name {String} search name
-         * @return {Object} containing search properties
-         */
-        function getSavedProps(name) {
-            var obj,
-                saved = searches.find(function(s) {
-                    return (s.entry.get('name').toLowerCase() === name.toLowerCase());
-                });
-            if (saved) {
-                obj = {
-                    uri: splunk_util.make_full_url('app/'+app+'/@go', {'s': saved.id}),
-                    sharing: saved.get('sharing'),
-                    label: name,
-                    reportUri: splunk_util.make_full_url('app/'+app+'/report', {'s': saved.id})
-                };
-                if (saved.entry.content.get('request.ui_dispatch_view')) {
-                    obj.dispatchView = saved.entry.content.get('request.ui_dispatch_view');
+                // recursion warning!
+                var children = parseNavXml($node.children());
+                if (!children.submenu.length ||
+                    !_.find(children.submenu, function(obj) { return !obj.divider; })) {
+                    // skip empty collections and ones containing only dividers
+                    continue;
                 }
-            } else {
-                return false;
-            }
-            return obj;
-        }
+                _.extend(obj, children);
+            /*
+            Views
+             */
+            } else if (nodeName === 'view') {
+                var viewName = $node.attr('name'),
+                    isDefault = splunk_util.normalizeBoolean($node.attr('default')||"false"),
+                    source = splunk_util.lowerTrimStr($node.attr('source')),
+                    match = $node.attr('match');
 
-        /**
-         * Recursively go through nav xml, building a json object
-         *
-         * @param nav {xml}
-         * @return {Object} JSON object
-         */
-        function parseNavXml(nav) {
-            var output = [],
-                c;
-            for (c=0; c<nav.length; c++) {
-                var node = nav[c],
-                    $node = $(node),
-                    nodeName = splunk_util.lowerTrimStr(node.nodeName),
-                    obj;
-
-                if (nodeName === 'collection') {
-                    obj = {
-                        label: $node.attr('label'),
-                        uri: '#'
-                    };
-                    // recursion warning!
-                    var children = parseNavXml($node.children());
-                    if (!children.submenu.length ||
-                        !_.find(children.submenu, function(obj) { return !obj.divider; })) {
-                        // skip empty collections and ones containing only dividers
+                if (viewName) {
+                    obj = getViewProps(viewName);
+                    if (!obj) {
                         continue;
                     }
-                    _.extend(obj, children);
-                /*
-                Views
-                 */
-                } else if (nodeName === 'view') {
-                    var viewName = $node.attr('name'),
-                        isDefault = splunk_util.normalizeBoolean($node.attr('default')||"false"),
-                        source = splunk_util.lowerTrimStr($node.attr('source')),
-                        match = $node.attr('match');
+                    if (isDefault) {
+                        obj.isDefault = isDefault;
+                    }
+                    // mark as seen
+                    seenViews.push(app+'/'+viewName);
 
-                    if (viewName) {
+                } else if (source) {
+                    var matchedViews = [],
+                        i;
+                    if (source == 'all') {
+                        matchedViews = getMatchingItems(views, match);
+                    } else if (source == 'unclassified') {
+                        matchedViews = getMatchingItems(views, match, seenViews);
+                    }
+                    for (i=0; i<matchedViews.length; i++) {
+                        viewName = matchedViews[i].entry.get('name');
                         obj = getViewProps(viewName);
                         if (!obj) {
                             continue;
                         }
-                        if (isDefault) {
-                            obj.isDefault = isDefault;
+                        if (!matchedViews[i].entry.content.get('isDashboard')) {
+                            continue;
                         }
                         // mark as seen
                         seenViews.push(app+'/'+viewName);
-
-                    } else if (source) {
-                        var matchedViews = [],
-                            i;
-                        if (source == 'all') {
-                            matchedViews = getMatchingItems(views, match);
-                        } else if (source == 'unclassified') {
-                            matchedViews = getMatchingItems(views, match, seenViews);
-                        }
-                        for (i=0; i<matchedViews.length; i++) {
-                            viewName = matchedViews[i].entry.get('name');
-                            obj = getViewProps(viewName);
-                            if (!obj) {
-                                continue;
-                            }
-                            if (!matchedViews[i].entry.content.get('isDashboard')) {
-                                continue;
-                            }
-                            // mark as seen
-                            seenViews.push(app+'/'+viewName);
-                            output.push(obj);
-                        }
-                        obj = false;
+                        output.push(obj);
                     }
+                    obj = false;
+                }
 
-                /*
-                 Saved searches
-                 */
-                } else if (nodeName === 'saved') {
-                    var savedName = $node.attr('name');
-                    source = splunk_util.lowerTrimStr($node.attr('source'));
-                    match = $node.attr('match');
+            /*
+             Saved searches
+             */
+            } else if (nodeName === 'saved') {
+                var savedName = $node.attr('name');
+                source = splunk_util.lowerTrimStr($node.attr('source'));
+                match = $node.attr('match');
 
-                    if (savedName) {
+                if (savedName) {
+                    obj = getSavedProps(savedName);
+                    if (!obj) {
+                        continue;
+                    }
+                    seenSearches.push(app+'/'+savedName);
+                } else if (source) {
+                    var matchedSearches = [];
+                    if (source == 'all') {
+                        matchedSearches = getMatchingItems(searches, match);
+                    } else if (source == 'unclassified') {
+                        matchedSearches = getMatchingItems(searches, match, seenSearches);
+                    }
+                    for (i=0; i<matchedSearches.length; i++) {
+                        savedName = matchedSearches[i].entry.get('name');
                         obj = getSavedProps(savedName);
                         if (!obj) {
                             continue;
                         }
+                        // mark as seen
                         seenSearches.push(app+'/'+savedName);
-                    } else if (source) {
-                        var matchedSearches = [];
-                        if (source == 'all') {
-                            matchedSearches = getMatchingItems(searches, match);
-                        } else if (source == 'unclassified') {
-                            matchedSearches = getMatchingItems(searches, match, seenSearches);
-                        }
-                        for (i=0; i<matchedSearches.length; i++) {
-                            savedName = matchedSearches[i].entry.get('name');
-                            obj = getSavedProps(savedName);
-                            if (!obj) {
-                                continue;
-                            }
-                            // mark as seen
-                            seenSearches.push(app+'/'+savedName);
-                            output.push(obj);
-                        }
-                        obj = false;
+                        output.push(obj);
                     }
-
-                } else if (nodeName === 'a') {
-                    var href = $node.attr('href');
-                    if(href.indexOf('/') === 0 && href[1] !== '/'){
+                    obj = false;
+                }
+            } else if (nodeName === 'a') {
+                var href = sanatizeHref($node.attr('href'));
+                if(href===false){
+                    obj=false;
+                }else{
+                    if (href.indexOf('/') === 0 && href[1] !== '/'){
                         href = splunk_util.make_url(href);
                     }
                     obj = {
@@ -2155,79 +1941,78 @@ function (
                         uri: href,
                         viewName: $node.attr('name') || ''
                     };
-
-                } else if (nodeName === 'divider') {
-                    obj = {
-                        label: '',
-                        divider: true
-                    };
-
-                } else {
-                    obj = {
-                        label: 'unknown node in nav'
-                    };
                 }
-
-                if (obj) {
-                    output.push(obj);
-                }
-
+            } else if (nodeName === 'divider') {
+                obj = {
+                    label: '',
+                    divider: true
+                };
+            } else {
+                obj = {
+                    label: 'unknown node in nav'
+                };
             }
-            return {submenu: output};
-        }
 
-        function parseNavModel(nav, viewsCollection, savedSearchCollection, rootPath){
-            var xmlNavString = nav.entry.content.get('eai:data').replace(/\&/g, "&amp;"),
-                navXmlObj = $($.parseXML(xmlNavString)),
-                root = navXmlObj.find('nav'),
-                searchView = root.attr('search_view'),
-                appColor = root.attr('color');
-
-            seenViews = seenSearches = [];
-            app = nav.entry.content.get('eai:appName');
-            views = viewsCollection;
-            rootEndpoint = rootPath || '';
-            searches = new Backbone.Collection(savedSearchCollection.filter(function(model) {
-                return model.entry.acl.get('app') == app;
-            }));
-            return {
-                nav: parseNavXml(root.children()).submenu,
-                searchView: searchView,
-                color: appColor
-            };
-        }
-
-        /**
-         * Entry point, kicking off the parsing.
-         *
-         * @param navsCollection {Collection} output of /data/ui/nav endpoint
-         * @param viewsCollection {Collection} output of /data/ui/views endpoint
-         * @param savedSearchCollection {Collection} output of /saved/searches endpoint
-         *
-         * @return {Array} of JSON objects or null if appname is undefined or nav coll is empty
-         */
-        function parseNavCollection(navsCollection, viewsCollection, savedSearchCollection, rootPath) {
-            var result = [];
-            rootEndpoint = rootPath || '';
-            seenViews = seenSearches = [];
-            if (!navsCollection || navsCollection.length == 0) {
-                return null;
+            if (obj) {
+                output.push(obj);
             }
-            navsCollection.each(function(nav){
-                result.push(
-                    parseNavModel(nav,viewsCollection, savedSearchCollection)
-                );
-            });
-            return result;
-        }
 
+        }
+        return {submenu: output};
+    }
+
+    function parseNavModel(nav, viewsCollection, savedSearchCollection, rootPath){
+        var xmlNavString = nav.entry.content.get('eai:data').replace(/\&/g, "&amp;"),
+            navXmlObj = $($.parseXML(xmlNavString)),
+            root = navXmlObj.find('nav'),
+            searchView = root.attr('search_view'),
+            appColor = root.attr('color');
+
+        seenViews = seenSearches = [];
+        app = nav.entry.content.get('eai:appName');
+        views = viewsCollection;
+        rootEndpoint = rootPath || '';
+        searches = new Backbone.Collection(savedSearchCollection.filter(function(model) {
+            var appMatch = model.entry.acl.get('app') == app,
+                isGlobal = model.entry.acl.get('sharing') == 'global';
+            return appMatch || isGlobal;
+        }));
         return {
-            parseNavModel: parseNavModel,
-            parseNavCollection: parseNavCollection
+            nav: parseNavXml(root.children()).submenu,
+            searchView: searchView,
+            color: appColor
         };
     }
-);
 
+    /**
+     * Entry point, kicking off the parsing.
+     *
+     * @param navsCollection {Collection} output of /data/ui/nav endpoint
+     * @param viewsCollection {Collection} output of /data/ui/views endpoint
+     * @param savedSearchCollection {Collection} output of /saved/searches endpoint
+     *
+     * @return {Array} of JSON objects or null if appname is undefined or nav coll is empty
+     */
+    function parseNavCollection(navsCollection, viewsCollection, savedSearchCollection, rootPath) {
+        var result = [];
+        rootEndpoint = rootPath || '';
+        seenViews = seenSearches = [];
+        if (!navsCollection || navsCollection.length == 0) {
+            return null;
+        }
+        navsCollection.each(function(nav){
+            result.push(
+                parseNavModel(nav,viewsCollection, savedSearchCollection)
+            );
+        });
+        return result;
+    }
+
+    return {
+        parseNavModel: parseNavModel,
+        parseNavCollection: parseNavCollection
+    };
+});
 /**
  * Util package for working with colors.
  */
@@ -2649,238 +2434,282 @@ function(
     color_utils
 ){
     var View = BaseView.extend({
-            moduleId: module.id,
-            className: 'app-bar',
-            initialize: function() {
-                BaseView.prototype.initialize.apply(this, arguments);
+        moduleId: module.id,
+        className: 'app-bar',
+        initialize: function() {
+            BaseView.prototype.initialize.apply(this, arguments);
 
-                this.children.appNav = new AppNavView({
-                    model: this.model,
-                    collection: this.collection
+            this.children.appNav = new AppNavView({
+                model: this.model,
+                collection: this.collection
+            });
+
+            this.children.appLabel = new AppLabelView({
+                model: this.model,
+                collection: this.collection
+            });
+
+            this.setBannerColor();
+            this.model.appNav.on('change:color', this.setBannerColor, this);
+
+            this.debouncedRender();
+        },
+        render: function() {
+            var html = _.template(templateMaster);
+            this.$el.html(html);
+            this.$el.find('.nav').html(this.children.appNav.el);
+            this.$el.find('.app-name').html(this.children.appLabel.el);
+
+            return this;
+        },
+        setBannerColor: function(){
+            if(!this.model.appNav){return false;}
+
+            var navColor = this.model.appNav.get('color');
+            if(!navColor){return false;}
+
+            this.$el.css('background-color', navColor);
+
+            var navColorNorm = color_utils.normalizeHexString(navColor);
+            var darkerColorEnd = color_utils.modifyLuminosityOfHexString(navColor, View.END_GRADIENT_LUMINOSITY);
+
+            var gradients = color_utils.generateGradientStyles(navColorNorm, darkerColorEnd);
+
+            for (var i=0;i<gradients.length;i++){
+                this.$el.css('background-image', gradients[i]);
+                // FIXME: ghetto hack for IE since it uses filter instead of bg-img
+                // BG filters cause clipping issues so removing gradients for IE < 9
+                // this.$el.css('filter', gradients[i]);
+            }
+        }
+    },
+    {
+        END_GRADIENT_LUMINOSITY: 0.90,
+        createWithAppNavUrl: function(options){
+            var self = this;
+            options.model.application.on('change', function(appModel){
+                var url = route.appNavUrl(appModel.get('root'), appModel.get('locale'), appModel.get('app'));
+                $.ajax({
+                    url: url,
+                    dataType:'json'
+                }).done(function(data){
+                    var appLink, appIcon, appLogo, reportRoute;
+                    appLink = route.page(
+                        options.model.application.get('root'),
+                        options.model.application.get('locale') || '',
+                        options.model.application.get('app')
+                    );
+
+                    appIcon = route.appIcon(
+                        options.model.application.get('root'),
+                        options.model.application.get('locale') || '',
+                        options.model.application.get('owner'),
+                        appModel.get('app')
+                    );
+
+                    appLogo = route.appLogo(
+                        options.model.application.get('root'),
+                        options.model.application.get('locale') || '',
+                        options.model.application.get('owner'),
+                        appModel.get('app')
+                    );
+
+                    reportRoute = route.page(
+                        options.model.application.get('root'),
+                        options.model.application.get('locale') || '',
+                        options.model.application.get('app'),
+                        'report');
+
+                    options.model.appNav.set({
+                        nav: data.nav,
+                        color: data.color,
+                        label: data.label,
+                        icon: appIcon,
+                        logo: appLogo,
+                        link: appLink,
+                        defaultView: data.defaultView
+                        //searchView: 'not implemented TODO'
+                    });
+                }).fail(function(){
+                    self.createWithBackbone(options);
                 });
+            });
+        },
+        createWithAppNavModel: function(options) {
+            var appLink, appIcon, appLogo, reportRoute;
 
-                this.children.appLabel = new AppLabelView({
-                    model: this.model,
-                    collection: this.collection
-                });
+            appLink = route.page(
+                options.model.application.get('root'),
+                options.model.application.get('locale') || '',
+                options.model.application.get('app')
+            );
 
-                this.render();
-                this.setBannerColor();
-                this.model.appNav.on('change:color', this.setBannerColor, this);
-            },
-            render: function() {
-                var html = _.template(templateMaster);
-                this.$el.html(html);
-                this.$el.find('.nav').html(this.children.appNav.el);
-                this.$el.find('.app-name').html(this.children.appLabel.el);
+            appIcon = route.appIcon(
+                options.model.application.get('root'),
+                options.model.application.get('locale') || '',
+                options.model.application.get('owner'),
+                options.model.application.get('app')
+            );
 
-                return this;
-            },
-            setBannerColor: function(){
-                if(!this.model.appNav){return false;}
+            appLogo = route.appLogo(
+                options.model.application.get('root'),
+                options.model.application.get('locale') || '',
+                options.model.application.get('owner'),
+                options.model.application.get('app')
+            );
 
-                var navColor = this.model.appNav.get('color');
-                if(!navColor){return false;}
+            reportRoute = route.page(
+                options.model.application.get('root'),
+                options.model.application.get('locale') || '',
+                options.model.application.get('app'),
+                'report');
 
-                this.$el.css('background-color', navColor);
+            options.model.appNav.set({
+                nav: options.model.appNav.entry.content.get('nav'),
+                color: options.model.appNav.entry.content.get('color'),
+                label: options.model.appNav.entry.content.get('label'),
+                icon: appIcon,
+                logo: appLogo,
+                link: appLink,
+                defaultView: options.model.appNav.entry.content.get('defaultView')
+                //searchView: 'not implemented TODO'
+            });
+        },
+        createWithBackbone: function(options){
+            var applicationDfd = $.Deferred();
+            var appNavDfd = $.Deferred();
+            var viewsDfd = $.Deferred();
+            var savedSearchesDfd = $.Deferred();
+            function updateNavData(){
+                if(appNavDfd.state() === 'resolved' && viewsDfd.state() === 'resolved' && savedSearchesDfd.state() === 'resolved'){
+                    var data = appNavParser.parseNavModel(options.model.splunkDappNav, options.collection.views, options.collection.savedSearches, options.model.application.get('root'));
 
-                var navColorNorm = color_utils.normalizeHexString(navColor);
-                var darkerColorEnd = color_utils.modifyLuminosityOfHexString(navColor, View.END_GRADIENT_LUMINOSITY);
+                    var appLink, appIcon, appLabel, appLogo;
+                    appLink = route.page(
+                        options.model.application.get('root'),
+                        options.model.application.get('locale') || '',
+                        options.model.application.get('app')
+                    );
 
-                var gradients = color_utils.generateGradientStyles(navColorNorm, darkerColorEnd);
+                    appIcon = route.appIcon(
+                        options.model.application.get('root'),
+                        options.model.application.get('locale') || '',
+                        options.model.application.get('owner'),
+                        options.model.application.get('app')
+                    );
 
-                for (var i=0;i<gradients.length;i++){
-                    this.$el.css('background-image', gradients[i]);
-                    // FIXME: ghetto hack for IE since it uses filter instead of bg-img
-                    this.$el.css('filter', gradients[i]);
+                    appLogo = route.appLogo(
+                        options.model.application.get('root'),
+                        options.model.application.get('locale') || '',
+                        options.model.application.get('owner'),
+                        options.model.application.get('app')
+                    );
+
+                    if(options.model.app && options.model.app.entry && options.model.app.entry.content && options.model.app.entry.content.get('label')){
+                        appLabel = options.model.app.entry.content.get('label') || '';
+                    }
+
+                    options.model.appNav.set({
+                        nav: data.nav,
+                        color: data.color,
+                        label: appLabel,
+                        icon: appIcon,
+                        link: appLink,
+                        logo: appLogo,
+                        searchView: data.searchView
+                        //defaultView: 'not implemented TODO'
+                    });
                 }
             }
-        },
-        {
-            END_GRADIENT_LUMINOSITY: 0.90,
-            createWithAppNavUrl: function(options){
-                var self = this;
-                options.model.application.on('change', function(appModel){
-                    var url = route.appNavUrl(appModel.get('root'), appModel.get('locale'), appModel.get('app'));
-                    $.ajax({
-                        url: url,
-                        dataType:'json'
-                    }).done(function(data){
-                        var appLink, appIcon, appLogo, reportRoute;
-                        appLink = route.page(
-                            options.model.application.get('root'),
-                            options.model.application.get('locale') || '',
-                            options.model.application.get('app')
-                        );
 
-                        appIcon = route.appIcon(
-                            options.model.application.get('root'),
-                            options.model.application.get('locale') || '',
-                            options.model.application.get('owner'),
-                            appModel.get('app')
-                        );
+            var app = options.model.application.get('app');
+            var owner = options.model.application.get('owner');
+            if(app && owner){
+                applicationDfd.resolve(app, owner);
+            }
 
-                        appLogo = route.appLogo(
-                            options.model.application.get('root'),
-                            options.model.application.get('locale') || '',
-                            options.model.application.get('owner'),
-                            appModel.get('app')
-                        );
-                       
-                        reportRoute = route.page(
-                            options.model.application.get('root'),
-                            options.model.application.get('locale') || '',
-                            options.model.application.get('app'),
-                            'report');
-                        
-                        options.model.appNav.set({
-                            nav: data.nav,
-                            color: data.color,
-                            label: data.label,
-                            icon: appIcon,
-                            logo: appLogo,
-                            link: appLink,
-                            defaultView: data.defaultView
-                            //searchView: 'not implemented TODO'
-                        });
-                    }).fail(function(){
-                        self.createWithBackbone(options);
-                    });
-                });
-            },
-            createWithBackbone: function(options){
-                var applicationDfd = $.Deferred();
-                var appNavDfd = $.Deferred();
-                var viewsDfd = $.Deferred();
-                var savedSearchesDfd = $.Deferred();
-                function updateNavData(){
-                    if(appNavDfd.state() === 'resolved' && viewsDfd.state() === 'resolved' && savedSearchesDfd.state() === 'resolved'){
-                        var data = appNavParser.parseNavModel(options.model.splunkDappNav, options.collection.views, options.collection.savedSearches, options.model.application.get('root'));
-
-                        var appLink, appIcon, appLabel, appLogo;
-                        appLink = route.page(
-                            options.model.application.get('root'),
-                            options.model.application.get('locale') || '',
-                            options.model.application.get('app')
-                        );
-
-                        appIcon = route.appIcon(
-                            options.model.application.get('root'),
-                            options.model.application.get('locale') || '',
-                            options.model.application.get('owner'),
-                            options.model.application.get('app')
-                        );
-
-                        appLogo = route.appLogo(
-                            options.model.application.get('root'),
-                            options.model.application.get('locale') || '',
-                            options.model.application.get('owner'),
-                            options.model.application.get('app')
-                        );
-
-                        if(options.model.app && options.model.app.entry && options.model.app.entry.content && options.model.app.entry.content.get('label')){
-                            appLabel = options.model.app.entry.content.get('label') || '';
-                        }
-
-                        options.model.appNav.set({
-                            nav: data.nav,
-                            color: data.color,
-                            label: appLabel,
-                            icon: appIcon,
-                            link: appLink,
-                            logo: appLogo,
-                            searchView: data.searchView
-                            //defaultView: 'not implemented TODO'
-                        });
-                    }
-                }
-
+            options.model.application.on('change', function(){
                 var app = options.model.application.get('app');
                 var owner = options.model.application.get('owner');
                 if(app && owner){
                     applicationDfd.resolve(app, owner);
                 }
+            });
 
-                options.model.application.on('change', function(){
-                    var app = options.model.application.get('app');
-                    var owner = options.model.application.get('owner');
-                    if(app && owner){
-                        applicationDfd.resolve(app, owner);
-                    }
+            if(!options.model.app){
+                options.model.app = new AppModel();
+                applicationDfd.done(function(app, owner){
+                    options.model.app.set({id:'apps/local/' + app});
+                    options.model.app.fetch({data: {app: app, owner: owner}});
                 });
+            }
 
-                if(!options.model.app){
-                    options.model.app = new AppModel();
-                    applicationDfd.done(function(app, owner){
-                        options.model.app.set({id:'apps/local/' + app});
-                        options.model.app.fetch({data: {app: app, owner: owner}});
-                    });
-                }
-
-                if(!options.collection.views){
-                    options.collection.views = new ViewsCollection();
-                    applicationDfd.done(function(app, owner){
-                        options.collection.views.fetch({data: {app: app, owner: owner, count: -1, digest: 1}});
-                    });
-                }
-
-                if(!options.collection.savedSearches){
-                    options.collection.savedSearches = new SavedSearchesCollection();
-                    applicationDfd.done(function(app, owner){
-                        options.collection.savedSearches.fetch({data: {app: app, owner: '-', search:'is_visible=1 AND disabled=0', count:-1}}); //TODO: _with_new=1?
-                    });
-                }
-
-                if(!options.model.splunkDappNav){
-                    options.model.splunkDappNav = new NavModel();
-                    applicationDfd.done(function(app, owner){
-                        options.model.splunkDappNav.fetch({data: {app: app, owner: owner}});
-                    });
-                }
-
-                options.collection.views.on('reset', function(){
-                    viewsDfd.resolve();
-                    updateNavData();
+            if(!options.collection.views){
+                options.collection.views = new ViewsCollection();
+                applicationDfd.done(function(app, owner){
+                    options.collection.views.fetch({data: {app: app, owner: owner, count: -1, digest: 1}});
                 });
+            }
 
-                options.collection.savedSearches.on('reset', function(){
-                    savedSearchesDfd.resolve();
-                    updateNavData();
+            if(!options.collection.savedSearches){
+                options.collection.savedSearches = new SavedSearchesCollection();
+                applicationDfd.done(function(app, owner){
+                    options.collection.savedSearches.fetch({data: {app: app, owner: '-', search:'is_visible=1 AND disabled=0', count:-1}}); //TODO: _with_new=1?
                 });
+            }
 
-                options.model.splunkDappNav.on('change', function(){
-                    appNavDfd.resolve();
-                    updateNavData();
+            if(!options.model.splunkDappNav){
+                options.model.splunkDappNav = new NavModel();
+                applicationDfd.done(function(app, owner){
+                    options.model.splunkDappNav.fetch({data: {app: app, owner: owner}});
                 });
+            }
 
-            },
-            create: function(options){
-                options = options || {};
-                options.collection = options.collection || {};
-                options.model = options.model || {};
+            options.collection.views.on('reset', function(){
+                viewsDfd.resolve();
+                updateNavData();
+            });
+
+            options.collection.savedSearches.on('reset', function(){
+                savedSearchesDfd.resolve();
+                updateNavData();
+            });
+
+            options.model.splunkDappNav.on('change', function(){
+                appNavDfd.resolve();
+                updateNavData();
+            });
+
+        },
+        create: function(options){
+            options = options || {};
+            options.collection = options.collection || {};
+            options.model = options.model || {};
+            if (options.model.appNav) {
+                this.createWithAppNavModel(options);
+            } else {
                 options.model.appNav = new (Backbone.Model.extend())();
-
                 if(options.appServerUrl){
                     this.createWithAppNavUrl(options);
                 }else{
                     this.createWithBackbone(options);
                 }
-
-                return new View(options);
             }
-        });
+            return new View(options);
+        }
+    });
     return View;
 });
 
-define('splunkjs/mvc/headerview',['require','exports','module','underscore','./mvc','./basesplunkview','views/shared/splunkbar/Master','views/shared/appbar/Master','models/Application','./utils','splunk.config'],function (require, exports, module) {
+define('splunkjs/mvc/headerview',['require','exports','module','underscore','jquery','./mvc','./basesplunkview','views/shared/splunkbar/Master','views/shared/appbar/Master','./sharedmodels','helpers/user_agent'],function (require, exports, module) {
     var _ = require("underscore"),
+        $ = require('jquery'),
         mvc = require('./mvc'),
         BaseSplunkView = require("./basesplunkview"),
         GlobalNav = require('views/shared/splunkbar/Master'),
         AppNav = require('views/shared/appbar/Master'),
-        ApplicationModel = require('models/Application'),
-        utils = require('./utils'),
-        splunkConfig = require('splunk.config');
+        sharedModels = require('./sharedmodels'),
+        userAgent = require('helpers/user_agent');
 
 
     var HeaderView = BaseSplunkView.extend({
@@ -2889,43 +2718,63 @@ define('splunkjs/mvc/headerview',['require','exports','module','underscore','./m
         className: 'splunk-header',
 
         options: {
-            appbar: true
+            appbar: true,
+            acceleratedAppNav: false
         },
 
         initialize: function() {
             this.configure();
-            var pageInfo = utils.getPageInfo();
-            var applicationModel = new ApplicationModel({
-                owner: splunkConfig.USERNAME
-            });
+            this.model = this.model || {};
+            this.model.application= sharedModels.get("app");
+            this.model.user= sharedModels.get("user");
+            this.model.appLocal= sharedModels.get("appLocal");
+            this.model.serverInfo= sharedModels.get("serverInfo");
 
-            this.globalNav = GlobalNav.create({
-                model: {
-                    application: applicationModel
-                }
-            });
+            var acceleratedAppNav = this.settings.get('acceleratedAppNav') && userAgent.isIE7();
+            this.collection = this.collection || {};
+            this.collection.appLocals = sharedModels.get("appLocals");
 
-            if(this.settings.get('appbar')){
-                this.appNav = AppNav.create({
+            this.dfd = $.when.apply($, [
+                this.model.application.dfd,
+                this.model.user.dfd,
+                this.model.appLocal.dfd,
+                this.model.serverInfo.dfd,
+                this.collection.appLocals.dfd
+            ]);
+
+            this.dfd.done(_.bind(function(){
+
+                this.globalNav = GlobalNav.create({
                     model: {
-                        application: applicationModel
+                        application: this.model.application,
+                        appLocal: this.model.appLocal,
+                        user: this.model.user,
+                        serverInfo: this.model.serverInfo
+                    },
+                    collection: {
+                        apps: this.collection.appLocals
                     }
                 });
-            }
 
-            applicationModel.set({
-                root: pageInfo.root,
-                locale: pageInfo.locale,
-                app: pageInfo.app,
-                page: pageInfo.page
-            });
+                if(this.settings.get('appbar')){
+                    this.appNav = AppNav.create({
+                        model: {
+                            application: this.model.application,
+                            app: this.model.appLocal
+                        },
+                        appServerUrl: acceleratedAppNav
+                    });
+                }
+            }, this));
         },
         render: function() {
-            this.$el.empty()
-                .append(this.globalNav.render().el);
-            if(this.settings.get('appbar')){
-                this.$el.append(this.appNav.render().el);
-            }
+            this.dfd.done(_.bind(function(){
+                this.$el.empty()
+                    .append(this.globalNav.render().el);
+                if(this.settings.get('appbar')){
+                    this.$el.append(this.appNav.render().el);
+                }
+            }, this));
             return this;
         }
     });

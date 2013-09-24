@@ -34,20 +34,28 @@ define('views/shared/SingleValue',
             getResultField: function(field) {
                 var columns = $.extend(true, [], this.model.searchResultsColumn.get('columns')),
                     fields  = this.getFieldNames();
-
                 _(columns).each(function(column, i) { column.push(fields[i]); });
-                fields = _(fields).filter(function(field) {
-                    return (field === '_time') || (field.charAt(0) != '_');
+                fields = _(fields).filter(function(_field) {
+                    return (_field === '_time') || (_field === '_raw') || (_field.charAt(0) != '_');
                 });
                 columns = _(columns).filter(function(column) {
                     return (_.indexOf(fields, column[column.length-1]) >= 0);
                 });
+                if(!field) {
+                    // If the result field is unspecified - use the first of the filtered fields
+                    field = fields[0];
+                    if (columns.length && columns[0].length){
+                        return columns[0][0];
+                    } else {
+                        return _('N/A').t();
+                    }
+                }
                 for (var i = 0; i < columns.length; i++) {
-                    if (columns[i][1]=== field){
+                    if (columns[i][columns[i].length - 1]===field){
                         return columns[i][0];
                     }
                 }
-                return (columns[0] && columns[0][0]) ? columns[0][0]: '';
+                return _('N/A').t();
             },
             // fields can either be a list of strings or a list of dictionaries each with a 'name' entry
             // depending on whether 'show_metadata' is enabled
@@ -91,7 +99,7 @@ define('views/shared/SingleValue',
                     linkView = this.model.state.get('display.visualizations.singlevalue.linkView'),
                     linkSearch = this.model.state.get('display.visualizations.singlevalue.linkSearch'),
                     link, url;
-                if(linkView) {
+                if(linkView && linkSearch) {
                     // For links like "/app/foo/bar" generate the absolute URL
                     if(linkView.charAt(0) === '/') {
                         url = splunkUtil.make_full_url(linkView, { q: linkSearch });
@@ -137,9 +145,8 @@ define('views/shared/SingleValue',
  );
 
 requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.addBuffer('splunkjs/css/single-value.css'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick;
-// 
-
-define('splunkjs/mvc/singleview',['require','exports','module','jquery','./mvc','./basesplunkview','./settings','views/shared/SingleValue','backbone','./utils','./messages','underscore','css!../css/single-value'],function(require, exports, module) {
+define('splunkjs/mvc/singleview',['require','exports','module','underscore','jquery','./mvc','./basesplunkview','./settings','views/shared/SingleValue','backbone','./utils','./messages','./tokenawaremodel','css!../css/single-value'],function(require, exports, module) {
+    var _ = require('underscore');
     var $ = require('jquery');
     var mvc = require("./mvc");
     var BaseSplunkView = require("./basesplunkview");
@@ -148,7 +155,7 @@ define('splunkjs/mvc/singleview',['require','exports','module','jquery','./mvc',
     var Backbone = require('backbone');
     var Utils = require('./utils');
     var Messages = require('./messages');
-    var _ = require('underscore');
+    var TokenAwareModel = require('./tokenawaremodel');
 
     require("css!../css/single-value");
 
@@ -162,15 +169,15 @@ define('splunkjs/mvc/singleview',['require','exports','module','jquery','./mvc',
             beforeLabel: "",
             afterLabel: "",
             field:"",
-            classField: ""
+            classField: "",
+            linkView: "search"
         },
         
         omitFromSettings: ['el', 'reportModel'],
 
         initialize: function() {
             this.configure();
-            mvc.enableDynamicTokens(this.settings);
-            this.model = this.options.reportModel || new Backbone.Model();
+            this.model = this.options.reportModel || TokenAwareModel._createReportModel();
             this.settings._sync = Utils.syncModels(this.settings, this.model, {
                 auto: true,
                 prefix: 'display.visualizations.singlevalue.',
@@ -184,8 +191,15 @@ define('splunkjs/mvc/singleview',['require','exports','module','jquery','./mvc',
             });
             var pageInfo = Utils.getPageInfo();
             this.model.application = new Backbone.Model({ root: pageInfo.root, locale: pageInfo.locale, app: pageInfo.app, page: pageInfo.page });
-            this.bindToComponent(this.options.managerid, this._onManagerChange, this);
+            this.bindToComponentSetting('managerid', this._onManagerChange, this);
             this.settings.on("change", this.render, this);
+            
+            // If we don't have a manager by this point, then we're going to
+            // kick the manager change machinery so that it does whatever is
+            // necessary when no manager is present.
+            if (!this.manager) {
+                this._onManagerChange(mvc.Components, null);
+            }
         },
 
         _onManagerChange: function(managers, manager) {
@@ -203,8 +217,13 @@ define('splunkjs/mvc/singleview',['require','exports','module','jquery','./mvc',
             this._clearResults();
 
             if (!manager) {
+                this._searchStatus = { state: "nomanager" };
+                this.render();
                 return;
             }
+            
+            // Clear any messages, since we have a new manager.
+            this._searchStatus = { state: "start" };
 
             this.manager = manager;
 
@@ -220,8 +239,13 @@ define('splunkjs/mvc/singleview',['require','exports','module','jquery','./mvc',
                 show_empty_fields: "True"
             });
             this.resultsModel.on("data", this._onDataUpdate, this);
+            this.resultsModel.on("error", this.onSearchError, this);
 
-            manager.replayLastSearchEvent(this);
+            var replayed = manager.replayLastSearchEvent(this);
+            
+            if (!replayed) {
+                this.render();
+            }
         },
 
         onSearchProgress: function(properties) {
@@ -237,19 +261,13 @@ define('splunkjs/mvc/singleview',['require','exports','module','jquery','./mvc',
         },
 
         onSearchError: function(message, err) {
-            var msg = message;
-            if(err && err.data && err.data.messages && err.data.messages.length) {
-                msg = _(err.data.messages).pluck('text').join('; ');
-            }
+            var msg = Messages.getSearchErrorMessage(err) || message;
             this._searchStatus = { state: "error", message: msg };
             this.render();
         },
 
         onSearchFailed: function(state) {
-            var msg = _('The search failed.').t();
-            if(state && state.content && state.content.messages) {
-                msg = _(state.content.messages).pluck('text').join('; ');
-            }
+            var msg = Messages.getSearchFailureMessage(state);
             this._searchStatus = { state: "error", message: msg };
             this.render();
         },
@@ -268,6 +286,12 @@ define('splunkjs/mvc/singleview',['require','exports','module','jquery','./mvc',
                 });
             } else {
                 this._clearResults();
+                // If there are no results, then we need to update our preview
+                // count. If the search is not done yet, this will simply get
+                // updated on the next progress/done event.
+                if (this._searchStatus) {
+                    this._searchStatus.previewCount = 0;
+                }
             }
             this.render();
         },
@@ -281,6 +305,12 @@ define('splunkjs/mvc/singleview',['require','exports','module','jquery','./mvc',
             var message = null;
             if(searchStatus) {
                 switch(searchStatus.state) {
+                    case "nomanager":
+                        message = "no-search";
+                        break;
+                    case "start":
+                        message = "empty";
+                        break;
                     case "running":
                         if(!haveResults) {
                             message = "waiting";
@@ -298,7 +328,7 @@ define('splunkjs/mvc/singleview',['require','exports','module','jquery','./mvc',
                         break;
                     case "error":
                         message = {
-                            level: "warning",
+                            level: "error",
                             icon: "warning-sign",
                             message: searchStatus.message
                         };
@@ -365,4 +395,4 @@ define('splunkjs/mvc/singleview',['require','exports','module','jquery','./mvc',
     return SingleView;
 });
 
-requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.setBuffer('/*!\n * Splunk shoestrap\n * import and override bootstrap vars & mixins\n */\n.clearfix {\n  *zoom: 1;\n}\n.clearfix:before,\n.clearfix:after {\n  display: table;\n  content: \"\";\n  line-height: 0;\n}\n.clearfix:after {\n  clear: both;\n}\n.hide-text {\n  font: 0/0 a;\n  color: transparent;\n  text-shadow: none;\n  background-color: transparent;\n  border: 0;\n}\n.input-block-level {\n  display: block;\n  width: 100%;\n  min-height: 26px;\n  -webkit-box-sizing: border-box;\n  -moz-box-sizing: border-box;\n  box-sizing: border-box;\n}\n.ie7-force-layout {\n  *min-width: 0;\n}\n/* component for displaying a single value with some annotations\n\n\t<div class=\"single-value shared-singlevalue\" data-view=\"views/shared/SingleValue\">\n\t    <span class=\"before-label\">before</span>\n\t    <span class=\"single-result\">Single Value Result</span>\n\t    <span class=\"after-label\">after</span>\n\t    <br>\n\t    <span class=\"under-label\">under</span>\n\t</div>\n\n*/\n.single-value {\n  margin: 20px;\n  display: inline-block;\n  *display: inline;\n  /* IE7 inline-block hack */\n\n  *zoom: 1;\n  text-align: center;\n}\n.single-value .single-result {\n  font-size: 24px;\n  font-weight: bold;\n  word-wrap: break-word;\n}\n.single-value .under-label {\n  text-transform: uppercase;\n  color: #999;\n  font-size: 11px;\n}\n.single-value .severe {\n  color: #ff1f24;\n}\n.single-value .high {\n  color: #ff7e00;\n}\n.single-value .elevated {\n  color: #ffb800;\n}\n.single-value .guarded {\n  color: #4da6df;\n}\n.single-value .low {\n  color: #00b932;\n}\n.single-value .None {\n  color: #999;\n}\n.single-value.severe .single-result {\n  color: #ff1f24;\n}\n.single-value.high .single-result {\n  color: #ff7e00;\n}\n.single-value.elevated .single-result {\n  color: #ffb800;\n}\n.single-value.guarded .single-result {\n  color: #4da6df;\n}\n.single-value.low .single-result {\n  color: #00b932;\n}\n.single-value.None .single-result {\n  color: #999;\n}\n'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick; 
+requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.setBuffer('.clearfix{*zoom:1;}.clearfix:before,.clearfix:after{display:table;content:\"\";line-height:0;}\n.clearfix:after{clear:both;}\n.hide-text{font:0/0 a;color:transparent;text-shadow:none;background-color:transparent;border:0;}\n.input-block-level{display:block;width:100%;min-height:26px;-webkit-box-sizing:border-box;-moz-box-sizing:border-box;box-sizing:border-box;}\n.ie7-force-layout{*min-width:0;}\n.single-value{margin:20px;display:inline-block;*display:inline;*zoom:1;text-align:center;}.single-value .single-result{font-size:24px;font-weight:bold;word-wrap:break-word;}\n.single-value .before-label{margin-right:1em;}\n.single-value .after-label{margin-left:1em;}\n.single-value .under-label{text-transform:uppercase;color:#999999;font-size:11px;}\n.single-value .severe,.single-value.severe .single-result{color:#d85d3c;}\n.single-value .high,.single-value.high .single-result{color:#f7902b;}\n.single-value .elevated,.single-value.elevated .single-result{color:#fac51c;}\n.single-value .guarded,.single-value.guarded .single-result{color:#6ab7c7;}\n.single-value .low,.single-value.low .single-result{color:#65a637;}\n.single-value .None,.single-value.None .single-result{color:#999999;}\n'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick; 

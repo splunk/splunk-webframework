@@ -12,11 +12,21 @@ define('splunkjs/mvc/progressbarview',['require','exports','module','jquery','./
         moduleId: module.id,
         
         className: 'splunk-progressbar',
+        configure: function() {
+            // Silently rewrite the deprecated 'manager' setting if present
+            if (this.options.manager) {
+                this.options.managerid = this.options.manager;
+            }
+            
+            BaseSplunkView.prototype.configure.apply(this, arguments);
+        },
         initialize: function() {
+            this.configure();
+            
             if(!this.children) {
                 this.children = {};
             }
-            this.bindToComponent(this.options.manager, this.onManagerChange, this);
+            this.bindToComponentSetting('managerid', this.onManagerChange, this);
             this.model = { jobState: new Backbone.Model(), messages: new Backbone.Model() };
             var debouncedRender = _.debounce(this.render);
             this.model.jobState.on('change', debouncedRender, this);
@@ -47,6 +57,10 @@ define('splunkjs/mvc/progressbarview',['require','exports','module','jquery','./
             var content = properties.content || {};
             var dispatchState = content.dispatchState;
 
+            if(!content.isRealTimeSearch){
+                this.model.jobState.set({'notRealTime': true});  
+            }
+
             if(content.messages) {
                 var errMsgs = _(content.messages).chain().where({ 'type': 'ERROR' }).pluck('text').value();
                 var warnMsgs = _(content.messages).chain().where({ 'type': 'WARN' }).pluck('text').value();
@@ -64,21 +78,9 @@ define('splunkjs/mvc/progressbarview',['require','exports','module','jquery','./
                 if(_.isNumber(progress) && !_.isNaN(progress)) {
                     pct = String(Math.floor(progress * 100));
                 }
-                var status = _("Loading").t();
-                if(content.isRealTimeSearch) {
-                    if(content.doneProgress === 1) {
-                        msg = '';
-                    } else {
-                        if(pct !== undefined) {
-                            [status, pct + '%'].join(' - ');
-                        } else {
-                            msg = status;
-                        }
-                    }
-                } else {
-                    active = true;
-                    msg = [status, ' - ', pct + '%'].join('');
-                }
+                var status = _("Loading").t();  
+                active = true;
+                msg = [status, ' - ', pct + '%'].join('');
 
                 if(content.dispatchState === 'PAUSED') {
                     msg = _("Paused").t();
@@ -88,15 +90,14 @@ define('splunkjs/mvc/progressbarview',['require','exports','module','jquery','./
                 }
 
                 if(content.dispatchState === 'DONE') {
-                    msg = _("Done").t();
-                    _.delay(_.bind(this.model.jobState.clear, this.model.jobState), 800);
+                    this.model.jobState.clear();
+                } else {
+                    this.model.jobState.set({
+                        text: msg,
+                        progress: pct,
+                        active: active
+                    });
                 }
-
-                this.model.jobState.set({
-                    text: msg,
-                    progress: pct,
-                    active: active
-                });
             }
         },
         onSearchFail: function() {
@@ -106,17 +107,19 @@ define('splunkjs/mvc/progressbarview',['require','exports','module','jquery','./
             this.model.jobState.clear();
         },
         render: function() {
-            if(this.model.jobState.has('progress')) {
+            if(this.model.jobState.has('notRealTime') && this.model.jobState.has('progress')) {
                 if(!this.$progress) {
                     this.$progress = $('<div class="progress-bar"><div class="progress-msg"></div>' +
-                            '<div class="progress progress-striped">' +
+                            '<div class="progress">' +
                             '<div class="bar" style="width: 0%"></div>' +
                             '</div>' +
                             '</div>').appendTo(this.el);
+
+                    var img = window.devicePixelRatio > 1 ? '/static/img/splunk/progress@2x.gif' : '/static/img/splunk/progress.gif';
+                    $('<img/>').attr('src', SplunkUtil.make_url(img)).appendTo(this.$progress.find('.bar'));
                 }
                 this.$('.progress-msg').text(this.model.jobState.get('text'));
-                this.$('.progress')[this.model.jobState.get('active') ? 'addClass' : 'removeClass']('active')
-                        .find('.bar').width((this.model.jobState.get('progress') || 0) + '%');
+                this.$('.progress').find('.bar').width((this.model.jobState.get('progress') || 0) + '%');
 
             } else {
                 if(this.$progress) {

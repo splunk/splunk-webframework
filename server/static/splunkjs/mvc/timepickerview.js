@@ -91,7 +91,7 @@ function(
             return noEarliest && noLatest;
         },
         listElementPartial: _.template('\
-            <li><a href="#" data-earliest="<%- model.entry.content.get("earliest_time") || "" %>" data-latest="<%- model.entry.content.get("latest_time") || "" %>"><%- model.entry.content.get("label") %></a></li>\
+            <li><a href="#" data-earliest="<%- model.entry.content.get("earliest_time") || "" %>" data-latest="<%- model.entry.content.get("latest_time") || "" %>"><%- _(model.entry.content.get("label")).t() %></a></li>\
         '),
         template: '\
             <% if (realTimePresets && realTimePresets.length) { %>\
@@ -629,7 +629,7 @@ define('views/shared/timerangepicker/dialog/RealTime',
             fetchEarliestTime: function() {
                 var time = this.getEarliestTime(true),
                     id = time_utils.stripRTSafe(this.model.earliestTimeParser.id, false);
-                
+
                 if (time && (time !== id)) {
                     this.model.earliestTimeParser.fetch({
                         data : {
@@ -695,7 +695,7 @@ define('views/shared/timerangepicker/dialog/RealTime',
                 var template = _.template(this.template, {
                     _: _,
                     cid: this.cid,
-                    time: ""
+                    time: this.model.workingRange.get('realtime_earliest_value') || ""
                 });
                 this.$el.html(template);
 
@@ -1674,7 +1674,7 @@ function(
                 'focusout input[type="text"]': 'update_hint'
             },
             update_hint: function(event) {
-                var time = time_utils.stripRTSafe((this.$('input').val() || this.options.blankValue), this.options.isLatest),
+                var time = time_utils.stripRTSafe((this.$('input').val() || this.options.blankValue), this.options.isLatest) || 'now',
                     id = time_utils.stripRTSafe(this.model.timeParser.id, this.options.isLatest);
 
                 if (time !== id) {
@@ -1783,7 +1783,7 @@ define('views/shared/timerangepicker/dialog/advanced/Master',
                         timeParser: this.model.latestTimeParser
                     },
                     label: _("Latest").t(),
-                    blankValue: 'now',
+                    blankValue: '',
                     modelAttribute: "latest",
                     isLatest: true
                 });
@@ -1828,7 +1828,7 @@ define('views/shared/timerangepicker/dialog/advanced/Master',
 
                     var that = this,
                         earliest = this.children.earliestTimeInput.$('input').val() || '0',
-                        latest = this.children.latestTimeInput.$('input').val() || 'now';
+                        latest = this.children.latestTimeInput.$('input').val() || '';
 
                     this.disableApply();
                     
@@ -1840,6 +1840,8 @@ define('views/shared/timerangepicker/dialog/advanced/Master',
                             {
                                 success: function(model) {
                                     that.enableApply();
+                                    var latest_date = model.get('latest_date'),
+                                        latest_js_date = latest_date ? Date(latest_date.getTime()) : latest_date;
                                     that.model.range.set({
                                         'earliest': model.get('earliest'),
                                         'latest': model.get('latest'),
@@ -1848,7 +1850,7 @@ define('views/shared/timerangepicker/dialog/advanced/Master',
                                         'earliest_iso': model.get('earliest_iso'),
                                         'latest_iso': model.get('latest_iso'),
                                         'earliest_date': new Date(model.get('earliest_date').getTime()),
-                                        'latest_date': new Date(model.get('latest_date').getTime())
+                                        'latest_date': latest_js_date
                                     });
                                     that.model.range.trigger("applied");
                                 },
@@ -1873,10 +1875,7 @@ define('views/shared/timerangepicker/dialog/advanced/Master',
                     docRoute = route.docHelp(
                         this.model.application.get("root"),
                         this.model.application.get("locale"),
-                        'learnmore.timerange.picker',
-                        this.model.application.get("app"),
-                        this.model.appLocal.entry.content.get('version'),
-                        this.model.appLocal.appAllowsDisable()
+                        'learnmore.timerange.picker'
                     );
                 } else {
                     console.warn("The timerangepicker advanced view needs the AppLocal and Application model passed to it");
@@ -1901,115 +1900,6 @@ define('views/shared/timerangepicker/dialog/advanced/Master',
 }
 );
 
-/**
- *   views/shared/delegates/Accordion
- *
- *   Desc:
- *     This class applies accordion behaviors.
- *     Default markup is based on Twitter Bootstrap's Collapse
- *     http://twitter.github.com/bootstrap/
- *
- *     @param {Object} (Optional) options An optional object literal having one or more settings.
- *
- *    Usage:
- *       var p = new Popdown({options})
- *
- *    Options:
- *        el (required): The event delegate.
- *        group: jQuery selector for the toggle and body wrapper ".accordion-group".
- *        toggle: jQuery selector for the accordion group's toggle. Defaults to ".accordion-toggle".
- *        body: jQuery selector for the accordion group's body. Defaults to ".accordion-body".
- *        default: jQuery selector or object for the default group. Defaults to ".accordion-group:first-child".
- *
- *    Methods:
- *        show: show a panel. Parameters are the group, which can be a selector or jQuery object, and a boolean to enable or disable animation.
- */
-
-
-define('views/shared/delegates/Accordion',[
-    'jquery',
-    'underscore',
-    'views/shared/delegates/Base'
-],function(
-    $,
-    _,
-    DelegateBase
-){
-    return DelegateBase.extend({
-        initialize: function(){
-            var defaults = {
-                group: ".accordion-group",
-                toggle: ".accordion-toggle",
-                body: ".accordion-body",
-                defaultGroup: ".accordion-group:first-child",
-                icon: ".icon-accordion-toggle",
-                inactiveIconClass: "icon-triangle-right-small",
-                activeIconClass: "icon-triangle-down-small",
-                activeClass: "active",
-                speed: 300
-            };
-
-            _.defaults(this.options, defaults);
-
-            //setup
-            this.$(this.options.body).hide();
-            this.$(this.options.icon).addClass(this.options.inactiveIconClass);
-            
-            //show the default group all
-            this.show(this.$(this.options.defaultGroup), false);
-        },
-        events: {
-            'click .accordion-toggle': 'toggle'
-        },
-        toggle: function (e) {
-            e.preventDefault();      
-            var $group = $(e.currentTarget).closest(this.options.group);
-            
-            //if the group is already active, do nothing.
-            if ($group.hasClass(this.options.activeClass)) {
-                return;
-            }
-            
-            this.trigger('toggle'); 
-            this.show($group, true);
-            this.trigger('toggled');
-        },
-        show: function (group, animate) {
-            var that = this,
-                $newGroup = $(group),
-                $activeGroup = this.$(this.options.group + '.' + this.options.activeClass),
-                showComplete = function () {
-                  that.trigger('shown');
-                },
-                hideComplete = function () {
-                  that.trigger('hidden');
-                };
-                
-            //ignore if the item is already active.
-            this.trigger('show');
-            this.trigger('hide');
-            
-            //Swap the active classes.
-            $activeGroup.removeClass(this.options.activeClass);
-            $newGroup.addClass(this.options.activeClass);
-            
-            //Swap the icon classes
-            $activeGroup.find(this.options.icon).addClass(this.options.inactiveIconClass).removeClass(this.options.activeIconClass);
-            $newGroup.find(this.options.icon).addClass(this.options.activeIconClass).removeClass(this.options.inactiveIconClass);
-            
-            //Show hide the body
-            if (animate){
-                $activeGroup.find(this.options.body).slideUp({duration:this.options.speed, queue: false, complete:hideComplete});
-                $newGroup.find(this.options.body).slideDown({duration:this.options.speed, queue: false, complete:showComplete});
-            } else {
-                $activeGroup.find(this.options.body).hide({duration:0, queue: false, complete:hideComplete});
-                $newGroup.find(this.options.body).show({duration:0, queue: false, complete:showComplete});
-            }
-            
-        }
-
-    });
-});
 define('views/shared/timerangepicker/dialog/Master',[
         'jquery',
         'underscore',
@@ -2148,6 +2038,9 @@ define('views/shared/timerangepicker/dialog/Master',[
                 this.renderedDfd.resolve();
                 return this;
             },
+            onShown: function() {
+                this.$('.accordion-group.active a.accordion-toggle').focus();
+            },
             template: '\
                 <% _.each(panels, function(panel, key) { %> \
                 <div class="accordion-group" id="<%- key + "_" + cid %>">\
@@ -2275,7 +2168,7 @@ define('views/shared/timerangepicker/Master',
             },
             setLabel: function() {
                 var timeLabel = this.model.timeRange.generateLabel(this.collection || new SplunkDsBaseV2());
-                this.$el.children('a').find(".time-label").text(timeLabel);
+                this.$el.children('a').find(".time-label").text(_(timeLabel).t());
             },
             render: function() {
                 this.$el.html(this.compiledTemplate({
@@ -2298,10 +2191,12 @@ define('views/shared/timerangepicker/Master',
                 
                 this.children.popdown.on('shown', function() {
                     if (this.children.dialog.$(".accordion-group.active").length){
+                        this.children.dialog.onShown();
                         return;
                     }
                     var timePanel = "presets";
                     this.children.dialog.children[timePanel].$el.closest(".accordion-group").find(".accordion-toggle").first().click();
+                    this.children.dialog.onShown();
                 }, this);
                                 
                 this.setLabel();
@@ -2318,125 +2213,37 @@ define('views/shared/timerangepicker/Master',
     }
 );
 
-define('splunkjs/mvc/sharedmodels',['require','exports','module','jquery','underscore','models/Application','models/services/AppLocal','models/services/authentication/User','collections/services/data/ui/Times','./utils','splunk.config','util/splunkd_utils'],function(require, exports, module) {    
-    var $ = require('jquery');
-    var _ = require('underscore');
-    var AppModel = require('models/Application');
-    var AppLocalModel = require('models/services/AppLocal');
-    var UserModel = require('models/services/authentication/User');
-    var TimeRangesCollection = require('collections/services/data/ui/Times');
-    var utils = require('./utils');
-    var splunkConfig = require('splunk.config');
-    var splunkd_utils = require('util/splunkd_utils');
-    
-    var pageInfo = utils.getPageInfo();
-    
-    // The format for this object is:
-    //  model name:
-    //      model: an instance of the model
-    //      fetch: a function with no arguments to use the above model and call
-    //          'fetch' on it, storing the returned deferred on the model and returning
-    //          that deferred. If the model does not need a fetch, just have a
-    //          function that returns a deferred.
-    var _STORAGE = {
-        appLocal: {
-            model: new AppLocalModel(),
-            fetch: _.memoize(function() {
-                var appModel = _STORAGE['app'].model;
-                var model = _STORAGE['appLocal'].model;
-                var dfd = model.dfd = model.fetch({
-                    url: splunkd_utils.fullpath(model.url + "/" + appModel.get("app")),
-                    data: {
-                        app: appModel.get("app"),
-                        owner: appModel.get("owner")
-                    }
-                });
-                
-                model.dfd = dfd;
-                return dfd;
-            })
-        },
-        user: {
-            model: new UserModel(),
-            fetch: _.memoize(function() {
-                var appModel = _STORAGE['app'].model;
-                var model = _STORAGE['user'].model;
-                var dfd = model.dfd = model.fetch({
-                    url: splunkd_utils.fullpath(model.url + "/" + appModel.get("owner")),
-                    data: {
-                        app: appModel.get("app"),
-                        owner: appModel.get("owner")
-                    }
-                });
-                
-                model.dfd = dfd;
-                return dfd;
-            })
-        },
-        times: {
-            model: new TimeRangesCollection(),
-            fetch: _.memoize(function() {
-                var appModel = _STORAGE['app'].model;
-                var model = _STORAGE['times'].model;
-                var dfd = model.dfd = model.fetch({
-                    data: {
-                        app: appModel.get("app"),
-                        owner: appModel.get("owner")
-                    }
-                });
-                
-                return dfd;
-            })
-        },
-        app: {
-            model: new AppModel({
-                owner: splunkConfig.USERNAME,
-                locale: pageInfo.locale,
-                app: pageInfo.app,
-                page: pageInfo.page
-            }),
-            fetch: function() { return $.Deferred().resolve(_STORAGE['app'].model); }
-        }
-    };
-    
-    return {
-        get: function(name) {
-            if (!_STORAGE.hasOwnProperty(name)) {
-                throw new Error("There is no shared model '" + name + "'");
-            }
-            
-            var container = _STORAGE[name];
-            container.fetch();
-            
-            return container.model;
-        }
-    };
-});
 requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.addBuffer('splunkjs/css/timerange-picker.css'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick;
-define('splunkjs/mvc/timepickerview',['require','exports','module','underscore','./mvc','backbone','./basesplunkview','views/shared/timerangepicker/Master','models/TimeRange','./utils','splunk.config','./sharedmodels','css!../css/timerange-picker'],function(require, exports, module) {
+define('splunkjs/mvc/timerangeview',['require','exports','module','underscore','./mvc','backbone','./basesplunkview','util/console','views/shared/timerangepicker/Master','models/TimeRange','./tokenutils','./utils','splunk.config','./sharedmodels','css!../css/timerange-picker'],function(require, exports, module) {
     var _ = require("underscore");
     var mvc = require('./mvc');
     var Backbone = require("backbone");
     var BaseSplunkView = require("./basesplunkview");
+    var console = require('util/console');
     var InternalTimeRangePicker = require('views/shared/timerangepicker/Master');
     var TimeRangeModel = require('models/TimeRange');
+    var TokenUtils = require('./tokenutils');
     var utils = require('./utils'), SplunkConfig = require('splunk.config');
     var sharedModels = require('./sharedmodels');
 
     require("css!../css/timerange-picker");
     
-    var TimePickerView = BaseSplunkView.extend(
+    // DOC: Both the 'timepicker' field and setting are private.
+    var TimeRangeView = BaseSplunkView.extend(
         // Instance
         {
             moduleId: module.id,
             
-            className: "splunk-timepicker",
+            className: "splunk-timerange",
             
             options: {
                 'default': undefined,
                 managerid: null,
-                earliest_time: '',
-                latest_time: '',
+                earliest_time: undefined,
+                latest_time: undefined,
+                // Name of preset (ex: "Last 24 hours") that specifies the
+                // default value of this time picker. Overrides 'default' if
+                // both are present.
                 preset: undefined,
                 value: undefined
             },
@@ -2445,27 +2252,21 @@ define('splunkjs/mvc/timepickerview',['require','exports','module','underscore',
                 var that = this;
                 
                 this.configure();
-                this.settings.enablePush("value");
+                this.settings.enablePush('value');
+                this.settings.enablePush('earliest_time');
+                this.settings.enablePush('latest_time');
                 
-                // Initialize value with default, if provided
-                var defaultValue = this.settings.get("default");
-                if (defaultValue !== undefined &&
-                    this.settings.get("value") === undefined)
-                {
-                    this.settings.set("value", defaultValue);
-                }
+                this._initializeValue();
                 
-                var initialValue = this.settings.get("value");
-                if (initialValue === undefined) {
-                    initialValue = {
-                        'earliest_time': this.settings.get("earliest_time"),
-                        'latest_time': this.settings.get("latest_time")
-                    };
-                }
-                
+                // Initialize view state
+                var initialValue = this.settings.get('value');
                 this._state = new Backbone.Model({
-                    'dispatch.earliest_time': initialValue['earliest_time'],
-                    'dispatch.latest_time': initialValue['latest_time']
+                    'dispatch.earliest_time': (initialValue !== undefined)
+                        ? initialValue['earliest_time']
+                        : '',
+                    'dispatch.latest_time': (initialValue !== undefined)
+                        ? initialValue['latest_time']
+                        : ''
                 });
                 
                 // Get the shared models
@@ -2487,8 +2288,8 @@ define('splunkjs/mvc/timepickerview',['require','exports','module','underscore',
                     else {                  
                         var timeRangeModel = new TimeRangeModel();
                         timeRangeModel.save({
-                            'earliest': that.settings.get("earliest_time"),
-                            'latest': that.settings.get("latest_time")
+                            'earliest': that._state.get('dispatch.earliest_time'),
+                            'latest': that._state.get('dispatch.latest_time')
                         });
                         
                         that.timepicker = new InternalTimeRangePicker({
@@ -2524,11 +2325,116 @@ define('splunkjs/mvc/timepickerview',['require','exports','module','underscore',
                 });
                 
                 // Update model if view changes
-                this.on("change", function(value) {
-                    that.settings.set("value", value);
+                this.on("change", function() {
+                    that.settings.set("value", that._getTimeRange());
                 });
                 
-                this.bindToComponent(this.settings.get("managerid"), this._onManagerChange, this);
+                // Update the default if it changes
+                this.settings.on("change:default", this._onDefaultChange, this);
+                
+                this.bindToComponentSetting('managerid', this._onManagerChange, this);
+                
+                // Initialize value to preset (asynchronously) if no other
+                // initial value was determined
+                if (this.settings.get('value') === undefined) {
+                    that._onTimePresetUpdate();
+                }
+            },
+            
+            _initializeValue: function() {
+                var that = this;
+                
+                // Reconcile initial {value, earliest_time, latest_time}
+                var initialValue = this.settings.get('value');
+                if (initialValue !== undefined) {
+                    this.settings.set({
+                        'earliest_time': initialValue['earliest_time'],
+                        'latest_time': initialValue['latest_time']
+                    });
+                } else if (this.settings.get('earliest_time') !== undefined ||
+                           this.settings.get('latest_time') !== undefined)
+                {
+                    this.settings.set('value', {
+                        'earliest_time': this.settings.get('earliest_time'),
+                        'latest_time': this.settings.get('latest_time')
+                    });
+                } else {
+                    // NOTE: This should be a no-op, but I'm just being explicit
+                    this.settings.set({
+                        'value': undefined,
+                        'earliest_time': undefined,
+                        'latest_time': undefined
+                    });
+                }
+                
+                // Keep {value, earliest_time, latest_time} in sync
+                this.settings.on("change:value", function(model, value, options) {
+                    if (value) {
+                        that.settings.set({
+                            "earliest_time": value.earliest_time,
+                            "latest_time": value.latest_time
+                        });
+                    }
+                });
+                
+                // These values can be pushed in two separate events when they
+                // are bound to tokens. As such, we debounce so that we send
+                // only a single upstream event.
+                this.settings.on('change:earliest_time change:latest_time', _.debounce(function() {
+                    var newValue = _.clone(that.settings.get('value'));
+                    newValue.earliest_time = that.settings.get('earliest_time');
+                    newValue.latest_time = that.settings.get('latest_time');
+                    that.settings.set("value", newValue);
+                }), this);
+                
+                // If value is bound to $token$, automatically bind
+                // {earliest_time, latest_time} to derived tokens as a
+                // convenience unless they are already bound to a
+                // non-literal template
+                if (TokenUtils.isToken(this.settings.get('value', {tokens: true}))) {
+                    var token = TokenUtils.getTokens(
+                        this.settings.get('value', {tokens: true}))[0];
+                    
+                    var settingIsLiteralOrUndefined = function(settingName) {
+                        return (
+                            that.settings.get(settingName, {tokens: true}) ===
+                            that.settings.get(settingName, {tokens: false})
+                        );
+                    };
+                    
+                    // NOTE: This will automatically propagate any preexisting
+                    //       literal values to the new tokens that are set here.
+                    if (settingIsLiteralOrUndefined('earliest_time')) {
+                        this.settings.set(
+                            'earliest_time',
+                            '$' + token.namespace + ':' + token.name + '.earliest_time$',
+                            {tokens: true});
+                    }
+                    if (settingIsLiteralOrUndefined('latest_time')) {
+                        this.settings.set(
+                            'latest_time',
+                            '$' + token.namespace + ':' + token.name + '.latest_time$',
+                            {tokens: true});
+                    }
+                }
+                
+                // If value is still undefined, use a default if available
+                if (this.settings.get('value') === undefined) {
+                    this.settings.set('value', this.settings.get('default'));
+                }
+            },
+            
+            _onDefaultChange: function(model, value, options) {
+                // Initialize value with default, if provided
+                var oldDefaultValue = this.settings.previous("default");
+                var defaultValue = this.settings.get("default");
+                var currentValue = this.settings.get('value');
+                
+                if (defaultValue !== undefined &&
+                    (_.isEqual(currentValue, oldDefaultValue) || currentValue === undefined))
+                {
+                    this.settings.set('value', defaultValue);
+                }
             },
             
             _onTimePresetUpdate: function() {
@@ -2536,6 +2442,8 @@ define('splunkjs/mvc/timepickerview',['require','exports','module','underscore',
                 if (!preset) {
                     return;
                 }
+                
+                this._presetInFlightCancelled = false;
                 
                 // We can only look at the times collection when it has finished
                 // fetching
@@ -2545,14 +2453,22 @@ define('splunkjs/mvc/timepickerview',['require','exports','module','underscore',
                         return model.entry.content.get("label") === preset;
                     });
                     
-                    if (!timeModel) {
-                        return;
+                    if (timeModel) {
+                        // Don't apply the preset if an intervening value change occurred
+                        if (!that._presetInFlightCancelled) {
+                            that.val({
+                                earliest_time: timeModel.entry.content.get('earliest_time'),
+                                latest_time: timeModel.entry.content.get('latest_time')
+                            });
+                        }
+                    } else {
+                        console.warn('Could not find matching preset "' + preset + '" for time range view.');
+                        that.val({
+                            // All time
+                            earliest_time: "0",
+                            latest_time: "now"
+                        });
                     }
-                    
-                    that.val({
-                        earliest_time: timeModel.entry.content.get('earliest_time'),
-                        latest_time: timeModel.entry.content.get('latest_time')
-                    });
                 });
             },
             
@@ -2598,30 +2514,33 @@ define('splunkjs/mvc/timepickerview',['require','exports','module','underscore',
                 $.when(this._pickerDfd).done(function() {
                     that.timepicker.render();
                     that.$el.append(that.timepicker.el);
-                    
-                    // Ensure we have the right time preset set
-                    that._onTimePresetUpdate();
                 });
-                                
+                
                 return this;
             },
             
             val: function(newValue) {
-                if (newValue !== undefined) {
-                    var oldValue = this.val();
-                    
-                    this._setTimeRange(newValue);
-                    var realNewValue = this.val();
-                    
-                    // Trigger change event manually since programmatic DOM
-                    // manipulations don't trigger events automatically.
-                    if (!_.isEqual(realNewValue, oldValue)) {
-                        this.trigger('change', realNewValue);
-                    }
-                }
-                else {
+                if (arguments.length === 0) {
                     return this._getTimeRange();
                 }
+                newValue = newValue || {earliest_time: undefined, latest_time: undefined};
+                
+                var oldValue = this.val();
+                
+                this._setTimeRange(newValue);
+                var realNewValue = this.val();
+                
+                // Trigger change event manually since programmatic DOM
+                // manipulations don't trigger events automatically.
+                if (!_.isEqual(realNewValue, oldValue)) {
+                    this.trigger('change', realNewValue, this);
+                }
+                
+                // If there is an asynchronous preset change
+                // in progress, abort it.
+                this._presetInFlightCancelled = true;
+                
+                return this._getTimeRange();
             },
             
             _setTimeRange: function(value) {
@@ -2636,11 +2555,34 @@ define('splunkjs/mvc/timepickerview',['require','exports','module','underscore',
                     "earliest_time": this._state.get("dispatch.earliest_time"),
                     "latest_time": this._state.get("dispatch.latest_time")
                 };
+            },
+            
+            remove: function() {
+                var that = this;
+            
+                // We can't remove the timepicker until it is created
+                $.when(this._pickerDfd).done(function() {
+                    that.timepicker.remove();
+                });
+                
+                mvc.Components.revokeInstance(this.id);
+                BaseSplunkView.prototype.remove.apply(this, arguments);
             }
         }
     );
     
-    return TimePickerView;
+    return TimeRangeView;
 });
 
-requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.setBuffer('/*!\n * Splunk shoestrap\n * import and override bootstrap vars & mixins\n */\n.clearfix {\n  *zoom: 1;\n}\n.clearfix:before,\n.clearfix:after {\n  display: table;\n  content: \"\";\n  line-height: 0;\n}\n.clearfix:after {\n  clear: both;\n}\n.hide-text {\n  font: 0/0 a;\n  color: transparent;\n  text-shadow: none;\n  background-color: transparent;\n  border: 0;\n}\n.input-block-level {\n  display: block;\n  width: 100%;\n  min-height: 26px;\n  -webkit-box-sizing: border-box;\n  -moz-box-sizing: border-box;\n  box-sizing: border-box;\n}\n.ie7-force-layout {\n  *min-width: 0;\n}\n/* time range picker dialog\n\n\tFIXME: markup missing\n\n*/\n.shared-timerangepicker-dialog {\n  width: 640px;\n}\n.shared-timerangepicker-dialog td {\n  vertical-align: top;\n}\n.timeRangeMenu,\n.trpCustomDateTime {\n  display: none;\n}\n.help-block-timestamp {\n  min-height: 1em;\n  line-height: 1em;\n  padding: 3px;\n  margin-top: 5px;\n  margin-right: 15px;\n  border-radius: 3px;\n  background-color: #eeeeee;\n}\n.timerangepicker-range-type {\n  margin-right: 25px;\n  float: left;\n}\n.timerangepicker-range-type .btn {\n  min-width: 65px;\n}\ninput.timerangepicker-earliest-date {\n  margin-right: 0;\n}\ninput.timerangepicker-real-time-earliest-time,\ninput.timerangepicker-relative-earliest-time {\n  margin-right: 0;\n}\n.timerangepicker-realtime_range_type,\n.timerangepicker-relative_range_type {\n  display: inline-block;\n  vertical-align: middle;\n  margin-right: 25px;\n}\n.shared-timerangepicker-dialog-daterange-betweendates > tr:first-child > td {\n  padding-bottom: 0;\n}\n.shared-timerangepicker-dialog-daterange-betweendates > tr:first-child > td > .alerts {\n  margin-top: 0;\n}\n.form-inline .radio {\n  line-height: 18px;\n  padding-top: 5px;\n  padding-bottom: 5px;\n  display: block;\n}\n.form-inline .radio + .radio {\n  padding-top: 0;\n}\ninput.date-before-time {\n  margin-right: 5px;\n}\n.advanced-time-documentation {\n  clear: left;\n  margin: 10px 0 0 55px;\n  display: block;\n  float: left;\n}\n/* Presets */\n.presets-group {\n  float: left;\n  width: 130px;\n}\n.presets-group + .presets-group {\n  margin-left: 10px;\n}\n.presets-divider-wrap {\n  float: left;\n  margin: 10px;\n}\n.presets-divider {\n  position: absolute;\n  top: 10px;\n  bottom: 10px;\n  border-right: 1px solid #cccccc;\n}\n.presets-group li {\n  color: #999999;\n  padding-left: 20px;\n  text-indent: -20px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick; 
+define('splunkjs/mvc/timepickerview',['require','util/console','./timerangeview'],function(require) {
+    var console = require('util/console');
+    
+    console.warn(
+        '%s is deprecated. Please require %s instead.',
+        'splunkjs/mvc/simpleform/timepickerview',
+        'splunkjs/mvc/simpleform/timerangeview');
+    
+    return require('./timerangeview');
+});
+
+requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.setBuffer('.clearfix{*zoom:1;}.clearfix:before,.clearfix:after{display:table;content:\"\";line-height:0;}\n.clearfix:after{clear:both;}\n.hide-text{font:0/0 a;color:transparent;text-shadow:none;background-color:transparent;border:0;}\n.input-block-level{display:block;width:100%;min-height:26px;-webkit-box-sizing:border-box;-moz-box-sizing:border-box;box-sizing:border-box;}\n.ie7-force-layout{*min-width:0;}\n.shared-timerangepicker-dialog{width:640px;}.shared-timerangepicker-dialog td{vertical-align:top;}\n.timeRangeMenu,.trpCustomDateTime{display:none;}\n.help-block-timestamp{min-height:1em;line-height:1em;padding:3px;margin-top:5px;margin-right:15px;border-radius:3px;background-color:#eeeeee;}\n.timerangepicker-range-type{margin-right:25px;float:left;}\n.timerangepicker-range-type .btn{min-width:65px;}\n.btn.timerange-control>.icon-triangle-right-small{padding-left:5px;}\ninput.timerangepicker-earliest-date{margin-right:0;}\ninput.timerangepicker-real-time-earliest-time,input.timerangepicker-relative-earliest-time{margin-right:0;}\n.timerangepicker-realtime_range_type,.timerangepicker-relative_range_type{display:inline-block;vertical-align:middle;margin-right:25px;}\n.shared-timerangepicker-dialog-daterange-betweendates>tr:first-child>td{padding-bottom:0;}.shared-timerangepicker-dialog-daterange-betweendates>tr:first-child>td>.alerts{margin-top:0;}\n.form-inline .radio{line-height:18px;padding-top:5px;padding-bottom:5px;display:block;}\n.form-inline .radio+.radio{padding-top:0;}\ninput.date-before-time{margin-right:5px;}\n.advanced-time-documentation{clear:left;margin:10px 0 0 55px;display:block;float:left;}\n.presets-group{float:left;width:130px;}\n.presets-group+.presets-group{margin-left:10px;}\n.presets-divider-wrap{float:left;margin:10px;}\n.presets-divider{position:absolute;top:10px;bottom:10px;border-right:1px solid #cccccc;}\n.presets-group li{color:#999999;padding-left:20px;text-indent:-20px;overflow:hidden;text-overflow:ellipsis;}\n.vis-area{*zoom:1;}.vis-area:before,.vis-area:after{display:table;content:\"\";line-height:0;}\n.vis-area:after{clear:both;}\n.slide-area{width:1090px;}\n.content-wrapper{width:450px;float:left;}\n.modal .timerange-picker-wrapper{float:left;}.modal .timerange-picker-wrapper .shared-timerangepicker-dialog{width:640px;}\n.modal .timerange-picker-wrapper .accordion .accordion-heading .accordion-toggle{border-left:none;border-right:none;}\n.modal .timerange-picker-wrapper .accordion .accordion-body{border:none;}\n.modal .timerange-picker-wrapper .accordion .accordion-group.active:last-child .accordion-body{border:none;}\n.modal .timerange-picker-wrapper .accordion .accordion-group:last-child .accordion-toggle{border-bottom:none;border-radius:0px;}\n.modal .timerange-picker-wrapper .accordion .accordion-group:first-child .accordion-toggle{border-top:none;border-radius:0px;}\n.popdown-dialog .accordion-body .shared-timerangepicker-dialog-dateandtimerange{padding-left:18px;padding-right:18px;}\n.shared-timerangepicker .btn{max-width:99%;}.shared-timerangepicker .btn .time-label{display:inline-block;*display:inline;vertical-align:middle;max-width:99%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}\n'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick; 

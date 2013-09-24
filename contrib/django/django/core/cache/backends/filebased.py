@@ -130,14 +130,14 @@ class FileBasedCache(BaseCache):
 
     def _key_to_file(self, key):
         """
-        Convert the filename into an md5 string. We'll turn the first couple
+        Convert the filename into an sha1 string. We'll turn the first couple
         bits of the path into directory prefixes to be nice to filesystems
         that have problems with large numbers of files in a directory.
 
         Thus, a cache key of "foo" gets turnned into a file named
         ``{cache-dir}ac/bd/18db4cc2f85cedef654fccc4a4d8``.
         """
-        path = hashlib.md5(force_bytes(key)).hexdigest()
+        path = hashlib.sha1(force_bytes(key)).hexdigest()
         path = os.path.join(path[:2], path[2:4], path[4:])
         return os.path.join(self._dir, path)
 

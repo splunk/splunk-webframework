@@ -235,14 +235,10 @@ define('views/shared/results_table/ResultsTableRow',[
         highlightCell: function($target, index) {
             var rowNumbersEnabled = this.options.hasOwnProperty('rowNumber'),
                 $tds = this.$('td'),
-                $firstDataCell = rowNumbersEnabled ? $tds.eq(1) : $tds.eq(0);
+                numRowSplits = this.options.numRowSplits,
+                $rowSplitCells = rowNumbersEnabled ? $tds.slice(0, numRowSplits + 1) : $tds.slice(0, numRowSplits);
 
-            if(rowNumbersEnabled) {
-                $tds.eq(0).addClass('highlighted');
-            }
-            if(!$.contains($firstDataCell[0], $target[0])) {
-                $firstDataCell.addClass('highlighted');
-            }
+            $rowSplitCells.addClass('highlighted');
             $target.addClass('highlighted');
         },
 
@@ -250,12 +246,10 @@ define('views/shared/results_table/ResultsTableRow',[
         unHighlightCell: function($target, index) {
             var rowNumbersEnabled = this.options.hasOwnProperty('rowNumber'),
                 $tds = this.$('td'),
-                $firstDataCell = rowNumbersEnabled ? $tds.eq(1) : $tds.eq(0);
+                numRowSplits = this.options.numRowSplits,
+                $rowSplitCells = rowNumbersEnabled ? $tds.slice(0, numRowSplits + 1) : $tds.slice(0, numRowSplits);
 
-            if(rowNumbersEnabled) {
-                $tds.eq(0).removeClass('highlighted');
-            }
-            $firstDataCell.removeClass('highlighted');
+            $rowSplitCells.removeClass('highlighted');
             $target.removeClass('highlighted');
         }
 
@@ -268,565 +262,6 @@ define('views/shared/results_table/ResultsTableRow',[
     });
 
     return ResultsTableRow;
-
-});
-/**
- * @author sfishel
- *
- * A delegate view to handle the column sorting behavior for a grid-based view
- *
- * Events:
- *
- * sort (aka ColumnSort.SORT) triggered when the user clicks on a sortable column header
- *      @param sortKey {String} the key for the sorted column
- *      @param sortDirection {String} either 'asc' (aka ColumnSort.ASCENDING) or 'desc' (aka ColumnSort.DESCENDING)
- *                                    the direction of the sort
- */
-
-define('views/shared/delegates/ColumnSort',['jquery', 'underscore', 'backbone', 'views/shared/delegates/Base'], function($, _, Backbone, DelegateBase) {
-
-    var CONSTS = {
-
-        // CSS class names
-        SORTABLE_ROW: 'sorts',
-        NOT_SORTABLE_CLASS: 'not-sortable',
-        SORT_DISABLED_CLASS: 'sort-disabled',
-        SORTED_CLASS: 'active',
-
-        // Enum strings
-        ASCENDING: 'asc',
-        DESCENDING: 'desc',
-
-        // Data attributes
-        SORT_KEY_ATTR: 'data-sort-key',
-
-        // Events
-        SORT: 'sort'
-
-    };
-
-    var SORTABLE_CELL_SELECTOR = 'th.' + CONSTS.SORTABLE_ROW,
-        SORTABLE_ICON_SELECTOR = 'i.icon-sorts';
-
-    return DelegateBase.extend({
-
-        events: (function() {
-            var events = {};
-            events['click ' + SORTABLE_CELL_SELECTOR] = 'onColumnHeaderClick';
-            return events;
-        }()),
-
-        /**
-         * @constructor
-         * @param options {Object} {
-         *     model {Model} optional, a model that the view will keep up-to-date with sort information
-         *                   using the attribute names 'sortKey' and 'sortDirection'
-         *                   the view will also respond to external changes to those attributes
-         *                   if a model is not given, one will be created and managed internally
-         *     autoUpdate {Boolean} optional, defaults to false
-         *                          whether to automatically update the view's DOM elements when the sort configuration changes
-         *    {String} sortKeyAttr: (Optional) attribute to set sort key on  default is 'sortKey',
-         *    {String} sortDirAttr: (Optional) attribute to set sort direction on default is 'sortDirection'
-         * }
-         */
-
-        initialize: function() {
-            if(!this.model) {
-                this.model = new Backbone.Model();
-            }
-
-            var defaults = {
-                sortKeyAttr: 'sortKey',
-                sortDirAttr: 'sortDirection'
-            };
-            this.options = $.extend(true, defaults, this.options);
-
-            this.autoUpdate = !!this.options.autoUpdate;
-
-            if(this.autoUpdate) {
-                this.model.on('change:' + this.options.sortKeyAttr + ' change:' + this.options.sortDirAttr, _.debounce(function() {
-                    this.update();
-                }, 0), this);
-            }
-        },
-
-        /**
-         * Updates the given DOM elements to match the current sorting configuration
-         *
-         * @param $rootEl <jQuery object> optional, defaults to the view's $el property
-         */
-
-        update: function($rootEl) {
-            $rootEl = $rootEl || this.$el;
-            var $thList = $rootEl.find(SORTABLE_CELL_SELECTOR),
-                sortKey = this.model.get(this.options.sortKeyAttr),
-                $activeTh = $thList.filter('[' + CONSTS.SORT_KEY_ATTR + '="' + sortKey + '"]'),
-                sortDirection = this.model.get(this.options.sortDirAttr);
-
-            $thList.removeClass(CONSTS.SORTED_CLASS)
-                .find(SORTABLE_ICON_SELECTOR).removeClass(CONSTS.ASCENDING + ' ' + CONSTS.DESCENDING);
-            $activeTh.addClass(CONSTS.SORTED_CLASS)
-                .find(SORTABLE_ICON_SELECTOR).addClass(sortDirection === 'asc' ? CONSTS.ASCENDING : CONSTS.DESCENDING);
-        },
-
-        // ----- private methods ----- //
-
-        onColumnHeaderClick: function(e) {
-            e.preventDefault();
-            var $th = $(e.target).closest('th');
-            if($th.hasClass(CONSTS.NOT_SORTABLE_CLASS) || $th.hasClass(CONSTS.SORT_DISABLED_CLASS)) {
-                return;
-            }
-            var sortKey = $th.attr(CONSTS.SORT_KEY_ATTR),
-                sortDirection = $th.find(SORTABLE_ICON_SELECTOR).hasClass(CONSTS.DESCENDING) ? 'asc' : 'desc';
-
-            var data = {};
-            data[this.options.sortKeyAttr] = sortKey;
-            data[this.options.sortDirAttr] = sortDirection;
-
-            this.model.set(data);
-            this.trigger(CONSTS.SORT, sortKey, sortDirection);
-        }
-
-    }, CONSTS);
-
-});
-
-/**
- * @author sfishel
- *
- * Work in progress, a delegate view to handle docking table header, footer, and scroll bar.
- */
-
-define('views/shared/delegates/TableDock',['jquery', 'underscore', 'views/shared/delegates/Base'], function($, _, DelegateBase) {
-
-    return DelegateBase.extend({
-        awake: true,
-        touch: false,
-        initialize: function(options) {
-
-            var defaults = {
-                    table: "> table",
-                    offset: 0,
-                    dockScrollBar: true,
-                    flexWidthColumn: -1,
-                    defaultLayout:'auto'
-                };
-    
-            _.defaults(this.options, defaults);
-            DelegateBase.prototype.initialize.call(this, options);
-            
-            this.disabled = false;
-            
-            this.eventNS = 'table-dock-' + this.cid;
-            this.awake && this.bindListeners();
-        },
-        bindListeners: function () {
-            var debouncedResizeHandler = _.debounce(this.handleWindowResize, 50);
-            $(window).on('resize.' + this.eventNS, _(debouncedResizeHandler).bind(this));
-            $(window).on('scroll.' + this.eventNS, _(this.handleWindowScroll).bind(this));
-            
-            this.options.dockScrollBar && this.$el.on('scroll.' + this.eventNS, _(this.handleContainerScroll).bind(this));
-        },
-        unbindListeners: function () {
-            $(window).off('resize.' + this.eventNS);
-            $(window).off('scroll.' + this.eventNS);
-            this.options.dockScrollBar && this.$el.off('.' + this.eventNS);
-        },
-        destroy: function() {
-            this.unbindListeners();
-        },
-        update: function() {
-            if (!this.awake) {
-                this.touch = true;
-                return;            
-            }
-            this.$table = this.$(this.options.table ).first();
-            
-            this.updateHeaders();
-            this.options.dockScrollBar && this.updateScroll();
-
-            var updateDom = _(function() {
-                this.syncColumnWidths();
-                this.options.dockScrollBar && this.syncScrollWidths();
-                this.handleWindowScroll();
-                this.options.dockScrollBar && this.handleContainerScroll();
-                this.trigger('updated', this.$headerTable);
-            }).bind(this);
-            
-            if(this.$table.is(':visible')) {
-                updateDom();
-            }
-            else {
-                _.defer(updateDom);
-            }
-        },
-        disable: function() {
-            this.disabled = true;
-            this.$disable.show();
-        },
-        enable: function() {
-            this.disabled = false;
-            this.$disable.hide();
-        },
-        updateHeaders: function() {
-            if(this.$header) {
-                this.$header.remove();
-            }
-            
-            this.$header = $('<div class="header-table-docked" style="display:none"><table></table><div class="disable"></div></div>').css({top: this.options.offset, left:0, right: 0});
-            this.$disable = this.$header.find('> .disable')[this.disabled ? 'show' : 'hide']();
-            this.$headerTable = this.$header.find('> table');
-            this.$headerTable.attr('class', this.$table.attr('class'));
-            this.$table.find('> thead').clone().appendTo(this.$headerTable);
-            this.$header.prependTo(this.el);
-            this.$headerTable.on('click', 'th', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                var colIndex = $(e.currentTarget).prevAll().length + 1;
-                this.$table.find('> thead > tr > th:nth-child(' + colIndex + ')').click();
-            }.bind(this));
-            this.$headerTable.on('click', 'th a', function (e) {
-                e.preventDefault();
-            });
-        },
-                
-        updateScroll: function() {
-            if(this.$dockedScroll) {
-                this.$dockedScroll.remove();
-            }
-            
-            this.$dockedScroll = $('<div />').addClass('table-scroll-bar-docked').hide().appendTo(this.$el).css('left', this.$el.position().left);
-            this.$dockedScroll.on('scroll', _(this.handleDockedScrollChange).bind(this));
-        },
-
-        // ------ private methods ------ //
-
-        handleWindowResize: function() {
-            // no-op if update has not been called yet
-            if(!this.$table) {
-                return;
-            }
-            this.syncColumnWidths();
-            
-            if(this.options.dockScrollBar) {
-                this.updateDockedScrollBar();
-                this.syncScrollWidths();
-            }
-        },
-
-        handleWindowScroll: function(e) {
-            // no-op if update has not been called yet
-            if(!this.$table || !this.$table.is(':visible')) {
-                return;
-            }
-            var scrollTop = $(window).scrollTop(),
-                tableOffsetTop = this.$table.offset().top;
-
-            if(scrollTop >= tableOffsetTop - this.options.offset) {
-                if(!this.$header.is(':visible')) {
-                    this.$header.css('top', this.options.offset).show();
-                }
-            }
-            else {
-                this.$header.css('top', '-1000px').width(); //move off and force redraw
-                this.$header.hide();
-            }
-            this.options.dockScrollBar && this.updateDockedScrollBar();
-        },
-
-        handleContainerScroll: function() {
-            // no-op if update has not been called yet
-            if(!this.$table) {
-                return;
-            }
-            var scrollLeft = this.$el.scrollLeft(),
-                dockScrollLeft = this.$dockedScroll.scrollLeft();
-            if(scrollLeft !== dockScrollLeft) {
-                this.$headerTable.css('marginLeft', -scrollLeft + 'px');
-                this.$dockedScroll.scrollLeft(scrollLeft);
-            }
-        },
-
-        handleDockedScrollChange: function() {
-            var scrollLeft = this.$el.scrollLeft(),
-                dockScrollLeft = this.$dockedScroll.scrollLeft();
-
-            if(scrollLeft !== dockScrollLeft) {
-                this.$headerTable.css('marginLeft', -dockScrollLeft + 'px');
-                this.$el.scrollLeft(dockScrollLeft);
-            }
-        },
-        _syncColumnWidths: function() {
-            if(!this.$table) {
-                return;
-            }
-            
-            var $baseRow = this.$table.find('thead > tr'),
-                $baseRowCells =  $baseRow.find('th'),
-                $headerRow = this.$header.find('thead > tr'),
-                $headerCells = $headerRow.find('th'),
-                $skipCell = false,
-                widths = [];
-
-            this.$table.css('table-layout', this.options.defaultLayout);
-            $skipCell = $baseRowCells.eq(this.options.flexWidthColumn);
-            $baseRowCells.not($skipCell[0]).css('width', '');
-            
-            
-            _($baseRowCells).each(function(cell, i) {
-                if ($skipCell && (cell == $skipCell[0])) return;
-           
-                var $cell = $(cell),
-                    cellWidth = {width: parseFloat($cell.css('width')), index: i} ;
-                   
-                widths.push(cellWidth);
-            }, this);
-            
-            this.$headerTable.width(this.$table.outerWidth());
-           
-            _.each(widths, function(cell) {
-                var $cell = $baseRowCells.eq(cell.index),
-                    $headerCell = $headerCells.eq(cell.index);
-                $cell.width(cell.width);
-                $headerCell.width(cell.width);
-            });
-            this.$header.css({left:this.$el.position().left});
-            this.$table.css('table-layout', 'fixed');
-        },
-        syncColumnWidths: function() {
-            if (!this._syncColumnWidthsDebounced) {
-                this._syncColumnWidthsDebounced = _.debounce(this._syncColumnWidths);
-            }
-            this._syncColumnWidthsDebounced();
-        },
-        syncScrollWidths: function() {
-            if(!this.$table || !this.$table[0]) {
-                return;
-            }
-
-            var tableWidth = parseFloat(this.$table[0].scrollWidth),
-                $fullWidthDiv = $('<div />').width(tableWidth).height(1);
-
-            this.$dockedScroll.html($fullWidthDiv);
-        },
-
-        updateDockedScrollBar: function() {
-            var scrollTop = $(window).scrollTop(),
-                tableOffsetTop = this.$table.offset().top,
-                windowHeight = $(window).height(),
-                tableHeight = this.$el.outerHeight();
-
-            if(tableOffsetTop + tableHeight > scrollTop + windowHeight) {
-                this.$dockedScroll.show();
-            }
-            else {
-                this.$dockedScroll.hide();
-            }
-        },
-        wake: function() {
-            this.awake = true;
-            this.bindListeners();
-            if (this.touch) {
-                //do a full update
-                _.defer(this.update.bind(this));
-            } else {
-                //just update the positions.
-                _.defer(this.handleWindowResize.bind(this));
-                _.defer(this.handleWindowScroll.bind(this));
-                this.options.dockScrollBar && _.defer(this.handleContainerScroll.bind(this));
-            }
-            return this;
-        },
-        sleep: function() {
-            this.awake = false;
-            this.unbindListeners();
-            return this;
-        },
-        remove: function() {
-            DelegateBase.prototype.remove.apply(this);
-            $(window).off('resize.' + this.eventNS);
-            $(window).off('scroll.' + this.eventNS);
-            return this;
-        }
-    });
-
-});
-
-/**
- * @author sfishel
- *
- * Work in progress, a delegate view to handle docking table header, footer, and scroll bar.
- */
-
-define('views/shared/delegates/TableHeadStatic',['jquery', 'underscore', 'views/shared/delegates/Base'], function($, _, DelegateBase) {
-
-    return DelegateBase.extend({
-        awake: true,
-        touch: false,
-        initialize: function(options) {
-            var defaults = {
-                    headerContainer: "> .header-table-static",
-                    scrollContainer: "> .scroll-table-wrapper",
-                    table: "> .scroll-table-wrapper > table",
-                    offset: 0,
-                    // index of the column to "flex" to fit remaining width, can be set to false for no flex
-                    flexWidthColumn: -1,
-                    defaultLayout:'auto'
-                };
-    
-            _.defaults(this.options, defaults);
-            
-        
-            DelegateBase.prototype.initialize.call(this, options);
-            
-            this.awake && this.bindListeners();
-        },
-        bindListeners: function () {
-            var debouncedResizeHandler = _.debounce(this.handleWindowResize, 50);
-            $(window).on('resize.' + this.cid, _(debouncedResizeHandler).bind(this));
-            $(this.$(this.options.scrollContainer)).on('scroll.' + this.cid, _(this.handleContainerScroll).bind(this));
-        },
-        unbindListeners: function () {
-            $(window).off('resize.' + this.cid);
-            $(this.$(this.options.scrollContainer)).off('scroll.' + this.cid);
-        },
-        destroy: function() {
-            this.unbindListeners();
-        },
-        remove: function() {
-            DelegateBase.prototype.remove.apply(this);
-            $(window).off('resize.' + this.cid);
-            return this;
-        },
-        update: function() {
-            if (!this.awake) {
-                this.touch = true;
-                return;            
-            }
-            
-            this.$scrollContainer = this.$(this.options.scrollContainer);
-            this.$table = this.$(this.options.table).first();
-            this.$headerContainer = this.$(this.options.headerContainer);
-            this.$headerContainer.empty();
-            var $headerWrapper = $('<div class="header-table-wrapper"></div>').appendTo(this.$headerContainer);
-            $headerWrapper.css({ 'margin-right': this.measureScrollBarWidth(this.$scrollContainer) });
-            this.$headerTable = $('<table>');
-            this.$headerTable.attr('class', this.$table.attr('class')).width(this.$table.outerWidth()).css('table-layout', 'fixed');
-            this.$table.find('> thead').clone().appendTo(this.$headerTable);
-            $headerWrapper.prepend(this.$headerTable);
-            
-            this.$headerTable.on('click', 'th', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                var colIndex = $(e.currentTarget).prevAll().length + 1;
-                this.$table.find('> thead > tr > th:nth-child(' + colIndex + ')').click();
-            }.bind(this));
-            
-            this.$headerTable.on('click', 'th a', function (e) {
-                e.preventDefault();
-            });
-
-            // the newly rendered table head will be scrolled all the way to the left
-            // reset this instance variable so that handleContainerScroll will do the right thing
-            this.scrollLeft = 0;
-            var updateDom = _(function() {
-                this.syncColumnWidths();
-                this.handleContainerScroll();
-                this.trigger('updated', this.$headerTable);
-            }).bind(this);
-
-            if(this.$table.is(':visible')) {
-                updateDom();
-            } else {
-                _.defer(updateDom);
-            }
-        },
-
-        // ------ private methods ------ //
-        handleContainerScroll: function() {
-            // no-op if update has not been called yet
-            if(!this.$table) {
-                return;
-            }
-            var scrollLeft = this.$scrollContainer.scrollLeft();
-            if(scrollLeft !== this.scrollLeft) {
-                this.$headerTable.css('marginLeft', -scrollLeft + 'px');
-                this.scrollLeft = scrollLeft;
-            }
-        },
-        handleWindowResize: function() {
-            // no-op if update has not been called yet
-            if(!this.$table) {
-                return;
-            }
-            this.syncColumnWidths();
-        },
-        syncColumnWidths: function() {
-            if(!this.$table) {
-                return;
-            }
-            
-            var $baseRow = this.$table.find('thead > tr'),
-                $baseRowCells =  $baseRow.find('th'),
-                $headerRow = this.$headerTable.find('thead > tr'),
-                $headerCells = $headerRow.find('th'),
-                $skipCell = false,
-                widths = [];
-
-            this.$table.css('table-layout', this.options.defaultLayout);
-            if(this.options.flexWidthColumn !== false) {
-                $skipCell = $baseRowCells.eq(this.options.flexWidthColumn);
-            }
-            $baseRowCells.not($skipCell[0]).css('width', '');
-            
-            _($baseRowCells).each(function(cell, i) {
-                if ($skipCell && (cell == $skipCell[0])) return;
-            
-                var $cell = $(cell),
-                    cellWidth = {width: parseFloat($cell.css('width')), index: i} ;
-                    
-                widths.push(cellWidth);
-            }, this);
-            
-            this.$headerTable.width(this.$table.outerWidth());
-                
-            _.each(widths, function(cell) {
-                var $cell = $baseRowCells.eq(cell.index),
-                    $headerCell = $headerCells.eq(cell.index);
-                $cell.width(cell.width);
-                $headerCell.width(cell.width);
-            });
-            this.$table.css('table-layout', 'fixed');
-        },
-        wake: function() {
-            this.awake = true;
-            this.bindListeners();
-            if (this.touch) {
-                //do a full update
-                _.defer(this.update.bind(this));
-            } else {
-                //just update the positions.
-                _.defer(this.handleWindowResize.bind(this));
-                _.defer(this.handleContainerScroll.bind(this));
-            }
-            return this;
-        },
-        sleep: function() {
-            this.awake = false;
-            this.unbindListeners();
-            return this;
-        },
-        measureScrollBarWidth: function($el) {
-            // add a test div to the container, return the difference between its width and the container's
-            var $testDiv = $('<div></div>').appendTo($el),
-                scrollBarWidth = $el.width() - $testDiv.width();
-
-            $testDiv.remove();
-            return scrollBarWidth;
-        }
-
-    });
 
 });
 /**
@@ -942,7 +377,7 @@ define('helpers/Printer',[
 *
 * jquery.sparkline.js
 *
-* v2.1
+* v2.1.3
 * (c) Splunk, Inc
 * Contact: Gareth Watts (gareth@splunk.com)
 * http://omnipotent.net/jquery.sparkline/
@@ -955,7 +390,7 @@ define('helpers/Printer',[
 *
 * License: New BSD License
 *
-* 
+* Copyright (c) 2012, Splunk Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without modification,
@@ -1142,13 +577,13 @@ define('helpers/Printer',[
 
 /*jslint regexp: true, browser: true, jquery: true, white: true, nomen: false, plusplus: false, maxerr: 500, indent: 4 */
 
+(function(document, Math, undefined) { // performance/minified-size optimization
 (function(factory) {
     if(typeof define === 'function' && define.amd) {
-		define('jquery.sparkline',['jquery'], factory);
-	}
-	else {
-		factory(jQuery);
-	}
+        define('jquery.sparkline',['jquery'], factory);
+    } else if (jQuery && !jQuery.fn.sparkline) {
+        factory(jQuery);
+    }
 }
 (function($) {
     
@@ -1158,7 +593,7 @@ define('helpers/Printer',[
         remove, isNumber, all, sum, addCSS, ensureArray, formatNumber, RangeMap,
         MouseHandler, Tooltip, barHighlightMixin,
         line, bar, tristate, discrete, bullet, pie, box, defaultStyles, initStyles,
-         VShape, VCanvas_base, VCanvas_canvas, VCanvas_vml, pending, shapeCount = 0;
+        VShape, VCanvas_base, VCanvas_canvas, VCanvas_vml, pending, shapeCount = 0;
 
     /**
      * Default configuration settings
@@ -1452,7 +887,6 @@ define('helpers/Printer',[
                 if (val == nf) {
                     val = nf;
                 }
-                break;
         }
         return val;
     };
@@ -1520,16 +954,24 @@ define('helpers/Printer',[
 
     // http://paulirish.com/2008/bookmarklet-inject-new-css-rules/
     addCSS = function(css) {
-        var tag;
-        //if ('\v' == 'v') /* ie only */ {
+        var tag, iefail;
         if (document.createStyleSheet) {
-            document.createStyleSheet().cssText = css;
+            try {
+                document.createStyleSheet().cssText = css; 
+                return;
+            } catch (e) {
+                // IE <= 9 maxes out at 31 stylesheets; inject into page instead.
+                iefail = true;
+            }    
+        }    
+        tag = document.createElement('style');
+        tag.type = 'text/css';
+        document.getElementsByTagName('head')[0].appendChild(tag);
+        if (iefail) {
+            document.styleSheets[document.styleSheets.length - 1].cssText = css; 
         } else {
-            tag = document.createElement('style');
-            tag.type = 'text/css';
-            document.getElementsByTagName('head')[0].appendChild(tag);
-            tag[(typeof document.body.style.WebkitAppearance == 'string') /* webkit only */ ? 'innerText' : 'innerHTML'] = css;
-        }
+            tag[(typeof document.body.style.WebkitAppearance == 'string') /* webkit only */ ? 'innerText' : 'innerHTML'] = css; 
+        }    
     };
 
     // Provide a cross-browser interface to a few simple drawing primitives
@@ -1538,19 +980,41 @@ define('helpers/Printer',[
         if (useExisting && (target = this.data('_jqs_vcanvas'))) {
             return target;
         }
+
+        if ($.fn.sparkline.canvas === false) {
+            // We've already determined that neither Canvas nor VML are available
+            return false;
+
+        } else if ($.fn.sparkline.canvas === undefined) {
+            // No function defined yet -- need to see if we support Canvas or VML
+            var el = document.createElement('canvas');
+            if (!!(el.getContext && el.getContext('2d'))) {
+                // Canvas is available
+                $.fn.sparkline.canvas = function(width, height, target, interact) {
+                    return new VCanvas_canvas(width, height, target, interact);
+                };
+            } else if (document.namespaces && !document.namespaces.v) {
+                // VML is available
+                document.namespaces.add('v', 'urn:schemas-microsoft-com:vml', '#default#VML');
+                $.fn.sparkline.canvas = function(width, height, target, interact) {
+                    return new VCanvas_vml(width, height, target);
+                };
+            } else {
+                // Neither Canvas nor VML are available
+                $.fn.sparkline.canvas = false;
+                return false;
+            }
+        }
+
         if (width === undefined) {
             width = $(this).innerWidth();
         }
         if (height === undefined) {
             height = $(this).innerHeight();
         }
-        if ($.browser.hasCanvas) {
-            target = new VCanvas_canvas(width, height, this, interact);
-        } else if ($.browser.msie) {
-            target = new VCanvas_vml(width, height, this);
-        } else {
-            return false;
-        }
+
+        target = $.fn.sparkline.canvas(width, height, this, interact);
+
         mhandler = $(this).data('_jqs_mhandler');
         if (mhandler) {
             mhandler.registerCanvas(target);
@@ -1918,8 +1382,7 @@ define('helpers/Printer',[
                     mhandler.registerSparkline(sp);
                 }
             };
-            // jQuery 1.3.0 completely changed the meaning of :hidden :-/
-            if (($(this).html() && !options.get('disableHiddenCheck') && $(this).is(':hidden')) || ($.fn.jquery < '1.3.0' && $(this).parents().is(':hidden')) || !$(this).parents('body').length) {
+            if (($(this).html() && !options.get('disableHiddenCheck') && $(this).is(':hidden')) || !$(this).parents('body').length) {
                 if (!options.get('composite') && $.data(this, '_jqs_pending')) {
                     // remove any existing references to the element
                     for (i = pending.length; i; i--) {
@@ -2588,7 +2051,7 @@ define('helpers/Printer',[
                 }
 
             }
-            if (spotRadius && options.get('spotColor')) {
+            if (spotRadius && options.get('spotColor') && yvalues[yvallast] !== null) {
                 target.drawCircle(canvasLeft + Math.round((xvalues[xvalues.length - 1] - this.minx) * (canvasWidth / rangex)),
                     canvasTop + Math.round(canvasHeight - (canvasHeight * ((yvalues[yvallast] - this.miny) / rangey))),
                     spotRadius, undefined,
@@ -3469,14 +2932,6 @@ define('helpers/Printer',[
     // Setup a very simple "virtual canvas" to make drawing the few shapes we need easier
     // This is accessible as $(foo).simpledraw()
 
-    if ($.browser.msie && document.namespaces && !document.namespaces.v) {
-        document.namespaces.add('v', 'urn:schemas-microsoft-com:vml', '#default#VML');
-    }
-
-    if ($.browser.hasCanvas === undefined) {
-        $.browser.hasCanvas = document.createElement('canvas').getContext !== undefined;
-    }
-
     VShape = createClass({
         init: function (target, id, type, args) {
             this.target = target;
@@ -3875,7 +3330,7 @@ define('helpers/Printer',[
         _drawPieSlice: function (shapeid, x, y, radius, startAngle, endAngle, lineColor, fillColor) {
             var vpath, startx, starty, endx, endy, stroke, fill, vel;
             if (startAngle === endAngle) {
-                return;  // VML seems to have problem when start angle equals end angle.
+                return '';  // VML seems to have problem when start angle equals end angle.
             }
             if ((endAngle - startAngle) === (2 * Math.PI)) {
                 startAngle = 0.0;  // VML seems to have a problem when drawing a full circle that doesn't start 0
@@ -3887,9 +3342,18 @@ define('helpers/Printer',[
             endx = x + Math.round(Math.cos(endAngle) * radius);
             endy = y + Math.round(Math.sin(endAngle) * radius);
 
-            // Prevent very small slices from being mistaken as a whole pie
+            if (startx === endx && starty === endy) {
+                if ((endAngle - startAngle) < Math.PI) {
+                    // Prevent very small slices from being mistaken as a whole pie
+                    return '';
+                }
+                // essentially going to be the entire circle, so ignore startAngle
+                startx = endx = x + radius;
+                starty = endy = y;
+            }
+
             if (startx === endx && starty === endy && (endAngle - startAngle) < Math.PI) {
-                return;
+                return '';
             }
 
             vpath = [x - radius, y - radius, x + radius, y + radius, startx, starty, endx, endy];
@@ -3970,8 +3434,7 @@ define('helpers/Printer',[
         }
     });
 
-}));
-
+}))}(document, Math));
 define('views/shared/results_table/renderers/NullCellRenderer',['require','exports','module','underscore','./BaseCellRenderer'],function(require, exports, module) {
 
     var _ = require("underscore");
@@ -4072,7 +3535,7 @@ define('views/shared/results_table/renderers/SparklineCellRenderer',['require','
     var sparkline = require("jquery.sparkline");
     var BaseCellRenderer = require("./BaseCellRenderer");
 
-    var DEFAULT_SPARKLINE_SETTINGS = { type: "bar", barColor: "#008000", highlightSpotColor: null, minSpotColor: null, maxSpotColor: null, spotColor: null, fillColor: null };
+    var DEFAULT_SPARKLINE_SETTINGS = { type: "line", lineColor: "#65A637", highlightSpotColor: null, minSpotColor: null, maxSpotColor: null, spotColor: null, fillColor: null };
 
     return BaseCellRenderer.extend({
 
@@ -4210,13 +3673,15 @@ define('views/shared/results_table/ResultsTableMaster',[
             'splunk.util',
             'util/general_utils',
             'util/time_utils',
+            'util/math_utils',
             'jquery.sparkline',
             './renderers/BaseCellRenderer',
             './renderers/NullCellRenderer',
             './renderers/NumberCellRenderer',
             './renderers/SparklineCellRenderer',
             './renderers/StringCellRenderer',
-            './renderers/TimeCellRenderer'
+            './renderers/TimeCellRenderer',
+            'util/console'
         ],
         function(
             $,
@@ -4233,16 +3698,18 @@ define('views/shared/results_table/ResultsTableMaster',[
             splunkUtils,
             generalUtils,
             timeUtils,
+            mathUtils,
             _sparkline,
             BaseCellRenderer,
             NullCellRenderer,
             NumberCellRenderer,
             SparklineCellRenderer,
             StringCellRenderer,
-            TimeCellRenderer
+            TimeCellRenderer,
+            console
         ) {
 
-    var DATA_FIELD_REGEX = /^[^_]|^_time/;
+    var DATA_FIELD_REGEX = /^[^_]|^_time$|^_raw$/;
 
     var TIMESTAMP_FORMATS = {
         year: 'YYYY',
@@ -4307,7 +3774,8 @@ define('views/shared/results_table/ResultsTableMaster',[
                 sortKeyAttr: 'sortKey',
                 sortDirAttr: 'sortDirection',
                 countAttr: 'count',
-                offsetAttr: 'offset'
+                offsetAttr: 'offset',
+                numRowSplits: 1
             };
             this.options = $.extend(true, defaults, this.options);
 
@@ -4404,9 +3872,13 @@ define('views/shared/results_table/ResultsTableMaster',[
         },
 
         handleFormatChange: function() {
-            // only do work if an attribute changed that actually affects the appearance of this table
-            var changedFormatAttributes = _(this.model.format.changedAttributes()).pick(REPORT_FORMAT_ATTRIBUTES);
-            if(_(changedFormatAttributes).isEmpty()) {
+            var changedFormatAttributes = this.model.format.changedAttributes();
+            // only do work if an attribute changed that actually requires a re-render
+            if(_(changedFormatAttributes).chain().pick(REPORT_FORMAT_ATTRIBUTES).isEmpty().value()) {
+                // changes to drilldown do not require a re-render, but do have to be handled if a re-render is not happening
+                if(changedFormatAttributes.hasOwnProperty('display.statistics.drilldown')) {
+                    this.updateDrilldownClasses();
+                }
                 return;
             }
             this.updateFormatSettings();
@@ -4429,6 +3901,7 @@ define('views/shared/results_table/ResultsTableMaster',[
 
             this.disposeOfChildren();
             if(this.dataFields.length > 0 && this.dataRows.length > 0) {
+                console.debug('rendering results table with data:', { fields: this.dataFields, rows: this.dataRows });
                 var columns = this.resultsAsColumns();
                 this.updateColumnTypes(columns);
                 this.insertHeader($html, this.dataFields);
@@ -4447,21 +3920,30 @@ define('views/shared/results_table/ResultsTableMaster',[
             if(this.children.tableDock) {
                 this.children.tableDock.update();
             }
-
+            
             if (this.options.disable) {
-                this.$el.append($('<div class="table-disabled-screen"></div>'));
+                this.$tableDisabled = $('<div class="table-disabled-screen"></div>');
+                this.$el.append(this.$tableDisabled);
             }
+            this.updateDrilldownClasses();
 
             // SPL-69820 trigger event when content has been updated
             this.trigger('rendered');
+
+            this.reflow();
             return this;
         },
-
+        reflow: function() {
+            Base.prototype.reflow.apply(this, arguments);
+            if(this.$tableDisabled) {
+                this.$tableDisabled.width(this.$el[0].scrollWidth);
+            }
+        },
         handleCellMouseover: function($target) {
             var drilldown = this.model.format.get('display.statistics.drilldown'),
                 rowNumbers = splunkUtils.normalizeBoolean(this.model.format.get('display.statistics.rowNumbers'));
 
-            if(drilldown === 'off') {
+            if(drilldown === 'none') {
                 return;
             }
             var $cell = $target.closest('td'),
@@ -4498,7 +3980,7 @@ define('views/shared/results_table/ResultsTableMaster',[
             var drilldown = this.model.format.get('display.statistics.drilldown'),
                 rowNumbers = splunkUtils.normalizeBoolean(this.model.format.get('display.statistics.rowNumbers'));
 
-            if(drilldown === 'off') {
+            if(drilldown === 'none') {
                 return;
             }
             var $cell = $target.closest('td'),
@@ -4533,7 +4015,7 @@ define('views/shared/results_table/ResultsTableMaster',[
 
         handleCellClick: function($target, clickEvent) {
             var drilldown = this.model.format.get('display.statistics.drilldown');
-            if(drilldown === 'off') {
+            if(drilldown === 'none') {
                 return;
             }
             var $cell = $target.closest('td'),
@@ -4554,6 +4036,12 @@ define('views/shared/results_table/ResultsTableMaster',[
         },
 
         emitDrilldownEvent: function(cellInfo, modifierKey, clickEvent) {
+            // If somebody clicked on an invalid row, we cannot create a drilldown
+            // event for them.
+            if (cellInfo.rowIndex === undefined || cellInfo.cellIndex === undefined) {
+                return;
+            }
+            
             var rowIndex = cellInfo.rowIndex,
                 cellIndex = cellInfo.cellIndex,
                 rowName = this.dataFields[0],
@@ -4575,7 +4063,7 @@ define('views/shared/results_table/ResultsTableMaster',[
 
             // can only add a name2/value2 if the click was not on the first cell of the row, unless it's a multi-value field
             var isMultiValue = _.isArray(this.dataRows[rowIndex][cellIndex]);
-            if(cellIndex > 0 || isMultiValue) {
+            if((cellIndex > this.options.numRowSplits - 1) || isMultiValue) {
                 drilldownInfo.name2 = this.dataFields[cellIndex];
                 // if value2 is an array (a multivalue field), use the mvIndex to pick the right value (or just take the first one)
                 drilldownInfo.value2 = isMultiValue ? this.dataRows[rowIndex][cellIndex][cellInfo.mvIndex || 0] :
@@ -4630,7 +4118,8 @@ define('views/shared/results_table/ResultsTableMaster',[
                     table: this,
                     cells: this.generateCellObjects(row, dataFields, dataOverlay),
                     dataOverlay: dataOverlay,
-                    rowIndex: i
+                    rowIndex: i,
+                    numRowSplits: this.options.numRowSplits
                 };
 
                 if(showRowNumbers) {
@@ -4679,6 +4168,22 @@ define('views/shared/results_table/ResultsTableMaster',[
             return columns;
         },
 
+        updateDrilldownClasses: function() {
+            var drilldown = this.model.format.get('display.statistics.drilldown'),
+                $table = this.$el.children('.table');
+
+            if(drilldown === 'none') {
+                $table.removeClass('table-drilldown table-drilldown-row table-drilldown-cell');
+            }
+            else if(drilldown === 'cell') {
+                $table.addClass('table-drilldown table-drilldown-cell').removeClass('table-drilldown-row');
+            }
+            else {
+                // drilldown === 'row'
+                $table.addClass('table-drilldown table-drilldown-row').removeClass('table-drilldown-cell');
+            }
+        },
+
         updateFormatSettings: function() {
             var settings = this.sparklineFormatSettings = {};
             if(this.model.format.has('display.statistics.sparkline.format')) {
@@ -4689,6 +4194,10 @@ define('views/shared/results_table/ResultsTableMaster',[
         updateColumnTypes: function(columns) {
             this.columnTypes = {};
             _(columns).each(function(column, field) {
+                // non-data fields (i.e. _span) do not get assigned a column type
+                if(!this.isDataField(field)) {
+                    return;
+                }
                 if(this.isTimeField(field)) {
                     this.columnTypes[field] = 'timestamp';
                 }
@@ -4700,41 +4209,53 @@ define('views/shared/results_table/ResultsTableMaster',[
 
         updateHeatDeltas: function(columns) {
             // create a data structure that holds the adjusted range (5th percentile to 95th) for each numeric field
+            // the current implementation applies the same global heat delta to all numeric series
+            // but the interface is designed so that different deltas could be applied to different columns in future
+            var allNumericValues = this.getAllNumericValues(columns),
+                bounds = generalUtils.getPercentiles(allNumericValues.sort(function(a, b) { return a - b; }), 0.05, 0.95),
+                heatDelta = Math.max(Math.abs(bounds.lower), Math.abs(bounds.upper));
+
             this.fieldHeatDeltas = {};
             _(columns).each(function(column, field) {
                 if(this.columnTypes[field] === 'number') {
-                    column = _(column).map(function(value) {
-                        // in case of multivalue, use the first one to calculate the heat delta
-                        if(_.isArray(value)) {
-                            value = value.length > 0 ? value[0] : null;
-                        }
-                        return parseFloat(value) || null;
-                    });
-                    column.sort(function(a, b) { return a - b; });
-                    var bounds = generalUtils.getPercentiles(column, 0.05, 0.95);
-                    this.fieldHeatDeltas[field] = Math.max(Math.abs(bounds.lower), Math.abs(bounds.upper));
+                    this.fieldHeatDeltas[field] = heatDelta;
                 }
             }, this);
         },
 
         updateExtremes: function(columns) {
             // create a data structure that holds the extremes (min and max) for each numeric field
+            // the current implementation applies the same global extremes to all numeric series
+            // but the interface is designed so that different extremes could be applied to different columns in future
+            var allNumericValues = this.getAllNumericValues(columns),
+                extremes = {
+                    min: _(allNumericValues).chain().without(null).min().value(),
+                    max: _(allNumericValues).max()
+                };
+
             this.fieldExtremes = {};
             _(columns).each(function(column, field) {
                 if(this.columnTypes[field] === 'number') {
-                    column = _(column).map(function(value) {
-                        // in case of multivalue, use the first one to calculate the extremes
-                        if(_.isArray(value)) {
-                            value = value.length > 0 ? value[0] : null;
-                        }
-                        return parseFloat(value) || null;
-                    });
-                    this.fieldExtremes[field] = {
-                        min: _(column).chain().without(null).min().value(),
-                        max: _(column).max()
-                    };
+                    this.fieldExtremes[field] = extremes;
                 }
             }, this);
+        },
+
+        // used for calculating heat deltas and extremes
+        // finds all columns that contain numeric data, then returns all of their contents as a single flattened array
+        getAllNumericValues: function(columns) {
+            var normalizeToNumber = function(value) {
+                // convert to null if the value can't be parsed to a number
+                return mathUtils.strictParseFloat(value) || null;
+            };
+
+            // find all of the columns that have been deemed numeric, flatten, then normalize all values to numbers
+            return _(columns).chain()
+                .filter(function(column, field) { return this.columnTypes[field] === 'number'; }, this)
+                // this is a deep flattening operation, so multi-value fields will also be flattened out
+                .flatten()
+                .map(normalizeToNumber)
+                .value();
         },
 
         updateFieldTimestampFormats: function(fields, rows, columns) {
@@ -4866,6 +4387,11 @@ define('splunkjs/mvc/paginatorview',['require','exports','module','underscore','
             var pageCount = Math.ceil(itemCount / pageSize);
             var windowSize = Math.min(10, pageCount);
 
+            if (page > pageCount) {
+                page = pageCount;
+                this.settings.set({page: page});
+            }
+
             var page0, pageN;
 
             // First guess at start page based on assumption current page 
@@ -4944,7 +4470,7 @@ define('splunkjs/mvc/paginatorview',['require','exports','module','underscore','
 });
 
 requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.addBuffer('splunkjs/css/results-table.css'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick;
-define('splunkjs/mvc/tableview',['require','exports','module','jquery','underscore','./mvc','./utils','splunk.util','backbone','./basesplunkview','views/shared/results_table/ResultsTableMaster','./messages','./drilldown','./paginatorview','util/console','css!../css/results-table'],function (require, exports, module) {
+define('splunkjs/mvc/tableview',['require','exports','module','jquery','underscore','./mvc','./utils','splunk.util','backbone','./basesplunkview','views/shared/results_table/ResultsTableMaster','./messages','./drilldown','./paginatorview','views/shared/results_table/renderers/BaseCellRenderer','util/console','splunk.util','./tokenawaremodel','css!../css/results-table'],function (require, exports, module) {
     var $ = require("jquery");
     var _ = require("underscore");
     var mvc = require('./mvc');
@@ -4956,8 +4482,11 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
     var Messages = require("./messages");
     var Drilldown = require('./drilldown');
     var PaginatorView = require("./paginatorview");
+    var BaseCellRenderer = require('views/shared/results_table/renderers/BaseCellRenderer');
     var console = require('util/console');
-    
+    var util = require('splunk.util');
+    var TokenAwareModel = require('./tokenawaremodel');
+
     require("css!../css/results-table");
 
     // This regex will take a space or comma separated list of fields, with quotes
@@ -4976,20 +4505,25 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
         options: {
             data: 'preview',
             drilldown: 'row',
+            drilldownRedirect: true,
             pagerPosition: 'bottom',
-            stripedRows: true,
             fields: [],
             pageSize: 10
         },
-        populateSettings: function(options) {
+        normalizeOptions: function(options) {
             if(options.hasOwnProperty('count')) {
-                this.settings.set('count', parseInt(this.options.count, 10));
+                this.settings.set('pageSize', parseInt(this.options.count, 10));
             }
             if(options.hasOwnProperty('wrap')) {
                 this.settings.set('wrap', SplunkUtil.normalizeBoolean(options.wrap) ? '1' : '0');
             }
-            if(options.hasOwnProperty('displayRowNumbers')) {
+            if(options.hasOwnProperty('rowNumbers')) {
+                this.settings.set('displayRowNumbers', SplunkUtil.normalizeBoolean(options.rowNumbers) ? '1' : '0');
+            } else if(options.hasOwnProperty('displayRowNumbers')) {
                 this.settings.set('displayRowNumbers', SplunkUtil.normalizeBoolean(options.displayRowNumbers) ? '1' : '0');
+            }
+            if(options.hasOwnProperty('overlay')) {
+                this.settings.set('dataOverlayMode', options['display.statistics.overlay']);
             }
             if(options.format) {
                 var sparklineSettings = {};
@@ -5010,19 +4544,19 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
         },
         initialize: function (options) {
             this.configure();
-            mvc.enableDynamicTokens(this.settings);
-            this.model = this.options.reportModel || new Backbone.Model();
-            this.populateSettings(options);
+            this.model = this.options.reportModel || TokenAwareModel._createReportModel();
+            this.normalizeOptions(options);
             this.settings._sync = utils.syncModels(this.settings, this.model, {
                 auto: true,
                 alias: {
                     'displayRowNumbers': 'display.statistics.rowNumbers',
                     'dataOverlayMode': 'display.statistics.overlay',
-                    'pageSize': 'display.statistics.count'
+                    'pageSize': 'display.prefs.statistics.count'
                 },
                 prefix: 'display.statistics.',
                 include: ['displayRowNumbers','dataOverlayMode','pageSize','stripedRows','drilldown','sortKey',
-                    'sortDirection','overlay','count','sparkline.format','wrap']
+                    'sortDirection','overlay','count','sparkline.format','wrap','fields'],
+                exclude: ['drilldownRedirect']
             });
 
             var results = this.results = new Backbone.Model({
@@ -5031,8 +4565,8 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
             });
         
             var metadata = this.metadata = new Backbone.Model({
-               count: this.settings.get('pageSize') || 10,
-               offset: 0
+                pageSize: this.settings.get('pageSize') || 10,
+                offset: 0
             });
 
             var table = this.table = new ResultsTableView({
@@ -5059,10 +4593,10 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
                 var p = this.paginator = new PaginatorView({
                     id: _.uniqueId(this.id+'-paginator'),
                     el: ct,
-                    pageSize: metadata.get('count')
+                    pageSize: metadata.get('pageSize')
                 });
                 p.settings.on('change:page', function(){
-                    var count = metadata.get('count'), page = p.settings.get('page');
+                    var count = metadata.get('pageSize'), page = p.settings.get('page');
                     this.metadata.set('offset', count*page);
                 }, this);
             }
@@ -5071,11 +4605,18 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
             this.listenTo(this.settings, 'change:fields', this.onFieldsChanged);
 
             table.on('cellClick', this.emitDrilldownEvent, this);
-            this.bindToComponent(this.options.managerid, this.onManagerChange, this);
+            this.bindToComponentSetting('managerid', this.onManagerChange, this);
+            
+            // If we don't have a manager by this point, then we're going to
+            // kick the manager change machinery so that it does whatever is
+            // necessary when no manager is present.
+            if (!this.manager) {
+                this.onManagerChange(mvc.Components, null);
+            }
         },
 
         emitDrilldownEvent: function(e) {
-            var data = mvc.Global.toJSON(),
+            var data = {},
                 manager = this.manager;
             _.extend(data,{
                 "click.name": e.name,
@@ -5110,12 +4651,45 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
             // Only get the job information if it exists (e.g. we are not
             // bound to a search with a job)
             if (manager.job) {
+                var earliest = manager.job.properties().searchEarliestTime;
+                var latest = manager.job.properties().searchLatestTime;
+                if (!earliest && manager.job.properties().earliestTime){
+                    earliest = util.getEpochTimeFromISO(manager.job.properties().earliestTime);
+                }
+                if (!latest && manager.job.properties().latestTime){
+                    latest = util.getEpochTimeFromISO(manager.job.properties().latestTime);
+                }
                 _.extend(data, {
-                    earliest: manager.job.properties().searchEarliestTime,
-                    latest: manager.job.properties().searchLatestTime
+                    earliest: earliest || '',
+                    latest: latest || ''
                 });
             }
-            this.trigger('drilldown', { field: e.name2 || e.name, data: data, event: e, defaultDrilldown: _(this.drilldown).bind(this, e) });
+            else {
+                // If we have no source of earliest/latest, default to ''.
+                _.extend(data, {
+                    earliest: '',
+                    latest: ''
+                });
+            }
+
+            // Set up the handlers for default drilldown behavior and preventing
+            // the default behavior
+            var preventRedirect = false;
+            var defaultDrilldown = _.once(_.bind(this.drilldown, this, e));
+            var preventDefault = function() {
+                preventRedirect = true;  
+            };
+            
+            this.trigger('drilldown click', 
+                { 
+                    field: e.name2 || e.name, 
+                    data: data, 
+                    event: e, 
+                    preventDefault: preventDefault,
+                    drilldown: defaultDrilldown
+                },
+                this
+            );
             
             var rowIndex = e.rowIndex;
             var cellIndex = e.cellIndex;
@@ -5126,16 +4700,19 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
                 var value = e.hasOwnProperty("value2") ? e.value2 : e.value;
                 var originalEvent = e.originalEvent;
 
-                this.trigger("clicked:row",
+                this.trigger("clicked:row click:row",
                     {
                         model: model,
                         index: rowIndex,
                         originalEvent: originalEvent,
-                        component: this
+                        event: originalEvent,
+                        component: this,
+                        preventDefault: preventDefault,
+                        drilldown: defaultDrilldown
                     },
                     this
                 );
-                this.trigger("clicked:cell",
+                this.trigger("clicked:cell click:cell",
                     {
                         model: model,
                         index: rowIndex,
@@ -5143,11 +4720,21 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
                         key: key,
                         value: value,
                         originalEvent: originalEvent,
-                        component: this
+                        event: originalEvent,
+                        component: this,
+                        preventDefault: preventDefault,
+                        drilldown: defaultDrilldown
                     },
                     this
                 );
             }          
+            
+            // Now that the event is trigged, if there is a default action of
+            // redirecting, we will execute it (depending on whether the user
+            // executed preventDefault()).
+            if (this.settings.get("drilldownRedirect") && !preventRedirect) {
+                defaultDrilldown();
+            }
         },
 
         drilldown: function(clickInfo, target) {
@@ -5157,16 +4744,27 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
         onManagerChange: function (managers, manager) {
             if(this.manager) {
                 this.manager.off(null, null, this);
+                this.manager = null;
             }
             if(this.resultsModel) {
                 this.resultsModel.off(null, null, this);
+                this.resultsModel = null;
             }
+            
+            if (!manager) {
+                this.renderMessage("no-search");
+                return;
+            }
+            
+            // Clear any messages, since we have a new manager.
+            this.renderMessage("empty");
+            
             this.manager = manager;
             this.resultsModel = this.manager.data(this.settings.get("data"), {
                 autofetch: true,
                 output_mode: "json_rows",
                 show_empty_fields: "True",
-                count: this.metadata.get('count'),
+                count: this.metadata.get('pageSize'),
                 offset: this.metadata.get('offset')
             });
             this.manager.on("search:start", this.onSearchStart, this);
@@ -5176,21 +4774,7 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
             this.manager.on("search:error", this.onSearchError, this);
             this.manager.on("search:done", this.onSearchDone, this);
             this.resultsModel.on("data", this.renderResults, this);
-
-            if(this.manager.isPostProcess) {
-                this.countData = this.manager.data("results",{
-                    autofetch: false,
-                    output_mode: "json",
-                    search: 'stats count'
-                });
-                this.countData.on("data", function(model, data){
-                    if(!data.results) {
-                        return;
-                    }
-                    var count = parseInt(data.results[0].count, 10);
-                    this.updateCount(count);
-                }, this);
-            }
+            this.resultsModel.on("error", this.onSearchError, this);
 
             // Handle existing job
             var content = manager.get('data');
@@ -5204,27 +4788,41 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
 
             this.manager.replayLastSearchEvent(this);
         },
+        _showMessages: function() {
+            this.$('.msg').show();
+            this.table.$el.hide();
+            if (this.paginator) {
+                this.paginator.$el.hide();
+            }
+        },
+        _hideMessages: function() {
+            this.$('.msg').hide();
+            this.table.$el.show();
+            if (this.paginator) {
+                this.paginator.$el.show();
+            }
+        },
         renderMessage: function(msg) {
             var el = this.$('.msg');
             if(!el.length) {
-                el = $('<div class="msg"></div>').appendTo(this.table.$el);
+                el = $('<div class="msg"></div>').appendTo(this.$el);
             }
             Messages.render(msg, el);
+            this._showMessages();
             this.trigger('rendered', this);
         },
         onSearchStart: function() {
             this._searchRunning = true;
             this.clearResults();
             this.renderMessage('waiting');
+            if (this.paginator) {
+                this.paginator.settings.set('page', 0);
+            }
         },
         onSearchDone: function(properties) {
             this._searchRunning = false;
-            if(this.countData) {
-                this.countData.fetch();
-            } else {
-                var previewCount = ((properties || {}).content || {}).resultPreviewCount || 0;
-                this.updateCount(previewCount);
-            }
+            var previewCount = ((properties || {}).content || {}).resultPreviewCount || 0;
+            this.updateCount(previewCount);
         },
         onSearchProgress: function(properties) {
             properties = properties || {};
@@ -5232,36 +4830,25 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
             var previewCount = job.resultPreviewCount || 0;
 
             if(previewCount > 0) {
-                if(this.countData) {
-                    this.countData.fetch();
-                } else {
-                    this.updateCount(previewCount);
-                }
+                this.updateCount(previewCount);
             }
         },
         onSearchCancelled: function() {
             this.renderMessage('cancelled');
         },
 
-        onSearchError: function(message, err, job) {
-            var msg = message;
-            if(err && err.data && err.data.messages && err.data.messages.length) {
-                msg = _(err.data.messages).pluck('text').join('; ');
-            }
+        onSearchError: function(message, err) {
+            var msg = Messages.getSearchErrorMessage(err) || message;
             this.renderMessage({
-                level: "warning",
+                level: "error",
                 icon: "warning-sign",
                 message: msg
-                //details: msg
             });
         },
         onSearchFailed: function(state, job) {
-            var msg = _('The search failed.').t();
-            if(state && state.content && state.content.messages) {
-                msg = _(state.content.messages).pluck('text').join('; ');
-            }
+            var msg = Messages.getSearchFailureMessage(state);
             this.renderMessage({
-                level: "warning",
+                level: "error",
                 icon: "warning-sign",
                 message: msg
             });
@@ -5271,7 +4858,7 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
                 return;
             }
             var args = {
-                count: this.metadata.get("count"),
+                count: this.metadata.get("pageSize"),
                 offset: this.metadata.get("offset")
             };
             if(this.metadata.has('sortKey')) {
@@ -5302,26 +4889,40 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
         transformFieldsToArray: function(){
             var fields = this.settings.get('fields');
             if (_.isString(fields)) {
-                // Since this is a string, we're going to treat it as a 
-                // space separated list of strings, with quoting. This is
-                // similar to what Splunk's 'fields' command takes.
-                fields = _.map(fields.match(fieldSplitterRegex), function(field) {
-                    return field.replace(quoteStripperRegex, "");
-                });
+                fields = $.trim(fields);
+
+                if(fields[0] === '[' && fields.slice(-1) === ']') {
+                    fields = JSON.parse(fields);
+                } else {
+                    // Since this is a string, we're going to treat it as a
+                    // space separated list of strings, with quoting. This is
+                    // similar to what Splunk's 'fields' command takes.
+                    fields = _.map(fields.match(fieldSplitterRegex), function(field) {
+                        return field.replace(quoteStripperRegex, "");
+                    });
+                }
                 this.settings.set('fields', fields, { silent: true });
             }
         },
         renderResults: function() {
             var rows, fields;
-            if(!this.resultsModel){
+            if(!this.resultsModel || !this.resultsModel.hasData()){
                 return;
             }
             this.collection = this.resultsModel.collection();
-            if(this.settings.has('fields') && !_.isEmpty(this.settings.get('fields'))) {                
+            if (this.settings.has('fields') && !_.isEmpty(this.settings.get('fields'))) {
                 fields = this.settings.get('fields');
-                
-                var fieldsIdx = {};
-                _(this.resultsModel.data().fields).each(function(f,i){ fieldsIdx[f]=i; });
+                var fieldsIdx = {}, resultsFields = this.resultsModel.data().fields;
+
+                if (_(fields).contains('*')) {
+                    fields = _(fields).chain().map(function(field) {
+                        return field === '*' ? _(resultsFields).select(function(resField) {
+                            return !_(fields).contains(resField);
+                        }) : field;
+                    }).flatten().unique().value();
+                }
+
+                _(resultsFields).each(function(f, i) { fieldsIdx[f] = i; });
                 rows = _(this.resultsModel.data().rows).map(function(o){
                     return _(fields).map(function(f){ return fieldsIdx.hasOwnProperty(f) ? o[fieldsIdx[f]] : null; });
                 });
@@ -5333,6 +4934,7 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
                 rows: rows,
                 fields: fields
             });
+            this._hideMessages();
         },
         clearResults: function() {
             if(this.paginator) {
@@ -5370,7 +4972,9 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
         }
     });
 
+    TableView.BaseCellRenderer = BaseCellRenderer;
+
     return TableView;
 });
 
-requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.setBuffer('/*  */\n\n.splunk-paginator {\n    user-select: none;\n    -moz-user-select: none;\n    -webkit-user-select: none;\n    margin-bottom: 5px;\n    padding-left: 15px;\n}\n.splunk-paginator .disabled, .splunk-paginator .selected {\n    color: #999;\n    cursor: default;\n}\n.splunk-paginator a {\n    border: 1px solid transparent;\n    border-radius: 3px;\n    padding-left: 5px;\n    padding-right: 5px;\n    text-decoration: none;\n    min-width: 20px;\n    line-height: 20px;\n    display: inline-block;\n    text-align: center;\n}\n.splunk-paginator a.selected, .splunk-paginator a:hover {\n    background: #eee;\n}\n.splunk-paginator span {\n    padding-left: 5px;\n    padding-right: 5px;\n}\n/*!\n * Splunk shoestrap\n * import and override bootstrap vars & mixins\n */\n.clearfix {\n  *zoom: 1;\n}\n.clearfix:before,\n.clearfix:after {\n  display: table;\n  content: \"\";\n  line-height: 0;\n}\n.clearfix:after {\n  clear: both;\n}\n.hide-text {\n  font: 0/0 a;\n  color: transparent;\n  text-shadow: none;\n  background-color: transparent;\n  border: 0;\n}\n.input-block-level {\n  display: block;\n  width: 100%;\n  min-height: 26px;\n  -webkit-box-sizing: border-box;\n  -moz-box-sizing: border-box;\n  box-sizing: border-box;\n}\n.ie7-force-layout {\n  *min-width: 0;\n}\n/* results table view\n    Sub-components: table-chrome, table-sorts, etc.\n\n    <div class=\"views-shared-resultstable\" style=\"display: block;\">\n        <div class=\"simpleResultsTableWrapper\">\n            <table class=\"simpleResultsTable splTable table table-striped table-chrome enableMouseover\">\n                <tbody>\n                    <tr class=\"\">\n                        <th class=\"None sorts\">\n                            <a><span class=\"sortLabel\">count</span> </a>\n                        </th>\n                        <th class=\"None\">\n                            <a><span class=\"sortLabel\">host</span> </a>\n                        </th>\n                        <th class=\"None\">\n                            <a><span class=\"sortLabel\">percent</span> </a>\n                        </th>\n                    </tr>\n                    <tr>\n                        <td field=\"count\" class=\"d\" ismin=\"1\" ismax=\"1\" heat=\"1.0\">\n                            100\n                        </td>\n                        <td field=\"host\" class=\"d\">\n                            pkhalil-mbp15.sv.splunk.com\n                        </td>\n                        <td field=\"percent\" class=\"d\" ismin=\"1\" ismax=\"1\" heat=\"1.0\">\n                            100.000000\n                        </td>\n                    </tr>\n                </tbody>\n            </table>\n        </div>\n    </div>\n\n*/\n.shared-resultstable .simpleResultsTableWrapper {\n  width: 100%;\n  overflow: auto;\n}\n.shared-resultstable table .pos {\n  color: #888;\n  text-align: right;\n  font-size: 11px;\n  width: 50px;\n}\n.shared-resultstable table tr > th:first-child,\n.shared-resultstable table tr > td:first-child {\n  padding-left: 20px;\n}\n.shared-resultstable table tr > th:last-child,\n.shared-resultstable table tr > td:last-child {\n  padding-right: 20px;\n}\n.shared-resultstable .table-chrome th a {\n  color: #333333;\n  text-decoration: none;\n}\n.shared-resultstable .table-chrome th.pos:after {\n  content: \"\";\n}\n.shared-resultstable-resultstablemaster {\n  overflow-x: auto;\n}\n.shared-resultstable-resultstablemaster table tr > th:first-child,\n.shared-resultstable-resultstablemaster table tr > td:first-child {\n  padding-left: 20px;\n}\n.shared-resultstable-resultstablemaster table tr > th:last-child,\n.shared-resultstable-resultstablemaster table tr > td:last-child {\n  padding-right: 20px;\n}\n.shared-resultstable-resultstablemaster td.numeric .multivalue-subcell {\n  text-align: right;\n}\n.shared-resultstable-resultstablemaster td.timestamp,\n.shared-resultstable-resultstablemaster th.timestamp {\n  min-width: 150px;\n}\n.shared-resultstable-resultstablemaster table.single-column-table th.numeric {\n  text-align: left;\n}\n.shared-resultstable-resultstablemaster table.single-column-table td.numeric {\n  text-align: left;\n}\n.shared-resultstable-resultstablemaster table.single-column-table td.numeric .multivalue-subcell {\n  text-align: left;\n}\n.shared-resultstable-resultstablemaster td.with-overlay {\n  padding-right: 20px;\n}\n.shared-resultstable-resultstablemaster .overlay-cell {\n  height: 24px;\n  width: 15px;\n  float: right;\n  margin: -4px -20px -24px 0;\n}\n.shared-resultstable-resultstablemaster .overlay-cell-value {\n  height: 24px;\n  width: 0;\n  border-left: 15px solid #f5f5f5;\n}\n.shared-resultstable-resultstablemaster .heat-value {\n  border-left-color: #d85d3c;\n}\n.shared-resultstable-resultstablemaster .max-value {\n  border-left-color: #d85d3c;\n}\n.shared-resultstable-resultstablemaster .min-value {\n  border-left-color: #6ab7c7;\n}\n.shared-resultstable-resultstablemaster .no-value {\n  border-left-color: transparent;\n}\n.shared-resultstable-resultstablemaster .tbody tr.even td {\n  background-color: transparent;\n}\n.shared-resultstable-resultstablemaster .tbody tr.odd td {\n  background-color: #f5f5f5;\n}\n.shared-resultstable-resultstablemaster .wrapped-results th,\n.shared-resultstable-resultstablemaster .wrapped-results td {\n  white-space: normal;\n}\n.shared-resultstable-resultstablemaster .not-wrapped-results th,\n.shared-resultstable-resultstablemaster .not-wrapped-results td {\n  white-space: nowrap;\n}\n.shared-resultstable-resultstablemaster thead tr.sorts th.highlighted {\n  background-color: #eeeeee;\n  background-color: #f5f5f5;\n  background-image: -moz-linear-gradient(top, #ffffff, #e5e5e5);\n  background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#ffffff), to(#e5e5e5));\n  background-image: -webkit-linear-gradient(top, #ffffff, #e5e5e5);\n  background-image: -o-linear-gradient(top, #ffffff, #e5e5e5);\n  background-image: linear-gradient(to bottom, #ffffff, #e5e5e5);\n  background-repeat: repeat-x;\n  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#ffffffff\', endColorstr=\'#ffe5e5e5\', GradientType=0);\n  border-color: #aeaeae;\n  border-top-color: #b7b7b7;\n  border-bottom-color: #989898;\n  background-position: 0 0;\n}\n.shared-resultstable-resultstablemaster tbody td.highlighted,\n.shared-resultstable-resultstablemaster tbody tr.highlighted > td {\n  background-color: #e4e4e4 !important;\n  cursor: pointer;\n}\n.shared-resultstable-resultstablemaster .multivalue-subcell.highlighted {\n  background-color: #e4e4e4 !important;\n  cursor: pointer;\n}\n.shared-resultstable-resultstablemaster .scroll-table-wrapper {\n  height: 100%;\n}\n'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick; 
+requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.setBuffer('/*  */\n\n.splunk-paginator {\n    user-select: none;\n    -moz-user-select: none;\n    -webkit-user-select: none;\n    margin-bottom: 5px;\n    padding-left: 15px;\n}\n.splunk-paginator .disabled, .splunk-paginator .selected {\n    color: #999;\n    cursor: default;\n}\n.splunk-paginator a {\n    border: 1px solid transparent;\n    border-radius: 3px;\n    padding-left: 5px;\n    padding-right: 5px;\n    text-decoration: none;\n    min-width: 20px;\n    line-height: 20px;\n    display: inline-block;\n    text-align: center;\n}\n.splunk-paginator a.selected, .splunk-paginator a:hover {\n    background: #eee;\n}\n.splunk-paginator span {\n    padding-left: 5px;\n    padding-right: 5px;\n}\n.clearfix{*zoom:1;}.clearfix:before,.clearfix:after{display:table;content:\"\";line-height:0;}\n.clearfix:after{clear:both;}\n.hide-text{font:0/0 a;color:transparent;text-shadow:none;background-color:transparent;border:0;}\n.input-block-level{display:block;width:100%;min-height:26px;-webkit-box-sizing:border-box;-moz-box-sizing:border-box;box-sizing:border-box;}\n.ie7-force-layout{*min-width:0;}\n.shared-resultstable .simpleResultsTableWrapper{width:100%;overflow:auto;}\n.shared-resultstable table .pos{color:#999999;text-align:right;font-size:11px;width:50px;}\n.shared-resultstable table tr>th:first-child,.shared-resultstable table tr>td:first-child{padding-left:20px;}\n.shared-resultstable table tr>th:last-child,.shared-resultstable table tr>td:last-child{padding-right:20px;}\n.shared-resultstable .table-chrome th a{color:#333333;text-decoration:none;}\n.shared-resultstable .table-chrome th.pos:after{content:\"\";}\n.shared-resultstable-resultstablemaster{overflow-x:auto;}.shared-resultstable-resultstablemaster table tr>th:first-child,.shared-resultstable-resultstablemaster table tr>td:first-child{padding-left:20px;}\n.shared-resultstable-resultstablemaster table tr>th:last-child,.shared-resultstable-resultstablemaster table tr>td:last-child{padding-right:20px;}\n.shared-resultstable-resultstablemaster td.numeric .multivalue-subcell{text-align:right;}\n.shared-resultstable-resultstablemaster td.timestamp,.shared-resultstable-resultstablemaster th.timestamp{min-width:150px;}\n.shared-resultstable-resultstablemaster table.single-column-table th.numeric{text-align:left;}\n.shared-resultstable-resultstablemaster table.single-column-table td.numeric{text-align:left;}.shared-resultstable-resultstablemaster table.single-column-table td.numeric .multivalue-subcell{text-align:left;}\n.shared-resultstable-resultstablemaster>.table>tbody>tr>td.with-overlay{padding-right:20px !important;}\n.shared-resultstable-resultstablemaster .overlay-cell{height:24px;width:15px;float:right;margin:-4px -20px -24px 0;}\n.shared-resultstable-resultstablemaster .overlay-cell-value{height:24px;width:0;border-left:15px solid #f5f5f5;}\n.shared-resultstable-resultstablemaster .heat-value{border-left-color:#d85d3c;}\n.shared-resultstable-resultstablemaster .max-value{border-left-color:#d85d3c;}\n.shared-resultstable-resultstablemaster .min-value{border-left-color:#6ab7c7;}\n.shared-resultstable-resultstablemaster .no-value{border-left-color:transparent;}\n.shared-resultstable-resultstablemaster .tbody tr.even td{background-color:transparent;}\n.shared-resultstable-resultstablemaster .tbody tr.odd td{background-color:#f5f5f5;}\n.shared-resultstable-resultstablemaster .wrapped-results th,.shared-resultstable-resultstablemaster .wrapped-results td{white-space:normal;}\n.shared-resultstable-resultstablemaster .not-wrapped-results th,.shared-resultstable-resultstablemaster .not-wrapped-results td{white-space:nowrap;}\n.shared-resultstable-resultstablemaster thead tr.sorts th.highlighted{background-color:#f5f5f5;background-image:-moz-linear-gradient(top, #ffffff, #e5e5e5);background-image:-webkit-gradient(linear, 0 0, 0 100%, from(#ffffff), to(#e5e5e5));background-image:-webkit-linear-gradient(top, #ffffff, #e5e5e5);background-image:-o-linear-gradient(top, #ffffff, #e5e5e5);background-image:linear-gradient(to bottom, #ffffff, #e5e5e5);background-repeat:repeat-x;filter:progid:DXImageTransform.Microsoft.gradient(startColorstr=\'#ffffffff\', endColorstr=\'#ffe5e5e5\', GradientType=0);background-color:#eeeeee;border-color:#aeaeae;border-top-color:#b7b7b7;border-bottom-color:#989898;background-position:0 0;}\n.shared-resultstable-resultstablemaster tbody td.highlighted,.shared-resultstable-resultstablemaster tbody tr.highlighted>td{background-color:#e4e4e4 !important;cursor:pointer;}\n.shared-resultstable-resultstablemaster .multivalue-subcell.highlighted{background-color:#e4e4e4 !important;cursor:pointer;}\n.shared-resultstable-resultstablemaster .scroll-table-wrapper{height:100%;}\n'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick; 

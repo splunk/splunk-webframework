@@ -5,6 +5,9 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.importlib import import_module
 
+import logging
+logger = logging.getLogger('spl.django.service')
+
 class BaseFinder(object):
     """
     Base class for all app finder classes.
@@ -46,13 +49,25 @@ class SplunkWebAppsFinder(BaseFinder):
     def __init__(self, *args, **kwargs):
         super(SplunkWebAppsFinder, self).__init__(*args, **kwargs)
         
+        # In case there is an error, we initialize it with the SPLUNK_HOME versions
+        apps_root = os.path.normpath(os.path.join(os.environ['SPLUNK_HOME'], "etc", "apps"))
+        slave_apps_root = os.path.normpath(os.path.join(os.environ['SPLUNK_HOME'], "etc", "slave_apps"))
+        
+        try:
+            # Find the true locations (respecting SHP, etc) for apps
+            import splunk.clilib.bundle_paths as bundle_paths
+            apps_root = bundle_paths.get_base_path()
+            slave_apps_root = bundle_paths.get_slaveapps_base_path()
+        except Exception, e:
+            logger.exception(e)
+        
         self.roots = [
-            os.path.normpath(os.path.join(os.environ['SPLUNK_HOME'], "etc", "apps")),
-            # TODO: add check for mounted paths for search head pooling
+            apps_root,
+            slave_apps_root,
         ]
     
     def _find(self, root):
-        # Find all the apps in server/apps
+        # Find all the apps in etc/apps and etc/server-apps
         apps = ()
         for splunkweb_app_name in os.listdir(root):
             full_splunkweb_app_path = os.path.join(root, splunkweb_app_name)
@@ -79,11 +94,13 @@ class SplunkWebAppsFinder(BaseFinder):
     def find(self):
         apps = ()
         for root in self.roots:
-            apps += self._find(root)
+            if root and os.path.isdir(root):
+                apps += self._find(root)
             
         return apps
 
 def find_user_apps():
+    
     # This is a rewrite of the logic inside debug_toolbar to load
     # all the user app finders
     finder_paths = getattr(settings, 'USER_APP_FINDERS')

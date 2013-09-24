@@ -1,19 +1,4 @@
 
-define('collections/services/data/ui/Navs',
-    [
-        "models/services/data/ui/Nav",
-        "collections/SplunkDsBase"
-    ],
-    function(NavModel, SplunkDsBaseCollection) {
-        return SplunkDsBaseCollection.extend({
-            url: "data/ui/nav",
-            model: NavModel,
-            initialize: function() {
-                SplunkDsBaseCollection.prototype.initialize.apply(this, arguments);
-            }
-        });
-    }
-);
 requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.addBuffer('splunkjs/mvc/aceheader/acemenubuilder.css'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick;
 /* Menu building class. COPIED FROM exposed/js/menu_builder.js and modified to fit your screen (splunkjs/mvc) */
 /*

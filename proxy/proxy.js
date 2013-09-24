@@ -4,6 +4,7 @@ var fs = require('fs');
 var Cookies = require('cookies');
 var dispatch = require('../contrib/dispatch/dispatch');
 var crypto = require('crypto');
+var url = require('url');
 
 // Initial, empty config object
 var config = {}
@@ -13,14 +14,19 @@ var decrypt = function (input, password, callback) {
     var input = input.replace(/\-/g, '+').replace(/_/g, '/');
     // Convert from base64 to binary string
     var edata = new Buffer(input, 'base64').toString('binary')
+    
+    if (edata.indexOf("noaes:") === 0) {
+        callback(edata.slice("noaes:".length));
+        return;
+    }
 
     // Create key from password
-    var m = crypto.createHash('md5');
+    var m = crypto.createHash('sha1');
     m.update(password)
-    var key = m.digest('hex');
+    var key = m.digest('hex').slice(0,32);
 
     // Create iv from password and key
-    m = crypto.createHash('md5');
+    m = crypto.createHash('sha1');
     m.update(password + key)
     var iv = m.digest('hex');
 
@@ -56,9 +62,19 @@ dispatcherRouter[util.format('%s/(.*)', config.proxy_path)] = function(req, res,
     var cookies = new Cookies(req, res);
     var encryptedSessionToken = cookies.get("session_token") || "";
     
+    // need to remove the browser cache-busting _=XYZ that is inserted by cache:false (SPL-71743)
+    var parsedUrl = url.parse(req.url);
+    if (parsedUrl.query) {
+        var splitQuery = parsedUrl.query.split("&")
+        var newQuery = splitQuery.filter(function(q) {
+            return q.indexOf("_=") !== 0;
+        });
+        req.url = parsedUrl.pathname + "?" + (newQuery.join("&"));
+    }
+    
     // Compare CSRF
     if (!/^(GET|HEAD|OPTIONS|TRACE)$/.test(req.method)) {
-        var cookieCsrfToken = cookies.get("csrftoken");    
+        var cookieCsrfToken = cookies.get("django_csrftoken_" + config['splunkdj_port']);    
         var headerCsrfToken = req.headers["x-csrftoken"];
         
         if (cookieCsrfToken !== headerCsrfToken) {
@@ -67,12 +83,17 @@ dispatcherRouter[util.format('%s/(.*)', config.proxy_path)] = function(req, res,
         }
     }
     
-    decrypt(encryptedSessionToken, config.secret_key, function(sessionToken) {
-        // Default to an empty session token if we don't have one
-        req.headers["Authorization"] = sessionToken || "Splunk ";
-        req.headers["Host"] = util.format('%s:%s', config.splunkd_host, config.splunkd_port);
-        next(null, true);
-    });
+    try {
+        decrypt(encryptedSessionToken, config.secret_key, function(sessionToken) {
+            // Default to an empty session token if we don't have one
+            req.headers["Authorization"] = sessionToken || "Splunk ";
+            req.headers["Host"] = util.format('%s:%s', config.splunkd_host, config.splunkd_port);
+            next(null, true);
+        });
+    }
+    catch(ex) {
+        next({status: 401, reason: "Couldn't read session token."}, false);
+    }
 };
 
 dispatcherRouter["/(.*)"] = function(req, res, next) {

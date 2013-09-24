@@ -1,6 +1,7 @@
 
 // THIS FILE IS PURPOSEFULLY EMPTY FOR R.JS COMPILER
-// LOOK IN $SPLUNK_SOURCE/cmake/splunkjs_build/run.js FOR MORE INFO;
+// IT IS A COMPILER TARGET FILE, AS WE CANNOT CREATE NEW FILES DYNAMICALLY FOR 
+// THE COMPILER;
 define("splunkjs/compiled/views", function(){});
 
 define('views/Base',[
@@ -53,6 +54,7 @@ function(
             if (this.options.moduleId) {
                 this.moduleId = this.options.moduleId;
             }
+            this.$el.attr('data-cid', this.cid);
             if (this.moduleId) {
                 var className = this.cssNamespace();
                 if (!this.options.dontAddModuleIdAsClass) {
@@ -109,129 +111,6 @@ function(
             });
             return this;
         },
-
-        // TEMPORARILY COMMENTING THESE OUT UNTIL WE HAVE TIME TO REFACTOR CONFLICTING SUBCLASSES
-
-        /**
-         * Shows this view, recursively showing all child views. Child views are shown
-         * after this view is shown.
-         * 
-         * Do not override this method; override the onShow method instead.
-         * 
-         * @param {String} key (optional) A key representing a "reason" that this view
-         * should be shown. This key should correspond to a key previously passed to the
-         * hide method. The view is only shown after this method has been called with
-         * all keys that were previously passed to the hide method.
-         */
-        //show: function(key) {
-        //    // ensure key is a string
-        //    key = (key != null) ? ("" + key) : "";
-        //
-        //    // we're already showing if no hideKeys are stored
-        //    var hideKeys = this._hideKeys;
-        //    if (!hideKeys) {
-        //        return this;
-        //    }
-        //
-        //    // delete the given key from hideKeys
-        //    delete hideKeys[key];
-        //
-        //    // don't actually show if there are more hideKeys
-        //    for (key in hideKeys) {
-        //        if (hideKeys.hasOwnProperty(key)) {
-        //            return this;
-        //        }
-        //    }
-        //
-        //    // delete hideKeys store
-        //    this._hideKeys = null;
-        //
-        //    // show ourself before child views
-        //    this.$el.show();
-        //
-        //    // child views are recursively shown in the onShow method
-        //    this.onShow();
-        //
-        //    return this;
-        //},
-
-        /**
-         * Hides this view, recursivly hiding all child views. Child views are hidden
-         * before this view is hidden.
-         * 
-         * Do not override this method; override the onHide method instead.
-         * 
-         * @param {String} key (optional) A key representing a "reason" that this view
-         * is being hidden. In order to show the view, the show method must be called
-         * with all keys previously passed to this method.
-         */
-        //hide: function(key) {
-        //    // ensure key is a string
-        //    key = (key != null) ? ("" + key) : "";
-        //
-        //    // we're already hidden if previous hideKeys are stored
-        //    // store additional key in hideKeys
-        //    var hideKeys = this._hideKeys;
-        //    if (hideKeys) {
-        //        hideKeys[key] = true;
-        //        return this;
-        //    }
-        //
-        //    // create hideKeys store and store first key
-        //    hideKeys = this._hideKeys = {};
-        //    hideKeys[key] = true;
-        //
-        //    // hide child views before ourself
-        //    // child views are recursively hidden in the onHide method
-        //    this.onHide();
-        //
-        //    // hide ourself
-        //    this.$el.hide();
-        //
-        //    return this;
-        //},
-
-        /**
-         * Recursively shows all child views. Override this method with custom code that
-         * should be run when this view is shown. Make sure to call the base
-         * implementation when overriding.
-         * 
-         * This method is automatically called by the show method and should not be
-         * called directly.
-         */
-        //onShow: function() {
-        //    // recursively show child views
-        //    _.each(this.children, function(child) {
-        //        if (_.isFunction(child.show)) {
-        //             child.show("views-Base-parent");
-        //        }
-        //    });
-        //},
-
-        /**
-         * Recursively hides all child views. Override this method with custom code that
-         * should be run when this view is hidden. Make sure to call the base
-         * implementation when overriding.
-         * 
-         * This method is automatically called by the hide method and should not be
-         * called directly.
-         */
-        //onHide: function() {
-        //    // recursively hide child views
-        //    _.each(this.children, function(child) {
-        //        if (_.isFunction(child.hide)) {
-        //             child.hide("views-Base-parent");
-        //        }
-        //    });
-        //},
-
-        /**
-         * Returns true if this view is showing; false otherwise.
-         */
-        //isShowing: function() {
-        //    // we're showing if there is no hideKeys store
-        //    return (this._hideKeys == null);
-        //},
 
         /**
          * Postpone the execution of render until after the input has stopped arriving.
@@ -524,11 +403,15 @@ define('views/shared/Modal',
         var CLASS_NAME = 'modal fade',
             CLASS_MODAL_WIDE = 'modal-wide',
             HEADER_CLASS = 'modal-header',
-            BODY_CLASS = 'modal-body',
+            NON_SCROLLING_BODY_CLASS = 'modal-body',
+            BODY_CLASS = 'modal-body modal-body-scrolling',
             FOOTER_CLASS = 'modal-footer',
             HEADER_SELECTOR = "." + HEADER_CLASS,
             HEADER_TITLE_SELECTOR = HEADER_SELECTOR + " > h3",
-            BODY_SELECTOR = "." + BODY_CLASS,
+            LOADING_CLASS = "modal-loading", 
+            LOADING_SELECTOR = "." + LOADING_CLASS, 
+            LOADING_HORIZONTAL = '<div class="'+ LOADING_CLASS + '"></div>', 
+            BODY_SELECTOR = ".modal-body",
             BODY_FORM_SELECTOR = BODY_SELECTOR + " > div.form",
             FORM_HORIZONTAL = '<div class="form form-horizontal"></div>',
             FORM_HORIZONTAL_COMPLEX = '<div class="form form-horizontal form-complex"></div>',
@@ -554,9 +437,10 @@ define('views/shared/Modal',
 
         // non-exported constants
         var KEY_CODES = {
-                ENTER: 13
+                ENTER: 13,
+                TAB: 9
             },
-            TEXT_INPUT_SELECTOR = 'input[type="text"], input[type="password"], textarea';
+            INPUT_SELECTOR = '.btn, input[type="text"], input[type="password"], textarea';
 
         return Base.extend({
                 className: CLASS_NAME,
@@ -592,7 +476,7 @@ define('views/shared/Modal',
                         if (e.target !== e.currentTarget) return;
                         this.shown = true;
                         // check for any text inputs inside the dialog, focus the first one
-                        var $textInputs = this.$(TEXT_INPUT_SELECTOR);
+                        var $textInputs = this.$(INPUT_SELECTOR);
                         if($textInputs.length > 0) {
                             $textInputs.first().focus();
                         }
@@ -606,6 +490,55 @@ define('views/shared/Modal',
                         if (e.target !== e.currentTarget) return;
                         this.shown = false;
                         this.trigger("hidden");
+                    },
+                    'keydown': function(e) {
+                        var keyCode = e.which;
+                        if (keyCode === KEY_CODES.TAB) {
+                            var tabbableSelectors = 'a[href], area[href], input:not([disabled]),' +
+                                                    'select:not([disabled]), textarea:not([disabled]),' +
+                                                    'button:not([disabled]), iframe, object, embed, *[tabindex],' +
+                                                    '*[contenteditable]',
+                                tabbableElements = this.el.querySelectorAll(tabbableSelectors);
+                            
+                            tabbableElements = _.uniq(tabbableElements);
+                            for (var i = 0; i < tabbableElements.length; i++) {
+                                if (!$(tabbableElements[i]).is(':visible')) {
+                                    tabbableElements.splice(i, 1);
+                                    i--;
+                                }
+                            }
+                            
+                            var firstElement = tabbableElements[0],
+                                lastElement = tabbableElements[tabbableElements.length - 1];
+                            
+                            if (_.contains(tabbableElements, e.target)) {
+                                e.preventDefault();
+                                if (e.target === lastElement && !e.shiftKey) {
+                                    firstElement.focus();
+                                } else if (e.target === firstElement && e.shiftKey) {
+                                    lastElement.focus();
+                                } else if (e.shiftKey) {
+                                    tabbableElements[_.indexOf(tabbableElements, e.target) - 1].focus();
+                                } else {
+                                    tabbableElements[_.indexOf(tabbableElements, e.target) + 1].focus();
+                                }
+                            }
+                        }                        
+                    },
+                    'keyup': function(e) {
+                        var keyCode = e.which;
+                        if (keyCode === KEY_CODES.ENTER) {
+                            var $target = $(e.target);
+                            if ($target.is('input') && $target.attr('type') === 'text' && this.$el.find('.btn-primary:visible').length === 1) {
+                                // if the currently focused element is any kind of text input,
+                                // make sure to blur it so that any change listeners are notified
+                                if ($target.is(INPUT_SELECTOR)) {
+                                    $target.blur();
+                                }
+                                e.preventDefault();
+                                this.$el.find('.btn-primary:visible').click();
+                            }
+                        }
                     }
                 },
                 hide: function() {
@@ -634,6 +567,9 @@ define('views/shared/Modal',
                 HEADER_TITLE_SELECTOR: HEADER_TITLE_SELECTOR,
                 BODY_SELECTOR: BODY_SELECTOR,
                 BODY_FORM_SELECTOR: BODY_FORM_SELECTOR,
+                LOADING_CLASS: LOADING_CLASS, 
+                LOADING_SELECTOR: LOADING_SELECTOR, 
+                LOADING_HORIZONTAL: LOADING_HORIZONTAL,
                 FOOTER_SELECTOR: FOOTER_SELECTOR,
                 TEMPLATE: TEMPLATE,
                 FORM_HORIZONTAL: FORM_HORIZONTAL,
@@ -645,27 +581,7 @@ define('views/shared/Modal',
                 BUTTON_CONTINUE: BUTTON_CONTINUE,
                 BUTTON_DELETE: BUTTON_DELETE,
                 BUTTON_DONE: BUTTON_DONE,
-                BUTTON_NEXT: BUTTON_NEXT,
-
-                // class-level utility method for handling dialog behavior related to key events
-                // currently only handles the enter key but could be extended to do more
-                // @param event - the jQuery event object
-                // @param handlers - a map of key event types to callbacks
-                // @param context (optional) the context to use when firing the callback
-                handleKeyboardEvent: function(event, handlers, context) {
-                    var keyCode = event.which;
-                    if(keyCode === KEY_CODES.ENTER && handlers.enter) {
-                        var $target = $(event.target);
-                        // if the currently focused element is any kind of text input,
-                        // make sure to blur it so that any change listeners are notified
-                        if($target.is(TEXT_INPUT_SELECTOR)) {
-                            $target.blur();
-                        }
-                        handlers.enter.call(context || null);
-                        event.preventDefault();
-                    }
-                    // we could handle other key events here
-                }
+                BUTTON_NEXT: BUTTON_NEXT
             }
         );
     }
@@ -800,6 +716,12 @@ function(
             var updatedAttrs = {};
             updatedAttrs[this.options.modelAttribute] = this._value;
             return updatedAttrs;
+        },
+        enable: function() {
+            this.$el.removeClass('enabled');
+        },
+        disable: function() {
+            this.$el.addClass('enabled');
         }
     });
 
@@ -895,6 +817,7 @@ define('views/shared/delegates/PopdownDialog',[
             
             this.addEventHandlers = _.bind(this.addEventHandlers, this);
             this.dialogClick = _.bind(this.dialogClick, this);
+            this.keepInBoundsDebounced =  _.debounce(this.keepInBounds, 100);
 
             // if this.$el doesn't already have an id, create a unique one (to be used in show())
             if(!this.$el.attr('id')) {
@@ -942,7 +865,7 @@ define('views/shared/delegates/PopdownDialog',[
 
             this.trigger('shown', $toggle);
         },
-        hide: function () {
+        hide: function () {            
             if (!this.isShown) return false;
 
             this.trigger('hide');
@@ -1042,7 +965,7 @@ define('views/shared/delegates/PopdownDialog',[
                 
                 //If this hasn't been attached the body or some other element, set positionFromTop to false. It will be positioned from the bottom.
                 //It's better to position from the bottom so dialogs that change height, like the timerangepicker, are correctly positioned.
-                positionFromTop = this.attachDialogTo || this.$el.parent()[0] == $('body')[0];
+                positionFromTop = this.options.attachDialogTo || this.$el.parent()[0] == $('body')[0] || this.$el.parent()[0] == $('.modal:visible')[0];
             } else {
                 //Pop downward
                 shift.top= m.toggle.height;
@@ -1142,6 +1065,18 @@ define('views/shared/delegates/PopdownDialog',[
             this.$el.css(this.position);
                             
             this.scrollPosition = {top: newScrollTop, left: newScrollLeft};
+            this.keepInBoundsDebounced();
+        },
+        keepInBounds: function (e)  {
+            // if it is no longer pointing at something shown in the view container, close;
+            var containerTop = this.scrollContainer().offset().top,
+                containerBottom  = containerTop + this.scrollContainer().outerHeight(),
+                elEdge = this.$el.hasClass('up') ? this.$el.offset().top + this.$el.outerHeight() : this.$el.offset().top; // use the bottom edge when popping upward
+                
+            if (elEdge < containerTop || elEdge > containerBottom) {
+                this.hide();
+            }
+            
         },
         bodyMouseDown: function (e) {
             var $target = $(e.target);
@@ -1174,10 +1109,11 @@ define('views/shared/delegates/PopdownDialog',[
             
             if (e.keyCode == escapeKeyCode)  {
                 this.hide();
+                return true;
             }
             
-            if (e.keyCode == enterKeyCode && !($.contains(this.$el[0], e.target) || e.target === this.$el[0]))  {
-                this.hide();
+            if (e.keyCode == enterKeyCode)  {
+                this.bodyMouseDown(e);
             }
             
             return true;
@@ -1382,7 +1318,9 @@ define('views/shared/controls/SyntheticSelectControl',[
     'backbone',
     'module',
     'views/shared/controls/Control',
-    'views/shared/delegates/Popdown'
+    'views/shared/delegates/Popdown',
+    'util/math_utils',
+    'bootstrap.tooltip'
 ],
 function(
     $,
@@ -1390,7 +1328,9 @@ function(
     Backbone,
     module,
     Control,
-    Popdown
+    Popdown,
+    math_utils,
+    tooltip
 ){
     /**
      * Synthetic Select dropdown a-la Bootstrap
@@ -1398,22 +1338,32 @@ function(
      * @param {Object} options
      *                        {Object} model The model to operate on
      *                        {String} modelAttribute The attribute on the model to observe and update on selection
-     *                        {Object} items A one-level deep data structure having keys:
+     *                        {Object} items An array of elements having the following keys:
      *                                       label (textual display),
      *                                       value (value to store in model)
      *                                       icon (icon name to show in menu and button label)
+     *                                       iconURL (URL of icon to show in menu and button label)
      *                                       enabled (optional boolean, defaults to true, whether to enable the selection)
      *                                       (ie, {label: 'Foo Bar', value: 'foo', icon: 'bar'}).
      *                        {Object} groupedItems Optionally use if you want optgroup style dropdowns
-     *                                 A list data structure whose elements are hashes keys:
-     *                                       label (textual display),
-     *                                       items see above
+     *                                An array of arrays of items
+     *                                label (textual display),
+     *                                items an array of items having the following keys:
+     *                                     label (textual display),
+     *                                     value (value to store in model)
+     *                                     icon (icon name to show in menu and button label)
+     *                                     iconURL (URL of icon to show in menu and button label)
+     *                                     enabled (optional boolean, defaults to true, whether to enable the selection)
+     *                                     (ie, {label: 'Foo Bar', value: 'foo', icon: 'bar'}).
      *                        {String} help (Optional) Html to display in the bottom help section
      *                        {String} label (Optional) Html to display as the button label
      *                        {String} toggleClassName (Optional) Class attribute to add to the parent element
      *                        {String} menuClassName (Optional) Class attribute to add to the dialog element
      *                        {String} menuWidth (Optional) narrow, normal, or wide
      *                        {String} additionalClassNames (Optional) Class attribute(s) to add to control
+     *                        {String} iconClassName (Optional) Class attribute(s) to add to icon
+     *                        {String} iconURLClassName (Optional) Class attribute(s) to add to iconURL
+     *                        {Boolean} nearestValue (Optional) if true: try to select the nearest value from items for the value of the modelAttribute 
      *
      */
 
@@ -1424,41 +1374,26 @@ function(
            UP_ARROW: 38,
            DOWN_ARROW: 40
         },
+        items: undefined,
+        groupedItems: undefined,
+        renderList: true,
         initialize: function() {
             var defaults = {
                 toggleClassName: '' ,
                 menuClassName: '',
+                iconClassName: 'icon-large',
+                iconURLClassName: 'icon-large',
                 descriptionPosition: 'right',
                 label: '',
                 popdownOptions: {el: this.el},
-                html: ''
+                html: '',
+                nearestValue: false
             };
 
             _.defaults(this.options, defaults);
             _.defaults(this.options.popdownOptions, defaults.popdownOptions);
-            if (!this.options.items && this.options.groupedItems){
-                this.options.items = [];
 
-
-                if(!(this.options.groupedItems instanceof Array) || 
-                    !(this.options.groupedItems[0].items instanceof Array) ||
-                    _.isUndefined(this.options.groupedItems[0].items[0].value)){
-                    throw new Error("Invalid groupedItems Input"); 
-                }
-
-                _.each(this.options.groupedItems, function(value, key){
-                    _.each(value.items, function(item, index){
-                        this.options.items.push(item);
-                    }, this);
-                }, this);
-            }
-            else if (this.options.items) {
-                this.options.groupedItems = [];
-                var group = {};
-                group.label = '';
-                group.items = this.options.items;
-                this.options.groupedItems.push(group);
-            }
+            this.normalizeItems(this.options.items, this.options.groupedItems);
 
             var modelAttribute = this.options.modelAttribute;
             if (modelAttribute) {
@@ -1467,9 +1402,82 @@ function(
             
             Control.prototype.initialize.call(this, arguments);
             
-            this.children.popdown = new Popdown(this.options.popdownOptions);
-            this.children.popdown.on('shown', this.show.bind(this));
-            this.children.popdown.on('hidden', this.hide.bind(this));
+        },
+        /**
+         * Change the items and render the control using the new items
+         *
+         * @param items An array of items having the following keys:
+         *                                label (textual display),
+         *                                value (value to store in model)
+         *                                icon (icon name to show in menu and button label)
+         *                                enabled (optional boolean, defaults to true, whether to enable the selection)
+         *                                (ie, {label: 'Foo Bar', value: 'foo', icon: 'bar'}).
+         */
+        setItems: function(items) {
+            this.normalizeItems(items, undefined);
+            this.debouncedRender();
+        },
+
+        /**
+         * Change the groupedItems and render the control using the new groupedItems
+         *
+         * @param groupedItems An array of arrays of items
+         *                                label (textual display),
+         *                                items an array of items having the following keys:
+         *                                     label (textual display),
+         *                                     value (value to store in model)
+         *                                     icon (icon name to show in menu and button label)
+         *                                     enabled (optional boolean, defaults to true, whether to enable the selection)
+         *                                     (ie, {label: 'Foo Bar', value: 'foo', icon: 'bar'}).
+         */
+        setGroupedItems: function(groupedItems) {
+            this.normalizeItems(undefined, groupedItems);
+            this.debouncedRender();
+        },
+        /**
+         * GroupedItems are used for rendering while items are used for iteration. This function ensures that both
+         * groupedItems and items are normalized to the correct format. This should only be called internally.
+         *
+         * @param items
+         * @param groupedItems
+         */
+        normalizeItems: function(items, groupedItems) {
+            if (!items && groupedItems){
+                this.items = [];
+                this.groupedItems = groupedItems.slice();
+
+                if(!(groupedItems instanceof Array) ||
+                    !(groupedItems[0].items instanceof Array) ||
+                    _.isUndefined(groupedItems[0].items[0].value)){
+                    throw new Error("Invalid groupedItems Input");
+                }
+
+                _.each(groupedItems, function(value, key){
+                    _.each(value.items, function(item, index){
+                        this.items.push(item);
+                    }, this);
+                }, this);
+            } else if (items) {
+                this.items = items.slice();
+                this.groupedItems = [];
+                var group = {};
+                group.label = '';
+                group.items = this.items;
+                this.groupedItems.push(group);
+            }
+            
+            if (this.options.nearestValue) {
+                this.valuesAsInts = [];
+                _.each(this.items, function(item){
+                    var convertedToInt = parseInt(item.value, 10);
+                    if (_.isNaN(convertedToInt)) {
+                        throw new Error('You cannot use the nearestValue option with a SyntheticSelect control that has values other than ints!');
+                    }
+                    this.valuesAsInts.push(convertedToInt);
+                }, this);
+            }
+
+            this.renderList = true;
         },
         stopListening: function() {
             $(window).off('.' + this.cid);
@@ -1495,6 +1503,9 @@ function(
             this.options.enabled = true;
             this.$('a.dropdown-toggle').removeClass('disabled');
         },
+        tooltip: function(options){
+            this.$('a.dropdown-toggle').tooltip(options);
+        },
         click: function(e) {
             var $currentTarget = $(e.currentTarget);
             if(!$currentTarget.hasClass('disabled')) {
@@ -1514,19 +1525,19 @@ function(
             var focusValue = $focused.data("value");
             
             if ($.contains(this.el, $focused[0])) {
-                _.each(this.options.items, function(element, key){
-                    element['value'] == focusValue? selectedItem = key : false;
+                _.each(this.items, function(element, key){
+                    element['value'] == focusValue ? selectedItem = key : false;
                 }, this);
             }
             
             if (e.keyCode === this.keys['DOWN_ARROW']) {
-                if (selectedItem < this.options.items.length -1 ) {
-                    this.$menu.find("[data-value=" + this.options.items[selectedItem + 1]['value'] + "]").focus();
+                if (selectedItem < this.items.length -1 ) {
+                    this.$menu.find("[data-value=" + this.items[selectedItem + 1]['value'] + "]").focus();
                     return false;
                 }
             } else if (e.keyCode === this.keys['UP_ARROW']) {
                 if (selectedItem > 0 ) {
-                    this.$menu.find("[data-value=" + this.options.items[selectedItem - 1]['value'] + "]").focus();
+                    this.$menu.find("[data-value=" + this.items[selectedItem - 1]['value'] + "]").focus();
                     return false;
                 } else {
                     this.$(".dropdown-toggle").focus();
@@ -1553,22 +1564,35 @@ function(
                 
             }             
         },
+        findItem: function() {
+            if (!this.items || !this.items.length) {
+                return void(0);
+            }
+            
+            if (this.options.nearestValue) {
+                var nearestObject = math_utils.nearestMatchAndIndexInArray(this._value, this.valuesAsInts);
+                if (nearestObject.index != void(0)) {
+                    return this.items[nearestObject.index];
+                }
+            }
+            
+            return _.find(this.items, function(element) {
+                return _.isEqual(this._value, element.value);
+            }, this) || this.items[0];
+        },
         render: function() {
-
-            var groupedItems = this.options.groupedItems;
-            var items = this.options.items;
+            //TODO [JCS] Check why the dropdown doesn't open after setItems is called.
+            var groupedItems = this.groupedItems;
+            var items = this.items;
 
             if (!items || !items.length) {
                 return this;
             }
 
-            var item = _.find(items, function(element) {
-                    return _.isEqual(this._value, element.value);
-                }, this) || items[0];
+            var item = this.findItem();
 
-            if (!this.el.innerHTML) {
+            if (this.renderList) {
                 var template = this.compiledTemplate({
-                        items: items,
                         groupedItems: groupedItems,
                         item: item,
                         options: this.options,
@@ -1576,13 +1600,22 @@ function(
                     });
                 this.$el.html(template);
                 
-
                 //bind that values to the items
                 this.$el.find('.dropdown-menu a').each(function(i, el) {
                     $(el).data('value', items[i].value);
                 });
                 
                 this.$menu =  this.$('.dropdown-menu');
+
+                if (this.children.popdown) {
+                    this.children.popdown.remove();
+                }
+
+                this.children.popdown = new Popdown(this.options.popdownOptions);
+                this.children.popdown.on('shown', this.show.bind(this));
+                this.children.popdown.on('hidden', this.hide.bind(this));
+
+                this.renderList = false;
             }
 
             var additionalClassNames = this.options.additionalClassNames;
@@ -1597,9 +1630,11 @@ function(
             });    
                                     
             //Update the toggle label
-            this.$(".dropdown-toggle > .link-label").text(this.options.label + " " + item.label);
+            if (item.label) {
+                this.$(".dropdown-toggle > .link-label").text(_(this.options.label).t() + " " + _(item.label).t());
+            }
             this.$(".dropdown-toggle > i").attr('class',  "icon-" + item.icon);
-            
+
             return this;
         },
         template: '\
@@ -1614,8 +1649,9 @@ function(
                 <% _.each(group.items, function(element, index, list) { %>\
                     <li><a class="<%- element.enabled === false ? \"disabled\" : \"\"%>" href="#" data-value="<%- element.value %>">\
                         <i class="icon-check"></i>\
-                        <% if (element.icon) { %> <i class="icon-<%-element.icon%> icon-large"></i><% } %>\
-                        <%- element.label %>\
+                        <% if (element.icon) { %> <i class="icon-<%-element.icon%> <%-options.iconClassName %>"></i><% } %>\
+                        <% if (element.iconURL) { %> <img class="<%-options.iconURLClassName %>" src="<%-element.iconURL%>" alt="icon"><% } %>\
+                        <span class="link-label"><%- element.label %></span>\
                         <% if (element.description && (options.descriptionPosition == "right")) { %> <span class="link-description"><%- element.description %></span><% } %>\
                         <% if (element.description && (options.descriptionPosition == "bottom")) { %> <span class="link-description-below"><%- element.description %></span><% } %>\
                     </a></li>\
@@ -1682,7 +1718,7 @@ define('views/shared/controls/SyntheticRadioControl',
             if (this.options.modelAttribute) {
                 this.$el.attr('data-name', this.options.modelAttribute);
             }
-            
+            this.$el.addClass('btn-group-radio');
             Control.prototype.initialize.call(this, this.options);
             
         },
@@ -1712,7 +1748,7 @@ define('views/shared/controls/SyntheticRadioControl',
                                 modelAttribute: this.options.modelAttribute
                         });
                 this.$el.html(template);
-                this.$('[rel="tooltip"]').tooltip({animation:false});
+                this.$('[rel="tooltip"]').tooltip({animation:false, container: 'body'});
 
                 //bind that values to the items
                 var items = this.options.items;
@@ -1734,6 +1770,10 @@ define('views/shared/controls/SyntheticRadioControl',
             }
 
             return this;
+        },
+        remove: function(){
+            this.$('[rel="tooltip"]').tooltip('destroy');
+            Control.prototype.remove.call(this);
         },
         template: '\
             <% _.each(items, function(item, index){ %>\
@@ -1864,6 +1904,7 @@ define('views/shared/controls/TextareaControl',['underscore', 'module', 'views/s
      *                        {String} textareaClassName (Optional) Class attribute for the textarea
      *                        {String} additionalClassNames (Optional) Class attribute(s) to add to control
      */
+    var ENTER_KEY = 13;
 
     return Control.extend({
         moduleId: module.id,
@@ -1898,6 +1939,13 @@ define('views/shared/controls/TextareaControl',['underscore', 'module', 'views/s
             },
             'mouseup textarea': function(e) { //could result in pasted text
                 this.updatePlaceholder();
+            },
+            'keypress textarea': function(e) {
+                // Eat the Enter event since the textarea input handles this event. Ideally we'd call preventDefault
+                // and listen for defaultPrevented, but this isn't
+                if (e.which == ENTER_KEY) {
+                    e.stopPropagation();
+                }
             }
 
         },
@@ -2045,7 +2093,8 @@ define('views/shared/controls/TextControl',['underscore', 'module', 'views/share
                     append: false,
                     useSyntheticPlaceholder: false,
                     trimLeadingSpace: true,
-                    trimTrailingSpace: true
+                    trimTrailingSpace: true,
+                    password: false
             };
             _.defaults(this.options, defaults);
 
@@ -2095,7 +2144,7 @@ define('views/shared/controls/TextControl',['underscore', 'module', 'views/share
         },
         disable: function(){
             this.$input.hide();
-            this.$disabledInput.show();
+            this.$disabledInput.css('display', 'inline-block');
         },
         enable: function(){
             this.$input.show();
@@ -2130,7 +2179,7 @@ define('views/shared/controls/TextControl',['underscore', 'module', 'views/share
         // TODO: the `for` control-controlCid needs to be hooked up to the input with same `id`
         template: '\
         <span class="uneditable-input <%= options.inputClassName %>" <% if(options.enabled){ %>style="display:none"<%}%>><%- value %></span>\
-        <input type="text" name="<%- options.modelAttribute || "" %>" class="<%= options.inputClassName %>" value="<%- value %>" <% if(options.placeholder && !options.useSyntheticPlaceholder){ %>placeholder="<%- options.placeholder %>"<%}%> <% if(!options.enabled){ %>style="display:none"<%}%>>\
+        <input type="<% if (options.password){%>password<%}else{%>text<%}%>" name="<%- options.modelAttribute || "" %>" class="<%= options.inputClassName %>" value="<%- value %>" <% if(options.placeholder && !options.useSyntheticPlaceholder){ %>placeholder="<%- options.placeholder %>"<%}%> <% if(!options.enabled){ %>style="display:none"<%}%>>\
             <% if (options.useSyntheticPlaceholder) { %> <span class="placeholder"><%- options.placeholder %></span><% } %>\
         '
     });
@@ -2207,7 +2256,14 @@ function(
                 }
             }
 
-            this.$('input').datepicker('setDate',  this.model.jsDate());
+            // SPL-70724, in IE setting the same date will cause the date picker dialog to open again
+            // so we first check if they are equal
+            var inputDate = this.$('input').datepicker('getDate'),
+                modelDate = this.model.jsDate();
+
+            if(!inputDate || inputDate.getTime() !== modelDate.getTime()) {
+                this.$('input').datepicker('setDate',  modelDate);
+            }
             this.$('input').blur();
 
             return this;
@@ -2267,6 +2323,8 @@ define('views/shared/controls/ControlGroup',
      *                        {Boolean} forceUpdate (Optional) Whether controls should force updates when setting model attributes,
      *                                                          defaults to false
      *                        {Boolean} enabled (Optional) Whether the control group should appear enabled, defaults to true
+     *                        {Boolean} required (Optional) Whether the control group is required and should have a red asterisk,
+     *                                                          defaults to false
      *                        {String} tooltip (Optional) Text to display in the tooltip.
      */
 
@@ -2280,7 +2338,8 @@ define('views/shared/controls/ControlGroup',
                     error: false,
                     _errorMsg : "",
                     controlClass: '',
-                    enabled: true
+                    enabled: true,
+                    required: false
             };
             _.defaults(this.options, defaults);
 
@@ -2335,19 +2394,27 @@ define('views/shared/controls/ControlGroup',
                     this.childList.push(controlView);
                 }
             }, this);
+
+            // use a dictionary to keep track of the validity of each attribute,
+            // the control group as a whole is invalid if any one attribute is invalid
+            this.perAttrValidation = {};
             if(_.isArray(this.options.controls)){
                  _.each(this.options.controls, function(control, index) {
                     if(control.options && control.options.model){
+                        this.perAttrValidation[control.options.modelAttribute] = true;
                         control.options.model.on('attributeValidated:' + control.options.modelAttribute, function(isValid, key, error){
-                            this.error(!isValid);
+                            this.perAttrValidation[key] = isValid;
+                            this.error(_.any(this.perAttrValidation, function(value) { return !value; }));
                         }, this);
                     }
                  },this);
             }
             if(this.options.controlOptions && (this.options.controlOptions.model instanceof Backbone.Model)) {
                 if(!_.isArray(this.options.controlOptions)) {
+                    this.perAttrValidation[this.options.controlOptions.modelAttribute] = true;
                     this.options.controlOptions.model.on('attributeValidated:' + this.options.controlOptions.modelAttribute, function(isValid, key, error){
-                        this.error(!isValid);
+                        this.perAttrValidation[key] = isValid;
+                        this.error(_.any(this.perAttrValidation, function(value) { return !value; }));
                     }, this);
                 }
             }
@@ -2366,7 +2433,8 @@ define('views/shared/controls/ControlGroup',
                     help: this.options.help,
                     controlClass: this.options.controlClass,
                     helpClass: this.options.helpClass,
-                    tooltip: this.options.tooltip
+                    tooltip: this.options.tooltip,
+                    required: this.options.required
                 });
                 this.$el.html(template);
 
@@ -2374,8 +2442,11 @@ define('views/shared/controls/ControlGroup',
                     this.$('.tooltip-link').tooltip({animation:false, title: this.options.tooltip});
                 }
 
-                _.each(this.childList, function(child) {
-                    this.$('.controls').append(child.render().el);
+                _.each(this.childList, function(child, i) {
+                    this.$('.controls').append(child.render().$el);
+                    if(!i) { 
+                        child.$el.attr('id', "control-" + this.children.child0.cid);
+                    }
                 }, this);
                 if (this.options.help) {
                     this.$('.controls').append(this.$('.help-block')); //move the help block back to the end
@@ -2392,6 +2463,14 @@ define('views/shared/controls/ControlGroup',
         },
         show: function() {
             this.$el.show();
+        },
+        enable: function() {
+            this.$el.removeClass('disabled');
+            _(this.getAllControls()).invoke('enable');
+        },
+        disable: function() {
+            this.$el.addClass('disabled');
+            _(this.getAllControls()).invoke('disable');
         },
         getModelAttributes: function() {
             var attrs = [];
@@ -2417,6 +2496,9 @@ define('views/shared/controls/ControlGroup',
                 <% if (tooltip) { %>\
                     <a href="#" class="tooltip-link"><%- _("?").t() %></a>\
                 <% } %>\
+                <% if (required) { %>\
+                    <span class="required">*</span>\
+                <% } %>\
                 </label>\
                 <div class="controls <%- controlClass %>">\
                 <% if (help) { %> <span class="help-block <%- helpClass %>"><%= help %></span><% } %>\
@@ -2425,250 +2507,6 @@ define('views/shared/controls/ControlGroup',
         '
     });
 });
-
-/**
- *   views/shared/delegates/StopScrollPropagation
- *
- *   Desc:
- *     This class prevents the user from scrolling the page when scrolling a div.
-
- *   @param {Object} (Optional) options An optional object literal having one settings.
- *
- *    Usage:
- *       var p = new StopScrollPropagation({options})
- *
- *    Options:
- *        el (required): The event delegate.
- *        selector: jQuery selector for the scrolling elements. If not provided, all mousewheel events in the el will not propagate.
- *
- */
-
-
-define('views/shared/delegates/StopScrollPropagation',['jquery', 'underscore', 'views/shared/delegates/Base'], function($, _, DelegateBase) {
-    return DelegateBase.extend({
-        initialize: function(){
-            var defaults = {
-                selector: ""
-            };
-            _.defaults(this.options, defaults);
-
-            this.events = {};
-            this.events["mousewheel " + this.options.selector] = "mousewheel";
-            this.events["DOMMouseScroll " + this.options.selector] = "mousewheel";
-            this.delegateEvents(this.events);
-        },
-        mousewheel: function (e) {
-            var delta = -e.originalEvent.wheelDelta || e.originalEvent.detail* 20;
-            e.currentTarget.scrollTop += delta;
-            e.stopPropagation();
-            e.preventDefault();
-        }
-
-    });
-});
-/**
- *   views/shared/delegates/TextareaResize
- *
- *   Desc:
- *     This class applies auto resizing to textareas.  Textareas will resize as input changes until it reaches the maximum
- *     number of lines (specified in options, defaults to 5), after which the textarea will scroll.
-
- *   @param {Object} (Optional) options An optional object literal having non-required settings.
- *
- *    Usage:
- *       var t = new Splunk.TextareaResize({ options array })
- *
- *    Options:
- *        maxLines: (int) number to indicate the maximum lines to expand to.  ex: 5 (limits expansion to 5 lines, scroll after)
- *
- *    Methods:
- *        resizeTextarea: If the view updates the content, it needs to call resizeTextarea().
- *
- *
- *    ***NOTE***: this is a port and modification of the Elastic plugin for jquery.  The original plugin's page can be found here:  http://www.unwrongest.com/projects/elastic/
- */
-define('views/shared/delegates/TextareaResize',[
-    'jquery',
-    'views/shared/delegates/Base',
-    'underscore',
-    'splunk.logger'
-],
-function(
-    $,
-    DelegateBase,
-    _,
-    sLogger
-){
-    return DelegateBase.extend({
-      maxHeightMultiple: 5,
-      maxHeight: null,
-      lineHeight: null,
-      minHeight: null,
-       initialize: function(){
-
-            this.logger = sLogger.getLogger("textarea_resize.js");
-
-            this.content = null;
-            this.shadow = null;
-
-            //defaults
-            var defaults = {
-                maxLines : this.maxHeightMultiple
-            };
-
-            _.defaults(this.options, defaults);
-
-            this.lineHeight = parseInt(this.$el.css('lineHeight'),10) || parseInt(this.$el.css('fontSize'),10) + 1 || 20;
-            this.minHeight = this.options.minHeight || this.options.lineHeight ;
-            this.maxHeight = this.options['maxLines'] * this.lineHeight;
-
-            // Create shadow div that will be identical to the textarea, used for measuring height changes
-            this._createShadow();
-
-            //fire off the first one to resize
-            this.resizeTextarea();
-
-            //Non element event handlers
-            $(window).on('resize', this.resizeTextarea.bind(this));
-
-       },
-       /**
-        *   function to set up event handles.
-        */
-       events:{
-            "focus" : "_startObserving",
-            "blur" : "_stopObserving",
-            "keyup" : "resizeTextarea"
-       },
-       /**
-        *   create a shadow div (or twin) of the textarea. we'll use this to measure how tall the textarea should be by copying the content from the
-        *   textarea into the div and then measure it
-        */
-       _createShadow: function() {
-            if ( !this.shadow ) {
-                //style attributes to copy from the textarea into the shadow div
-                var styleAttrs = new Array('paddingTop','paddingRight','paddingBottom','paddingLeft','fontSize','lineHeight','fontFamily','fontWeight', 'wordWrap','whiteSpace','borderLeftWidth','borderLeftColor','borderLeftStyle','borderRightWidth','borderRightColor','borderRightStyle','borderTopWidth','borderTopColor','borderTopStyle','borderBottomWidth','borderBottomColor','borderBottomStyle','boxSizing');
-
-                //create the shadow div (twin)
-                this.shadow = $('<div class="shadowTextarea"></div>').css({'position': 'absolute','left':'-9999px','top':'-9999px', 'marginRight' : "-3000px"}).appendTo(this.$el.parent());
-
-                if ( $.browser.mozilla && $.browser.version.substr(0,3) < "1.9" ){ // this is a fix for a bug in ff2
-                    this.shadow.css('position','fixed');
-                }
-
-
-                //    copy each of the attribute specified in styleAttributes from the textarea onto the shadow div
-                var styles= {};
-                _.each(styleAttrs, function(attr){
-                    var value = this.$el.css(attr);
-                    styles[attr] = (value == "pre") ? "normal" : value; // white-space cannot be pre, as IE likes to think it is.
-                }, this);
-                this.shadow.css(styles);
-
-                this._adjustShadowWidth();
-            }
-       },
-       /**
-        *   function to set the shadow div's width to the textarea width
-        */
-       _adjustShadowWidth: function() {
-          if ( this.shadow ) {
-                this.shadow.width(this.$el.width());
-          }
-       },
-       /**
-        *   function to actually do the resizing
-        */
-       resizeTextarea: function() {
-           if (this.$el.val() != this.content) {
-               this.content = this.$el.val();
-
-               //creating an empty div with the contetns of the input allows us to encode the HTML entities.
-               var textareaContent = $('<div/>')
-                                .text(this.content).html()
-                                .replace(/\n/g, '<br />')
-                                + "<span class=''> </span>";
-
-                //set shadow div to have same contents as searchbar
-               this.shadow.html(textareaContent);
-           }
-
-           //if the height of the two twins is different by more than 3 px.
-           this._adjustShadowWidth();
-           if(Math.abs(this.shadow.height() - this.$el.height()) > 3){
-                var newHeight = this.shadow.height();
-
-                if ( newHeight >= this.maxHeight )
-                    this._setHeight(this.maxHeight, 'auto');
-                else if ( newHeight <= this.minHeight )
-                    this._setHeight(this.minHeight, 'hidden');
-                else
-                    this._setHeight(newHeight, 'hidden');
-                }
-
-        },
-        /**
-         *  function to set the height of the textarea
-         */
-        _setHeight: function(height, overflow) {
-            var curratedHeight = Math.floor(parseInt(height,10)) - 1; // this seems to be off by 1px for some reason
-            if(this.$el.height() != curratedHeight){
-                this.$el.height(curratedHeight);
-                this.$el.css('overflow', overflow);
-            }
-        },
-        /**
-         *  function to observe textarea for changes while focused (polling)
-         */
-        _startObserving: function() {
-            this.timer = setInterval(function(){
-                this.resizeTextarea();
-            }.bind(this), 200);
-        },
-        /**
-         *  function to cancel observing on textarea blur
-         */
-        _stopObserving: function(){
-            clearInterval(this.timer);
-        },
-         /**
-        *  function to find out if there is more than one line of text.
-        */
-        isMultiline: function() {
-            var lineCount = Math.round(this.$el.height() / this.lineHeight) ;
-            return (lineCount > 1);
-        },
-        remove: function() {
-            DelegateBase.prototype.remove.apply(this);
-            $(window).off('resize', this.resizeTextarea);
-            return this;
-        }
-    });
-});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 define('helpers/FlashMessagesHelper',
     [
@@ -2835,6 +2673,7 @@ define('helpers/FlashMessagesHelper',
 
 define('views/shared/FlashMessages',
     [
+        'jquery',
         'underscore',
         'backbone',
         'views/Base', 
@@ -2842,7 +2681,7 @@ define('views/shared/FlashMessages',
         'helpers/FlashMessagesHelper',
         'module'
     ], 
-    function(_, Backbone, Base, FlashMessagesCollection, FlashMessagesHelper,module) {
+    function($, _, Backbone, Base, FlashMessagesCollection, FlashMessagesHelper,module) {
         return Base.extend({
             moduleId: module.id,
             className: 'alerts',
@@ -2895,6 +2734,11 @@ define('views/shared/FlashMessages',
                         },this);
                     },this);
                 }
+
+                // SPL-70327, put ourselves to sleep before the window unloads
+                // this avoids rendering messages from the XHRs that are cancelled by the browser
+                this.beforeUnloadHandler = _(function() { this.sleep(); }).bind(this);
+                $(window).on('beforeunload', this.beforeUnloadHandler);
             },
             /**
              * Listen to validation events from a given object
@@ -2916,6 +2760,7 @@ define('views/shared/FlashMessages',
             remove: function() {
                 this.flashMsgCollection.off(null,null, this);
                 this.flashMsgHelper.destroy();
+                $(window).off('beforeunload', this.beforeUnloadHandler);
                 return Base.prototype.remove.apply(this, arguments);
             },
             render: function() {
@@ -2935,3 +2780,1373 @@ define('views/shared/FlashMessages',
         });
     }
 );
+
+define('util/pdf_utils',['underscore', 'jquery', 'splunk.util', 'util/console', 'models/AlertAction', 'models/Job', 'splunk.config'], function(_, $, splunkUtil, console, AlertAction, Job, splunkConfig) {
+
+    var TYPE_PDFGEN = 'pdfgen', TYPE_DEPRECATED = 'deprecated';
+
+    /**
+     * Check the availibility of the PDF Generator
+     * @return a jQuery Deferred object that is resolved when it has been determined what kind of PDF
+     * rendering is available
+     *       The deferred callbacks receive 2 arguments:
+     *          - a boolean indicating the availability
+     *          - the type (string) of the PDF server if available ("pdfgen" or "deprecated")
+     */
+    var isPdfServiceAvailable = _.once(function() {
+        var dfd = $.Deferred();
+        if (splunkConfig["PDFGEN_IS_AVAILABLE"]) {
+            dfd.resolve(true, TYPE_PDFGEN);
+        } else {
+            $.getJSON(splunkUtil.make_url('report/is_enabled')).success(function(data) {
+                if(data && data.status == 'enabled') {
+                    dfd.resolve(true, TYPE_DEPRECATED);
+                } else {
+                    dfd.resolve(false, data && data.status);
+                }
+            }).error(function() {
+                dfd.resolve(false);
+            });
+        }
+        
+        return dfd.promise();
+    });
+
+    /**
+     * Get the email alert settings (models.AlertAction)
+     * @returns a jQuery Deferred object that is resolved when the settings are loaded
+     */
+    var getEmailAlertSettings = _.once(function() {
+        var dfd = $.Deferred();
+        var emailAlertSettings = new AlertAction({ id: 'email' });
+
+        emailAlertSettings.fetch().done(function() {
+            dfd.resolve(emailAlertSettings);
+        }).fail(function() {
+                    dfd.reject();
+                });
+
+        return dfd.promise();
+    });
+
+    /**
+     * Starts a search to send test email with the PDF version of a view via Email (using the sendemail command)
+     * @param view (String) name of the dashboard
+     * @param app (String) app of the dashboard
+     * @param to (String) comma-separated list of recipients
+     * @param options { paperSize: (String), paperOrientation: (String) }
+     * @returns A jQuery Deferred object that is resolved once the search has successfully completed
+     */
+    function sendPDFEmail(view, app, to, options) {
+        var dfd = $.Deferred();
+
+        getEmailAlertSettings().done(function(emailSettings) {
+
+            to = to.split(/[,\s]+/).join(',');
+
+            var commandParams = {
+                'server': emailSettings.getSetting('mailserver', 'localhost'),
+                'use_ssl': emailSettings.getSetting('use_ssl', 'false'),
+                'use_tls': emailSettings.getSetting('use_tls', 'false'),
+                'to': to,
+                'sendpdf': 'True',
+                'from': emailSettings.getSetting('from', 'splunk@localhost'),
+                'papersize': options.paperSize || 'a2',
+                'paperorientation': options.paperOrientation || 'portrait',
+                'pdfview': view
+            };
+            var searchString = '| sendemail ' + _(commandParams).map(function(v, k) {
+                return [k, JSON.stringify(v)].join('=');
+            }).join(' ');
+
+            console.log('Starting search %o', searchString);
+
+            var job = new Job();
+            job.save({}, {
+                data: {
+                    search: searchString,
+                    earliest_time: '0',
+                    latest_time: 'now',
+                    app: app,
+                    namespace: app,
+                    owner: splunkConfig.USERNAME,
+                    ui_dispatch_app: app,
+                    ui_dispatch_view: view,
+                    preview: false
+                }
+            }).done(_.bind(function() {
+                        job.startPolling();
+                        job.entry.content.on('change:isDone', function(m, isDone) {
+                            if(isDone) {
+                                var messages = job.entry.content.get('messages');
+
+                                _(messages).each(function(msg) {
+                                    if(msg.type === 'ERROR') {
+                                        console.error(msg.text);
+                                    }
+                                });
+
+                                if(_(messages).any(function(msg) { return msg.type === 'ERROR'; })) {
+                                    dfd.reject(_(messages).pluck('text')[0]);
+                                } else {
+                                    dfd.resolve();
+                                }
+
+                                _.defer(_.bind(job.destroy, job));
+                            }
+                        });
+                        job.entry.content.on('change:isFailed', function(m, isFailed) {
+                            if(isFailed) {
+                                dfd.reject();
+                            }
+                            _.defer(_.bind(job.destroy, job));
+                        });
+                        job.on('error', function() {
+                            dfd.reject('Error creating search job');
+                            _.defer(_.bind(job.destroy, job));
+                        });
+
+                    }, this)).fail(_.bind(function() {
+                        console.log('Search creation fail', arguments);
+                    }, this));
+
+        }).fail(function() {
+                    dfd.reject();
+                });
+
+        return dfd.promise();
+    }
+
+    /** Workaround for SPL-67453 - double-encode certain XML characters */
+    function encodeXMLForCustomEndpoint(xml) {
+        return xml.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    var downloadReportFromXML = function(xml, app, params) {
+        var baseURL = splunkUtil.make_full_url("splunkd/__raw/services/pdfgen/render");
+        var form = $('<form method="POST" target="_blank"></form>').attr('action', baseURL);
+        $('<input/>').attr({ type: 'hidden', name: 'input-dashboard-xml', value: encodeXMLForCustomEndpoint(xml) }).appendTo(form);
+        $('<input/>').attr({ type: 'hidden', name: 'namespace', value: app }).appendTo(form);
+        $('<input/>').attr({ type: 'hidden', name: 'splunk_form_key', value: splunkUtil.getFormKey() }).appendTo(form);
+        if(params) {
+            _.each(params, function(v, k) {
+                $('<input/>').attr({ type: 'hidden', name: k, value: v }).appendTo(form);
+            });
+        }
+        console.log('submitting form', form[0]);
+        form.appendTo(document.body).submit();
+        _.defer(function() {
+            form.remove();
+        });
+    };
+
+    /**
+     * Generates the download URL for the PDF version of a dashboard|report
+     * @param view the name of the dashboard|report
+     * @param app the app the dashboard|report is defined in
+     * @param params a object containing additional parameters for pdfgen (ignored for deprecated pdf server)
+     * @param viewType dashboard|report. the type of the view defaults to dashboard
+     * @returns a jQuery Deferred object that is resolved if the PDF Server is available. The first callback argument is
+     * the download URL
+     */
+    var getRenderURL = function(view, app, params, viewType) {
+        var dfd = $.Deferred();
+
+        isPdfServiceAvailable().done(function(bool, type) {
+            var inputType = viewType ? 'input-' + viewType : 'input-dashboard',
+                    data = {
+                        'namespace': app
+                    };
+            data[inputType] = view;
+
+            if(type === TYPE_PDFGEN) {
+                params = _.extend(
+                        data,
+                        params || {});
+                dfd.resolve(splunkUtil.make_full_url("splunkd/__raw/services/pdfgen/render", params));
+            } else if(type === TYPE_DEPRECATED) {
+                dfd.resolve([splunkUtil.make_url('app', app, view), splunkUtil.propToQueryString({ output: 'pdf' })].join('?'));
+            } else {
+                dfd.reject();
+            }
+        }).fail(function() {
+                    dfd.reject();
+                });
+        return dfd.promise();
+    };
+
+    return {
+        isPdfServiceAvailable: isPdfServiceAvailable,
+        getRenderURL: getRenderURL,
+        downloadReportFromXML: downloadReportFromXML,
+        getEmailAlertSettings: getEmailAlertSettings,
+        sendTestEmail: sendPDFEmail
+    };
+});
+
+define('views/shared/jobstatus/buttons/ExportResultsDialog',[
+    'underscore',
+    'models/Base',
+    'module',
+    'views/shared/Modal',
+    'views/shared/controls/ControlGroup',
+    'views/shared/FlashMessages',
+    'uri/route',
+    'util/pdf_utils',
+    'util/math_utils'
+    ],
+    function(
+        _,
+        Base,
+        module,
+        Modal,
+        ControlGroup,
+        FlashMessagesV2,
+        route,
+        pdfUtils,
+        mathUtils
+    ) {
+    return Modal.extend({
+        moduleId: module.id,
+         /**
+         * @param {Object} options {
+         *      model: {
+         *          searchJob: <helpers.ModelProxy>,
+         *          application: <models.Application>,
+         *          report: <models.Report> (Only required for export to pdf. If passed in pdf will be a format option.)
+         *      }
+         * }
+         */
+        initialize: function(options) {
+            Modal.prototype.initialize.apply(this, arguments);
+            var Inmem = Base.extend({
+                defaults: {
+                    fileName: '',
+                    format: 'csv',
+                    limitResults: 'unlimited',
+                    maxResults: 1000
+                },
+                validation: {
+                    maxResults: {
+                        fn: 'validateMaxResults'
+                    }
+                },
+                validateMaxResults: function(value, attr, computedState){
+                    if ((computedState.format === 'pdf' || computedState.limitResults === 'limit') &&
+                        (!mathUtils.isInteger(value) || parseFloat(value) <= 0 )) {
+                            return _('Max results must be an integer greater than 0').t();
+                    }
+                }
+            });
+
+            this.model = {
+                searchJob: this.model.searchJob,
+                application: this.model.application,
+                report: this.model.report,
+                inmem: new Inmem()
+            };
+
+            this.children.flashMessage = new FlashMessagesV2({ model: this.model.inmem });
+
+            this.deferredPdfAvailable = $.Deferred();
+            this.deferredInitializeFormat = $.Deferred();
+
+            this.usePanelType = options.usePanelType;
+            this.resultTypeIsReport = this.usePanelType ? !(this.model.report.entry.content.get('display.general.type') === 'events') : !!this.model.searchJob.entry.content.get('reportSearch');
+
+            if (this.model.report) {
+                this.deferredPdfAvailable = pdfUtils.isPdfServiceAvailable();
+            } else {
+                this.deferredPdfAvailable.resolve(false);
+            }
+
+            $.when(this.deferredPdfAvailable).then(function(available) {
+                var items = [
+                    {
+                        label: _('CSV').t(),
+                        value: 'csv'
+                    },
+                    {
+                        label: _('XML').t(),
+                        value: 'xml'
+                    },
+                    {
+                        label: _('JSON').t(),
+                        value: 'json'
+                    }
+                ];
+
+                if(this.model.report && this.model.report.id && available) {
+                    items.unshift({
+                        label: _('PDF').t(),
+                        value: 'pdf'
+                    });
+                }
+
+                if(!this.resultTypeIsReport) {
+                    items.unshift({
+                        label: _('Raw Events').t(),
+                        value: 'raw'
+                    });
+                }
+
+                this.children.formatControl = new ControlGroup({
+                    controlType: 'SyntheticSelect',
+                    controlOptions: {
+                        modelAttribute: 'format',
+                        model: this.model.inmem,
+                        items: items,
+                        save: false,
+                        toggleClassName: 'btn',
+                        labelPosition: 'outside',
+                        elastic: true,
+                        popdownOptions: {
+                            attachDialogTo: '.modal:visible',
+                            scrollContainer: '.modal:visible .modal-body:visible'
+                        }
+                    },
+                    label: _('Format').t()
+                });
+
+                this.deferredInitializeFormat.resolve();
+            }.bind(this));
+
+            this.children.filenameControl = new ControlGroup({
+                controlType: 'Text',
+                controlOptions: {
+                    modelAttribute: 'fileName',
+                    model: this.model.inmem
+                },
+                label: _('File Name').t()
+            });
+
+            this.children.limitResultsControl = new ControlGroup({
+                controlType: 'SyntheticRadio',
+                controlOptions: {
+                    modelAttribute: 'limitResults',
+                    model: this.model.inmem,
+                    items: [
+                        {
+                            label: _('Unlimited').t(),
+                            value: 'unlimited'
+                        },
+                        {
+                            label: _('Limited').t(),
+                            value: 'limit'
+                        }
+                    ],
+                    save: false,
+                    toggleClassName: 'btn',
+                    labelPosition: 'outside',
+                    elastic: true
+                },
+                label: _('Number of Results').t()
+            });
+
+            this.children.maxResultsControl = new ControlGroup({
+                controlType: 'Text',
+                controlOptions: {
+                    modelAttribute: 'maxResults',
+                    model: this.model.inmem
+                },
+                label: _('Max Results').t()
+            });
+
+            this.model.inmem.on('change:limitResults', this.toggleMaxResults, this);
+
+            this.model.inmem.on('change:format', this.toggleByFormat, this);
+
+            this.model.inmem.on('validated', function(isValid, model, invalidResults){
+                if(isValid) {
+                    var format = this.model.inmem.get('format'),
+                        maxResults = this.model.inmem.get('maxResults'),
+                        count = (this.model.inmem.get('limitResults') === 'limit') ? maxResults : 0;
+                    if (format === 'pdf') {
+                        var orientationSuffix = '',
+                            orientation = this.model.report.entry.content.get('action.email.reportPaperOrientation'),
+                            pageSize = this.model.report.entry.content.get('action.email.reportPaperSize') || 'a2';
+                        if(orientation === 'landscape') {
+                            orientationSuffix = '-landscape';
+                        }
+                        pdfUtils.getRenderURL(
+                            this.model.report.entry.get('name'),
+                            this.model.report.entry.acl.get('app'),
+                            {
+                                'sid': this.model.searchJob.id,
+                                'paper-size': pageSize + orientationSuffix,
+                                'max-rows-per-table': maxResults
+                            },
+                            'report'
+                        ).done(function(url){
+                            this.hide();
+                            window.open(url);
+                        }.bind(this));
+                    } else {
+                        window.location.href = route.exportUrl(this.model.application.get("root"), this.model.application.get("locale"), this.model.searchJob.get('id'),
+                            this.model.inmem.get('fileName'), this.model.inmem.get('format'), this.model.inmem.get('limitResults'),
+                            maxResults, count, this.resultTypeIsReport);
+                        this.hide();
+                    }
+                }
+            },this);
+        },
+        events: $.extend({}, Modal.prototype.events, {
+            'click .btn-primary': function(e) {
+                this.model.inmem.validate();
+                e.preventDefault();
+            }
+        }),
+        toggleByFormat: function() {
+            if(this.model.inmem.get('format') === 'pdf') {
+                this.children.filenameControl.$el.hide();
+                this.children.limitResultsControl.$el.hide();
+                this.children.maxResultsControl.$el.show();
+            } else {
+                this.children.filenameControl.$el.show();
+                this.children.limitResultsControl.$el.show();
+                this.toggleMaxResults();
+            }
+        },
+        toggleMaxResults: function() {
+            if(this.model.inmem.get('limitResults') === 'unlimited') {
+                this.children.maxResultsControl.$el.hide();
+            } else {
+                this.children.maxResultsControl.$el.show();
+            }
+        },
+        render : function() {
+            $.when(this.deferredInitializeFormat).then(function() {
+                this.$el.html(Modal.TEMPLATE);
+
+                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Export Results").t());
+
+                this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessage.render().el);
+
+                this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL_JUSTIFIED);
+
+                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.formatControl.render().el);
+                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.filenameControl.render().el);
+                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.limitResultsControl.render().el);
+                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.maxResultsControl.render().el);
+
+                this.toggleByFormat();
+                this.toggleMaxResults();
+
+                this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
+                this.$(Modal.FOOTER_SELECTOR).append('<a href="#" class="btn btn-primary modal-btn-primary">' + _("Export").t() + '</a>');
+
+                return this;
+            }.bind(this));
+        }
+    });
+});
+
+/**
+ *   views/shared/delegates/StopScrollPropagation
+ *
+ *   Desc:
+ *     This class prevents the user from scrolling the page when scrolling a div.
+
+ *   @param {Object} (Optional) options An optional object literal having one settings.
+ *
+ *    Usage:
+ *       var p = new StopScrollPropagation({options})
+ *
+ *    Options:
+ *        el (required): The event delegate.
+ *        selector: jQuery selector for the scrolling elements. If not provided, all mousewheel events in the el will not propagate.
+ *
+ */
+
+
+define('views/shared/delegates/StopScrollPropagation',['jquery', 'underscore', 'views/shared/delegates/Base'], function($, _, DelegateBase) {
+    return DelegateBase.extend({
+        initialize: function(){
+            var defaults = {
+                selector: ""
+            };
+            _.defaults(this.options, defaults);
+
+            this.events = {};
+            this.events["mousewheel " + this.options.selector] = "mousewheel";
+            this.events["DOMMouseScroll " + this.options.selector] = "mousewheel";
+            this.delegateEvents(this.events);
+        },
+        mousewheel: function (e) {
+            var delta = -e.originalEvent.wheelDelta || e.originalEvent.detail* 20;
+            e.currentTarget.scrollTop += delta;
+            e.stopPropagation();
+            e.preventDefault();
+        }
+
+    });
+});
+/**
+ *   views/shared/delegates/TextareaResize
+ *
+ *   Desc:
+ *     This class applies auto resizing to textareas.  Textareas will resize as input changes until it reaches the maximum
+ *     number of lines (specified in options, defaults to 5), after which the textarea will scroll.
+
+ *   @param {Object} (Optional) options An optional object literal having non-required settings.
+ *
+ *    Usage:
+ *       var t = new Splunk.TextareaResize({ options array })
+ *
+ *    Options:
+ *        maxLines: (int) number to indicate the maximum lines to expand to.  ex: 5 (limits expansion to 5 lines, scroll after)
+ *
+ *    Methods:
+ *        resizeTextarea: If the view updates the content, it needs to call resizeTextarea().
+ *
+ *
+ *    ***NOTE***: this is a port and modification of the Elastic plugin for jquery.  The original plugin's page can be found here:  http://www.unwrongest.com/projects/elastic/
+ */
+define('views/shared/delegates/TextareaResize',[
+    'jquery',
+    'views/shared/delegates/Base',
+    'underscore',
+    'splunk.logger'
+],
+function(
+    $,
+    DelegateBase,
+    _,
+    sLogger
+){
+    return DelegateBase.extend({
+      maxHeightMultiple: 5,
+      maxHeight: null,
+      lineHeight: null,
+      minHeight: null,
+       initialize: function(){
+
+            this.logger = sLogger.getLogger("textarea_resize.js");
+
+            this.content = null;
+            this.shadow = null;
+
+            //defaults
+            var defaults = {
+                maxLines : this.maxHeightMultiple
+            };
+
+            _.defaults(this.options, defaults);
+
+            this.lineHeight = parseInt(this.$el.css('lineHeight'),10) || parseInt(this.$el.css('fontSize'),10) + 1 || 20;
+            this.minHeight = this.options.minHeight || this.options.lineHeight ;
+            this.maxHeight = this.options['maxLines'] * this.lineHeight;
+
+            // Create shadow div that will be identical to the textarea, used for measuring height changes
+            this._createShadow();
+
+            //fire off the first one to resize
+            this.resizeTextarea();
+
+            //Non element event handlers
+            $(window).on('resize', this.resizeTextarea.bind(this));
+
+       },
+       /**
+        *   function to set up event handles.
+        */
+       events:{
+            "focus" : "_startObserving",
+            "blur" : "_stopObserving",
+            "keyup" : "resizeTextarea"
+       },
+       /**
+        *   create a shadow div (or twin) of the textarea. we'll use this to measure how tall the textarea should be by copying the content from the
+        *   textarea into the div and then measure it
+        */
+       _createShadow: function() {
+            if ( !this.shadow ) {
+                //style attributes to copy from the textarea into the shadow div
+                var styleAttrs = new Array('paddingTop','paddingRight','paddingBottom','paddingLeft','fontSize','lineHeight','fontFamily','fontWeight', 'wordWrap','whiteSpace','borderLeftWidth','borderLeftColor','borderLeftStyle','borderRightWidth','borderRightColor','borderRightStyle','borderTopWidth','borderTopColor','borderTopStyle','borderBottomWidth','borderBottomColor','borderBottomStyle','boxSizing');
+
+                //create the shadow div (twin)
+               this.shadow = $('<div class="shadowTextarea"></div>').css({'position': 'absolute','left':'-9999px','top':'-9999px', 'marginRight' : "-3000px"}).appendTo(this.$el.parent());
+
+                if ( $.browser.mozilla && $.browser.version.substr(0,3) < "1.9" ){ // this is a fix for a bug in ff2
+                    this.shadow.css('position','fixed');
+                }
+
+
+                //    copy each of the attribute specified in styleAttributes from the textarea onto the shadow div
+                var styles= {};
+                _.each(styleAttrs, function(attr){
+                    var value = this.$el.css(attr);
+                    styles[attr] = (attr == "whiteSpace" && value == "normal") ? "pre-wrap" : value; // FF reports normal instead of pre-wrap.
+                }, this);
+                this.shadow.css(styles);
+
+                this._adjustShadowWidth();
+            }
+       },
+       /**
+        *   function to set the shadow div's width to the textarea width
+        */
+       _adjustShadowWidth: function() {
+          if ( this.shadow ) {
+                this.shadow.width(this.$el.width());
+          }
+       },
+       /**
+        *   function to actually do the resizing
+        */
+       resizeTextarea: function() {
+           if (this.$el.val() != this.content) {
+               this.content = this.$el.val();
+               this.shadow.text(this.content);
+           }
+
+           //if the height of the two twins is different by more than 3 px.
+           this._adjustShadowWidth();
+           if(Math.abs(this.shadow.height() - this.$el.height()) > 3){
+                var newHeight = this.shadow.height();
+
+                if ( newHeight >= this.maxHeight )
+                    this._setHeight(this.maxHeight, 'auto');
+                else if ( newHeight <= this.minHeight )
+                    this._setHeight(this.minHeight, 'hidden');
+                else
+                    this._setHeight(newHeight, 'hidden');
+                }
+
+        },
+        /**
+         *  function to set the height of the textarea
+         */
+        _setHeight: function(height, overflow) {
+            var curratedHeight = Math.floor(parseInt(height,10)) - 1; // this seems to be off by 1px for some reason
+            if(this.$el.height() != curratedHeight){
+                this.$el.height(curratedHeight);
+                this.$el.css('overflow', overflow);
+            }
+        },
+        /**
+         *  function to observe textarea for changes while focused (polling)
+         */
+        _startObserving: function() {
+            if (this.timer) {
+                return;
+            }
+            this.timer = setInterval(function(){
+                this.resizeTextarea();
+            }.bind(this), 200);
+        },
+        /**
+         *  function to cancel observing on textarea blur
+         */
+        _stopObserving: function(){
+            clearInterval(this.timer);
+            delete this.timer;
+        },
+         /**
+        *  function to find out if there is more than one line of text.
+        */
+        isMultiline: function() {
+            var lineCount = Math.round(this.$el.height() / this.lineHeight) ;
+            return (lineCount > 1);
+        },
+        remove: function() {
+            DelegateBase.prototype.remove.apply(this);
+            $(window).off('resize', this.resizeTextarea);
+            this._stopObserving();
+            return this;
+        }
+    });
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ *   views/shared/delegates/Accordion
+ *
+ *   Desc:
+ *     This class applies accordion behaviors.
+ *     Default markup is based on Twitter Bootstrap's Collapse
+ *     http://twitter.github.com/bootstrap/
+ *
+ *     @param {Object} (Optional) options An optional object literal having one or more settings.
+ *
+ *    Usage:
+ *       var p = new Popdown({options})
+ *
+ *    Options:
+ *        el (required): The event delegate.
+ *        group: jQuery selector for the toggle and body wrapper ".accordion-group".
+ *        toggle: jQuery selector for the accordion group's toggle. Defaults to ".accordion-toggle".
+ *        body: jQuery selector for the accordion group's body. Defaults to ".accordion-body".
+ *        default: jQuery selector or object for the default group. Defaults to ".accordion-group:first-child".
+ *
+ *    Methods:
+ *        show: show a panel. Parameters are the group, which can be a selector or jQuery object, and a boolean to enable or disable animation.
+ */
+
+
+define('views/shared/delegates/Accordion',[
+    'jquery',
+    'underscore',
+    'views/shared/delegates/Base'
+],function(
+    $,
+    _,
+    DelegateBase
+){
+    return DelegateBase.extend({
+        initialize: function(){
+            var defaults = {
+                group: ".accordion-group",
+                toggle: ".accordion-toggle",
+                body: ".accordion-body",
+                defaultGroup: ".accordion-group:first-child",
+                icon: ".icon-accordion-toggle",
+                inactiveIconClass: "icon-triangle-right-small",
+                activeIconClass: "icon-triangle-down-small",
+                activeClass: "active",
+                speed: 300
+            };
+
+            _.defaults(this.options, defaults);
+
+            //setup
+            this.$(this.options.body).hide();
+            this.$(this.options.icon).addClass(this.options.inactiveIconClass);
+            
+            //show the default group all
+            this.show(this.$(this.options.defaultGroup), false);
+        },
+        events: {
+            'click .accordion-toggle': 'toggle'
+        },
+        toggle: function (e) {
+            e.preventDefault();      
+            var $group = $(e.currentTarget).closest(this.options.group);
+            
+            //if the group is already active, do nothing.
+            if ($group.hasClass(this.options.activeClass)) {
+                return;
+            }
+            
+            this.trigger('toggle'); 
+            this.show($group, true);
+            this.trigger('toggled');
+        },
+        show: function (group, animate) {
+            var that = this,
+                $newGroup = $(group),
+                $activeGroup = this.$(this.options.group + '.' + this.options.activeClass),
+                showComplete = function () {
+                  that.trigger('shown');
+                },
+                hideComplete = function () {
+                  that.trigger('hidden');
+                };
+                
+            //ignore if the item is already active.
+            this.trigger('show');
+            this.trigger('hide');
+            
+            //Swap the active classes.
+            $activeGroup.removeClass(this.options.activeClass);
+            $newGroup.addClass(this.options.activeClass);
+            
+            //Swap the icon classes
+            $activeGroup.find(this.options.icon).addClass(this.options.inactiveIconClass).removeClass(this.options.activeIconClass);
+            $newGroup.find(this.options.icon).addClass(this.options.activeIconClass).removeClass(this.options.inactiveIconClass);
+            
+            //Show hide the body
+            if (animate){
+                $activeGroup.find(this.options.body).slideUp({duration:this.options.speed, queue: false, complete:hideComplete});
+                $newGroup.find(this.options.body).slideDown({duration:this.options.speed, queue: false, complete:showComplete});
+            } else {
+                $activeGroup.find(this.options.body).hide({duration:0, queue: false, complete:hideComplete});
+                $newGroup.find(this.options.body).show({duration:0, queue: false, complete:showComplete});
+            }
+            
+        }
+
+    });
+});
+/**
+ * @author sfishel
+ *
+ * A delegate view to handle the column sorting behavior for a grid-based view
+ *
+ * Events:
+ *
+ * sort (aka ColumnSort.SORT) triggered when the user clicks on a sortable column header
+ *      @param sortKey {String} the key for the sorted column
+ *      @param sortDirection {String} either 'asc' (aka ColumnSort.ASCENDING) or 'desc' (aka ColumnSort.DESCENDING)
+ *                                    the direction of the sort
+ */
+
+define('views/shared/delegates/ColumnSort',['jquery', 'underscore', 'backbone', 'views/shared/delegates/Base'], function($, _, Backbone, DelegateBase) {
+
+    var CONSTS = {
+
+        // CSS class names
+        SORTABLE_ROW: 'sorts',
+        NOT_SORTABLE_CLASS: 'not-sortable',
+        SORT_DISABLED_CLASS: 'sort-disabled',
+        SORTED_CLASS: 'active',
+
+        // Enum strings
+        ASCENDING: 'asc',
+        DESCENDING: 'desc',
+
+        // Data attributes
+        SORT_KEY_ATTR: 'data-sort-key',
+
+        // Events
+        SORT: 'sort'
+
+    };
+
+    var SORTABLE_CELL_SELECTOR = 'th.' + CONSTS.SORTABLE_ROW,
+        SORTABLE_ICON_SELECTOR = 'i.icon-sorts';
+
+    return DelegateBase.extend({
+
+        events: (function() {
+            var events = {};
+            events['click ' + SORTABLE_CELL_SELECTOR] = 'onColumnHeaderClick';
+            return events;
+        }()),
+
+        /**
+         * @constructor
+         * @param options {Object} {
+         *     model {Model} optional, a model that the view will keep up-to-date with sort information
+         *                   using the attribute names 'sortKey' and 'sortDirection'
+         *                   the view will also respond to external changes to those attributes
+         *                   if a model is not given, one will be created and managed internally
+         *     autoUpdate {Boolean} optional, defaults to false
+         *                          whether to automatically update the view's DOM elements when the sort configuration changes
+         *    {String} sortKeyAttr: (Optional) attribute to set sort key on  default is 'sortKey',
+         *    {String} sortDirAttr: (Optional) attribute to set sort direction on default is 'sortDirection'
+         * }
+         */
+
+        initialize: function() {
+            if(!this.model) {
+                this.model = new Backbone.Model();
+            }
+
+            var defaults = {
+                sortKeyAttr: 'sortKey',
+                sortDirAttr: 'sortDirection'
+            };
+            this.options = $.extend(true, defaults, this.options);
+
+            this.autoUpdate = !!this.options.autoUpdate;
+
+            if(this.autoUpdate) {
+                this.model.on('change:' + this.options.sortKeyAttr + ' change:' + this.options.sortDirAttr, _.debounce(function() {
+                    this.update();
+                }, 0), this);
+            }
+        },
+
+        /**
+         * Updates the given DOM elements to match the current sorting configuration
+         *
+         * @param $rootEl <jQuery object> optional, defaults to the view's $el property
+         */
+
+        update: function($rootEl) {
+            $rootEl = $rootEl || this.$el;
+            var $thList = $rootEl.find(SORTABLE_CELL_SELECTOR),
+                sortKey = this.model.get(this.options.sortKeyAttr),
+                $activeTh = $thList.filter('[' + CONSTS.SORT_KEY_ATTR + '="' + sortKey + '"]'),
+                sortDirection = this.model.get(this.options.sortDirAttr);
+
+            $thList.removeClass(CONSTS.SORTED_CLASS)
+                .find(SORTABLE_ICON_SELECTOR).removeClass(CONSTS.ASCENDING + ' ' + CONSTS.DESCENDING);
+            $activeTh.addClass(CONSTS.SORTED_CLASS)
+                .find(SORTABLE_ICON_SELECTOR).addClass(sortDirection === 'asc' ? CONSTS.ASCENDING : CONSTS.DESCENDING);
+        },
+
+        // ----- private methods ----- //
+
+        onColumnHeaderClick: function(e) {
+            e.preventDefault();
+            var $th = $(e.currentTarget);
+            if($th.hasClass(CONSTS.NOT_SORTABLE_CLASS) || $th.hasClass(CONSTS.SORT_DISABLED_CLASS)) {
+                return;
+            }
+            var sortKey = $th.attr(CONSTS.SORT_KEY_ATTR),
+                sortDirection = $th.find(SORTABLE_ICON_SELECTOR).hasClass(CONSTS.DESCENDING) ? 'asc' : 'desc';
+
+            var data = {};
+            data[this.options.sortKeyAttr] = sortKey;
+            data[this.options.sortDirAttr] = sortDirection;
+
+            this.model.set(data);
+            this.trigger(CONSTS.SORT, sortKey, sortDirection);
+        }
+
+    }, CONSTS);
+
+});
+
+/**
+ * An abstract base view that defines some shared behaviors for managing a detached table header.
+ *
+ * BEWARE: this the initial step in what should be a larger refactor to avoid repeated code in TableDock and TableHeadStatic,
+ * currently this is pretty fragile and depends on the options and variables defined in those views having the same names and meanings.
+ */
+
+define('views/shared/delegates/DetachedTableHeader',[
+            'jquery',
+            'underscore',
+            'views/shared/delegates/Base'
+        ],
+        function(
+            $,
+            _,
+            Base
+        ) {
+
+    return Base.extend({
+
+        syncColumnWidths: function() {
+            if(!this.$table) {
+                return;
+            }
+            var $baseRow = this.$table.find('thead > tr'),
+                $baseRowCells =  $baseRow.find('th'),
+                $headerRow = this.$headerTable.find('thead > tr'),
+                $headerCells = $headerRow.find('th'),
+                $skipCell = false,
+                widths = [];
+
+            this.$table.css('table-layout', this.options.defaultLayout);
+            if(this.options.flexWidthColumn !== false) {
+                $skipCell = $baseRowCells.eq(this.options.flexWidthColumn);
+            }
+            $baseRowCells.not($skipCell[0]).css('width', '');
+
+            _($baseRowCells).each(function(cell, i) {
+                if ($skipCell && (cell === $skipCell[0])) {
+                    return;
+                }
+
+                var $cell = $(cell),
+                    cellWidth = {
+                        // SPL-71945, the correct way to measure width is to use the clientWidth minus all horizontal padding
+                        // this will correctly account for differences caused by border-collapse
+                        width: $cell[0].clientWidth - parseFloat($cell.css('padding-right')) - parseFloat($cell.css('padding-left')),
+                        index: i
+                    };
+
+                widths.push(cellWidth);
+            }, this);
+
+            this.$headerTable.width(this.$table.outerWidth());
+
+            _.each(widths, function(cell) {
+                var $cell = $baseRowCells.eq(cell.index),
+                    $headerCell = $headerCells.eq(cell.index);
+
+                $cell.width(cell.width);
+                $headerCell.width(cell.width);
+            });
+
+            this.$table.css('table-layout', 'fixed');
+        }
+    });
+
+});
+/**
+ * A delegate view to handle docking table header, footer, and scroll bar.
+ */
+
+define('views/shared/delegates/TableDock',['jquery', 'underscore', 'views/shared/delegates/DetachedTableHeader'], function($, _, DetachedTableHeader) {
+
+    return DetachedTableHeader.extend({
+        awake: true,
+        touch: false,
+        initialize: function(options) {
+
+            var defaults = {
+                    table: "> table",
+                    offset: 0,
+                    dockScrollBar: true,
+                    flexWidthColumn: -1,
+                    defaultLayout:'auto'
+                };
+    
+            _.defaults(this.options, defaults);
+            DetachedTableHeader.prototype.initialize.call(this, options);
+            
+            this.disabled = false;
+            this.dockedScrollHidden = true;
+            this.left = 0;
+            this.scrollLeft = false;
+            
+            this.eventNS = 'table-dock-' + this.cid;
+            this.awake && this.bindListeners();
+        },
+        bindListeners: function () {
+            var debouncedResizeHandler = _.debounce(this.handleWindowResize, 50);
+            $(window).on('resize.' + this.eventNS, _(debouncedResizeHandler).bind(this));
+            $(window).on('scroll.' + this.eventNS, _(this.handleWindowScroll).bind(this));
+            
+            this.options.dockScrollBar && this.$el.on('scroll.' + this.eventNS, _(this.handleContainerScroll).bind(this));
+        },
+        unbindListeners: function () {
+            $(window).off('resize.' + this.eventNS);
+            $(window).off('scroll.' + this.eventNS);
+            this.options.dockScrollBar && this.$el.off('.' + this.eventNS);
+        },
+        destroy: function() {
+            this.unbindListeners();
+        },
+        update: function() {
+            if (!this._updateDebounced) {
+                this._updateDebounced = _.debounce(this._update);
+            }
+            this._updateDebounced();
+        },
+        _update: function() {
+            if (!this.awake) {
+                this.touch = true;
+                return;            
+            }
+            this.$table = this.$(this.options.table ).first();
+            
+            this.updateHeaders();
+            this.options.dockScrollBar && this.updateScroll();
+
+            if(this.$table.is(':visible')) {
+                this.syncMeasurements();
+            } else {
+                _.defer(this.syncMeasurements.bind(this));
+            }
+        },
+        syncMeasurements: function() {
+            this.scrollLeft = false;
+            this.syncColumnWidths();
+            this.options.dockScrollBar && this.syncScrollWidths();
+            this.handleWindowScroll();
+            this.options.dockScrollBar && this.handleContainerScroll();
+            this.trigger('updated', this.$headerTable);
+        },
+        disable: function() {
+            this.disabled = true;
+            this.$disable && this.$disable.show();
+        },
+        enable: function() {
+            this.disabled = false;
+            this.$disable && this.$disable.hide();
+        },
+        updateHeaders: function() {
+            if(this.$header) {
+                this.$header.remove();
+            }
+            
+            this.$header = $('<div class="header-table-docked" style="display:none"><table></table><div class="disable"></div></div>').css({top: this.options.offset, left:this.left, right: 0});
+            this.$disable = this.$header.find('> .disable')[this.disabled ? 'show' : 'hide']();
+            this.$headerTable = this.$header.find('> table');
+            this.$headerTable.attr('class', this.$table.attr('class'));
+            this.$table.find('> thead').clone().appendTo(this.$headerTable);
+            this.$header.prependTo(this.el);
+            this.$headerTable.on('click', 'th', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var colIndex = $(e.currentTarget).prevAll().length + 1;
+                this.$table.find('> thead > tr > th:nth-child(' + colIndex + ')').click();
+            }.bind(this));
+            this.$headerTable.on('click', 'th a', function (e) {
+                e.preventDefault();
+            });
+        },
+                
+        updateScroll: function() {
+            if(this.$dockedScroll) {
+                this.$dockedScroll.remove();
+            }
+            
+            this.$dockedScroll = $('<div />').addClass('table-scroll-bar-docked').hide().appendTo(this.$el).css('left', this.$el.position().left);
+            this.$dockedScroll.on('scroll', _(this.handleDockedScrollChange).bind(this));
+        },
+
+        // ------ private methods ------ //
+
+        handleWindowResize: function() {
+            // no-op if update has not been called yet
+            if(!this.$table || !this.$table.is(':visible')) {
+                return;
+            }
+            this.syncColumnWidths();
+            
+            if(this.options.dockScrollBar) {
+                this.updateDockedScrollBar();
+                this.syncScrollWidths();
+            }
+        },
+
+        handleWindowScroll: function(e) {
+            // no-op if update has not been called yet
+            if(!this.$table || !this.$table.is(':visible')) {
+                return;
+            }
+            var scrollTop = $(window).scrollTop(),
+                tableOffsetTop = this.$table.offset().top;
+
+            if(scrollTop >= tableOffsetTop - this.options.offset) {
+                if(!this.$header.is(':visible')) {
+                    this.$header.css('top', this.options.offset).show();
+                }
+            }
+            else {
+                this.$header.css('top', '-1000px').width(); //move off and force redraw
+                this.$header.hide();
+            }
+            this.options.dockScrollBar && this.updateDockedScrollBar();
+        },
+
+        handleContainerScroll: function() {
+            // no-op if update has not been called yet or the dock is hidden
+            if( !this.$table) {
+                return;
+            }
+            
+            var scrollLeft = this.$el.scrollLeft();
+            
+            
+            if(this.scrollLeft === scrollLeft) {
+                return;
+            }
+
+            this.$headerTable.css('marginLeft', -scrollLeft + 'px');
+            this.$dockedScroll.scrollLeft(scrollLeft);
+            this.scrollLeft = scrollLeft;
+        },
+
+        handleDockedScrollChange: function() {
+            var scrollLeft = this.$el.scrollLeft(),
+                dockScrollLeft = this.$dockedScroll.scrollLeft();
+
+            if(scrollLeft !== dockScrollLeft) {
+                this.$headerTable.css('marginLeft', -dockScrollLeft + 'px');
+                this.$el.scrollLeft(dockScrollLeft);
+            }
+        },
+        syncColumnWidths: function() {
+            DetachedTableHeader.prototype.syncColumnWidths.apply(this, arguments);
+            this.left = this.$el.position().left;
+            this.$header.css({left: this.left});
+        },
+        syncScrollWidths: function() {
+            if(!this.$table || !this.$table[0]) {
+                return;
+            }
+
+            var tableWidth = parseFloat(this.$table[0].scrollWidth),
+                $fullWidthDiv = $('<div />').width(tableWidth).height(1);
+
+            this.$dockedScroll.html($fullWidthDiv);
+        },
+
+        updateDockedScrollBar: function() {
+            var scrollTop = $(window).scrollTop(),
+                tableOffsetTop = this.$table.offset().top,
+                windowHeight = $(window).height(),
+                tableHeight = this.$el.outerHeight();
+
+            if(tableOffsetTop + tableHeight > scrollTop + windowHeight) {
+                if (!this.dockedScrollHidden) {
+                    return;
+                }
+                this.$dockedScroll.show();
+                this.dockedScrollHidden = false;
+                this.handleContainerScroll();
+            }
+            else if (!this.dockedScrollHidden){
+                this.$dockedScroll.hide();
+                this.dockedScrollHidden = true;
+            }
+        },
+        wake: function() {
+            this.awake = true;
+            this.bindListeners();
+            if (this.touch) {
+                //do a full update
+                _.defer(this.update.bind(this));
+            } else {
+                //just update the positions.
+                _.defer(this.handleWindowResize.bind(this));
+                _.defer(this.handleWindowScroll.bind(this));
+                this.options.dockScrollBar && _.defer(this.handleContainerScroll.bind(this));
+            }
+            return this;
+        },
+        sleep: function() {
+            this.awake = false;
+            this.unbindListeners();
+            return this;
+        },
+        remove: function() {
+            DetachedTableHeader.prototype.remove.apply(this);
+            $(window).off('resize.' + this.eventNS);
+            $(window).off('scroll.' + this.eventNS);
+            return this;
+        }
+    });
+
+});
+
+/**
+ * A delegate view to handle a statically positioned table header.
+ */
+
+define('views/shared/delegates/TableHeadStatic',['jquery', 'underscore', 'views/shared/delegates/DetachedTableHeader'], function($, _, DetachedTableHeader) {
+
+    return DetachedTableHeader.extend({
+        awake: true,
+        touch: false,
+        initialize: function(options) {
+            var defaults = {
+                    headerContainer: "> .header-table-static",
+                    scrollContainer: "> .scroll-table-wrapper",
+                    table: "> .scroll-table-wrapper > table",
+                    offset: 0,
+                    // index of the column to "flex" to fit remaining width, can be set to false for no flex
+                    flexWidthColumn: -1,
+                    defaultLayout:'auto'
+                };
+    
+            _.defaults(this.options, defaults);
+            
+        
+            DetachedTableHeader.prototype.initialize.call(this, options);
+            
+            this.awake && this.bindListeners();
+        },
+        bindListeners: function () {
+            var debouncedResizeHandler = _.debounce(this.handleWindowResize, 50);
+            $(window).on('resize.' + this.cid, _(debouncedResizeHandler).bind(this));
+            $(this.$(this.options.scrollContainer)).on('scroll.' + this.cid, _(this.handleContainerScroll).bind(this));
+        },
+        unbindListeners: function () {
+            $(window).off('resize.' + this.cid);
+            $(this.$(this.options.scrollContainer)).off('scroll.' + this.cid);
+        },
+        destroy: function() {
+            this.unbindListeners();
+        },
+        remove: function() {
+            DetachedTableHeader.prototype.remove.apply(this);
+            $(window).off('resize.' + this.cid);
+            return this;
+        },
+        update: function() {
+            if (!this.awake) {
+                this.touch = true;
+                return;            
+            }
+            
+            this.$scrollContainer = this.$(this.options.scrollContainer);
+            this.$table = this.$(this.options.table).first();
+            this.$headerContainer = this.$(this.options.headerContainer);
+            this.$headerContainer.empty();
+            var $headerWrapper = $('<div class="header-table-wrapper"></div>').appendTo(this.$headerContainer);
+            $headerWrapper.css({ 'margin-right': this.$scrollContainer[0].offsetWidth - this.$scrollContainer[0].clientWidth});
+            this.$headerTable = $('<table>');
+            this.$headerTable.attr('class', this.$table.attr('class')).width(this.$table.outerWidth()).css('table-layout', 'fixed');
+            this.$table.find('> thead').clone().appendTo(this.$headerTable);
+            $headerWrapper.prepend(this.$headerTable);
+            
+            this.$headerTable.on('click', 'th', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var colIndex = $(e.currentTarget).prevAll().length + 1;
+                this.$table.find('> thead > tr > th:nth-child(' + colIndex + ')').click();
+            }.bind(this));
+            
+            this.$headerTable.on('click', 'th a', function (e) {
+                e.preventDefault();
+            });
+
+            // the newly rendered table head will be scrolled all the way to the left
+            // reset this instance variable so that handleContainerScroll will do the right thing
+            this.scrollLeft = 0;
+            var updateDom = _(function() {
+                this.syncColumnWidths();
+                this.handleContainerScroll();
+                this.trigger('updated', this.$headerTable);
+            }).bind(this);
+
+            if(this.$table.is(':visible')) {
+                updateDom();
+            } else {
+                _.defer(updateDom);
+            }
+        },
+
+        // ------ private methods ------ //
+        handleContainerScroll: function() {
+            // no-op if update has not been called yet
+            if(!this.$table) {
+                return;
+            }
+            var scrollLeft = this.$scrollContainer.scrollLeft();
+            if(scrollLeft !== this.scrollLeft) {
+                this.$headerTable.css('marginLeft', -scrollLeft + 'px');
+                this.scrollLeft = scrollLeft;
+            }
+        },
+        handleWindowResize: function() {
+            // no-op if update has not been called yet
+            if(!this.$table) {
+                return;
+            }
+            this.syncColumnWidths();
+        },
+        wake: function() {
+            this.awake = true;
+            this.bindListeners();
+            if (this.touch) {
+                //do a full update
+                _.defer(this.update.bind(this));
+            } else {
+                //just update the positions.
+                _.defer(this.handleWindowResize.bind(this));
+                _.defer(this.handleContainerScroll.bind(this));
+            }
+            return this;
+        },
+        sleep: function() {
+            this.awake = false;
+            this.unbindListeners();
+            return this;
+        }
+
+    });
+
+});

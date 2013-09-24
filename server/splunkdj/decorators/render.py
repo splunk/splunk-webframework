@@ -1,9 +1,12 @@
 from django.shortcuts import render_to_response
-from django.template import RequestContext
-from django.http import HttpResponse
+from django.template import RequestContext, TemplateDoesNotExist
+from django.http import HttpResponse, Http404
 from django.utils import simplejson
 
 __all__ = ['render_to', 'ajax_request']
+
+import logging
+logger = logging.getLogger('spl.django.service')
 
 try:
     from functools import wraps
@@ -72,8 +75,12 @@ def render_to(template=None, mimetype=None):
             if not isinstance(output, dict):
                 return output
             tmpl = output.pop('TEMPLATE', template)
-            return render_to_response(tmpl, output, \
-                        context_instance=RequestContext(request), mimetype=mimetype)
+            try:
+                return render_to_response(tmpl, output, \
+                            context_instance=RequestContext(request), mimetype=mimetype)
+            except TemplateDoesNotExist, e:
+                logger.error("Default template route matched a template that is not found: %s" % tmpl)
+                raise Http404("Template '%s' does not exist." % tmpl)
         return wrapper
     return renderer
 

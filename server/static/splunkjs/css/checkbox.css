@@ -1,0 +1,4 @@
+.splunk-checkboxgroup .choice label, .splunk-checkbox .choice label {
+        display: inline-block;
+        margin-left: 0.4em;        
+}

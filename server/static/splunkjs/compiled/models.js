@@ -1,784 +1,9 @@
 
 // THIS FILE IS PURPOSEFULLY EMPTY FOR R.JS COMPILER
-// LOOK IN $SPLUNK_SOURCE/cmake/splunkjs_build/run.js FOR MORE INFO;
+// IT IS A COMPILER TARGET FILE, AS WE CANNOT CREATE NEW FILES DYNAMICALLY FOR 
+// THE COMPILER;
 define("splunkjs/compiled/models", function(){});
 
-/**
- * A base collection with some generic useful methods/behaviors
- *
- * TODO: lots of repeated code here and in the base model for broadcasting errors, safe fetch, and the fetch data model
- *       consider one or more mixins
- *
- * TODO: potential memory leaks when binding to events on the fetchData model, do we need a hook for disposing of collections?
- */
-
-define('collections/Base',
-    [
-        'jquery',
-        'underscore',
-        'backbone',
-        'mixins/xhrmanagement',
-        'models/Base',
-        'splunk.util',
-        'util/splunkd_utils'
-    ],
-    function($, _, Backbone, xhrmanagement, Base, splunkUtils, splunkDUtils) {
-        var BaseCollection = Backbone.Collection.extend({
-            initialize: function(models, options) {
-                Backbone.Collection.prototype.initialize.apply(this, arguments);
-                this.fetchData = (options && options.fetchData) ? options.fetchData : new Base();
-                this.fetchData.on('change', _.debounce(function() { this.safeFetch(); }, 0), this);
-                this.associated = this.associated || {};
-                this.on('sync', this._onsync, this);
-                this.on('error', this._onerror, this);
-                this.on('reset', this.previousModelsOff, this);
-            },
-            fetch: function(options) {
-                // merge the contents of the fetchData model into options.data
-                var mergedOptions = $.extend(true, {}, {data: this.fetchData.toJSON()}, options);
-                this.fetchXhr = Backbone.Collection.prototype.fetch.call(this, mergedOptions);
-                // on successful fetch, handle any calls to safeFetch that came in while we were in-flight
-                var that = this;
-                this.fetchXhr.done(function() {
-                    if(that.touched) {
-                        that.safeFetch.apply(that, that.touched);
-                    }
-                });
-                return this.fetchXhr;
-            },
-            _onerror: function(collection, response, options) {
-                var messages = splunkDUtils.xhrErrorResponseParser(response, this.id);
-                this.trigger('serverValidated', false, this, messages);
-            },
-            _onsync: function(collection, response, options) {
-                var messages  = this.parseSplunkDMessages(response),
-                    hasErrors = _(messages).any(function(message) {
-                        return (message.type === splunkDUtils.ERROR || message.type === splunkDUtils.FATAL);
-                    });
-                this.trigger('serverValidated', !hasErrors, this, messages);
-            },
-            parseSplunkDMessages: function(response) {
-                if(!response) {
-                    return [];
-                }
-                return splunkDUtils.parseMessagesObject(response.messages);
-            },
-            deepOff: function() {
-                xhrmanagement.deepOff.apply(this, arguments);
-                this.each(function(model) {
-                    if (_.isFunction(model.deepOff)) {
-                        model.deepOff();
-                    }
-                });
-            },
-            associatedOff: function(events, callback, context) {
-                _(this.associated).each(function(associated) {
-                    associated.off(events, callback, context);
-                    if(_.isFunction(associated.associatedOff)) {
-                        associated.associatedOff(events, callback, context);
-                    }
-                }, this);
-                
-                this.each(function(model) {
-                    if(_.isFunction(model.associatedOff)) {
-                        model.associatedOff(events, callback, context);
-                    }
-                });
-                // fetchData is not part of the associated container, but should still be unbound
-                this.fetchData.off(events, callback, context);
-            },
-            previousModelsOff: function(models, options) {
-                _(options.previousModels).each(function(model) {
-                    if (_.isFunction(model.deepOff)) {
-                        model.deepOff();
-                    }
-                });
-            },
-            reverse: function(options) {
-                options || (options = {});
-                var reversedModels = [].concat(this.models).reverse();
-                if (options.mutate===false) {
-                    return reversedModels;
-                }
-                this.reset(reversedModels, options);
-            },
-            isValid: function(options) {
-                return this.all(function(model) { return model.isValid(options); });
-            },
-            // Backbone's collection clone makes a shallow copy (the models are shared references)
-            // this version will clone each model and put the clones in the new collection
-            deepClone: function() {
-                return new this.constructor(this.invoke('clone'));
-            },
-            /* start patches */
-            _reset: function() {
-                this.length = 0;
-                this.models = [];
-                this._byId  = {};
-            }
-            /* end patches */
-        });
-        _.extend(BaseCollection.prototype, xhrmanagement);
-        
-        return BaseCollection;
-    }
-);
-
-define('models/SplunkDWhiteList',
-    [
-        'jquery',
-        'backbone',
-        'underscore',
-        'models/Base',
-        'util/splunkd_utils'
-     ],
-     function($, Backbone, _, BaseModel, splunkDUtils) {
-        return BaseModel.extend({
-            initialize: function(options) {
-                BaseModel.prototype.initialize.apply(this, arguments);
-            },
-            concatOptionalRequired: function() {
-                var optional = (this.get('optional') || []).slice(0),
-                required = (this.get('required') || []).slice(0);
-                return optional.concat(required);
-            },
-            url: '',
-            sync: function(method, model, options) {
-                var  defaults = {
-                        data:{
-                            output_mode: 'json'
-                        },
-                        url: _.isFunction(model.url) ? model.url() : model.url
-                };
-                switch(method) {
-                    case 'read':
-                        defaults.data = _.extend(defaults.data, options.data || {});
-                        delete options.data;
-                        defaults.url = splunkDUtils.fullpath(defaults.url);
-                        break;
-                    default:
-                        throw new Error('invalid method: ' + method);
-                }
-                return Backbone.sync.call(this, method, model, $.extend(true, defaults, options));
-            },
-            parse: function(response){
-                var entity = (response.entry ? $.extend(true, {}, response.entry[0]) : {}),
-                data = entity.fields || {};
-                
-                if (data.wildcard) {
-                    data.wildcard = splunkDUtils.addAnchorsToWildcardArray(data.wildcard);
-                }
-                
-                return data;
-            }
-        });
-    }
-);
-
-define('models/services/ACL',
-    [
-     'jquery',
-     'backbone',
-     'models/Base',
-     'util/splunkd_utils'
-     ],
-     function($, Backbone, BaseModel, splunkDUtils) {
-        return BaseModel.extend({
-            initialize: function(attributes, options) {
-                BaseModel.prototype.initialize.apply(this, arguments);
-            },
-            sync: function(method, model, options) {
-                var defaults = {
-                    data: {
-                        output_mode: 'json'
-                    }
-                };
-                switch(method) {
-                case 'update':
-                    defaults.processData = true;
-                    defaults.type = 'POST';
-                    defaults.url = splunkDUtils.fullpath(model.id);
-                    $.extend(true, defaults, options);
-                    break;
-                default:
-                    throw new Error('invalid method: ' + method);
-                }
-                return Backbone.sync.call(this, method, model, defaults);
-            }
-        });
-    }
-);
-
-define('models/ACLReadOnly',
-    [
-         'jquery',
-         'underscore',
-         'backbone',
-         'models/Base',
-         'util/splunkd_utils'
-     ],
-     function($, _, Backbone, BaseModel, splunkd_utils) {
-        return BaseModel.extend({
-            initialize: function(attributes, options) {
-                BaseModel.prototype.initialize.apply(this, arguments);
-            },
-            permsToObj: function() {
-                var perms = $.extend(true, {}, this.get('perms'));
-                perms.read = perms.read || [];
-                perms.write = perms.write || [];
-                return perms;
-            },
-            toDataPayload: function() {
-                var perms = this.permsToObj(),
-                    data = {
-                        sharing: this.get('sharing'),
-                        owner: this.get('owner')
-                    };
-
-                if (data.sharing !== splunkd_utils.USER && perms.read.length !== 0) {
-                    if (_.indexOf(perms.read, '*') != -1) {
-                        data['perms.read'] = '*';
-                    } else {
-                        data['perms.read'] = perms.read.join(',');
-                    }
-                }
-
-                if (data.sharing !== splunkd_utils.USER && perms.write.length !== 0) {
-                    if (_.indexOf(perms.write, '*') != -1) {
-                        data['perms.write'] = '*';
-                    } else {
-                        data['perms.write'] = perms.write.join(',');
-                    }
-                }
-
-                return data;
-            },
-            canWrite: function() {
-                return this.get('can_write');
-            }
-        });
-    }
-);
-
-define('models/SplunkDBase',
-    [
-        'jquery',
-        'underscore',
-        'backbone',
-        'models/Base',
-        'models/SplunkDWhiteList',
-        'models/services/ACL',
-        'models/ACLReadOnly',
-        'util/splunkd_utils',
-        'util/console'
-    ],
-    function($, _, Backbone, BaseModel, SplunkDWhiteList, ACLModel, ACLReadOnlyModel, splunkDUtils, console) {
-
-        //private sync CRUD methods
-        var syncCreate = function(model, options){
-            var bbXHR, splunkDWhiteListXHR, url,
-	            deferredResponse = $.Deferred(),
-	            defaults = {data: {output_mode: 'json'}};
-
-            url = _.isFunction(model.url) ? model.url() : model.url;
-            splunkDWhiteListXHR = this.splunkDWhiteList.fetch({
-                url: splunkDUtils.fullpath(url, {}) + '/_new',
-                success: function(splunkDWhiteListModel, response) {
-                    var app_and_owner = {};
-                    if (options.data){
-                        app_and_owner = $.extend(app_and_owner, { //JQuery purges undefined
-                            app: options.data.app || undefined,
-                            owner: options.data.owner || undefined,
-                            sharing: options.data.sharing || undefined
-                        });
-                    }
-                    defaults.url = splunkDUtils.fullpath(url, app_and_owner);
-                    
-                    defaults.processData = true;
-                    $.extend(true, defaults.data, model.whiteListAttributes());
-                    $.extend(true, defaults, options);
-                    
-                    delete defaults.data.app;
-                    delete defaults.data.owner;
-                    delete defaults.data.sharing;
-
-                    bbXHR = Backbone.sync.call(null, "create", model, defaults);
-                    bbXHR.done(function() {
-                        deferredResponse.resolve.apply(deferredResponse, arguments);
-                    });
-                    bbXHR.fail(function() {
-                        deferredResponse.reject.apply(deferredResponse, arguments);
-                    });
-                }
-            });
-            splunkDWhiteListXHR.fail(function() {
-                deferredResponse.reject.apply(deferredResponse, arguments);
-            });
-            return deferredResponse.promise();
-        },
-        syncRead = function(model, options){
-            var bbXHR, url,
-	            deferredResponse = $.Deferred(),
-	            defaults = {data: {output_mode: 'json'}};
-
-            if (model.isNew()){
-                url = _.isFunction(model.url) ? model.url() : model.url;
-                url += "/_new";
-            }else if(model.urlRoot){
-                url = model.urlRoot +'/'+ model.id;
-            } else {
-                url = model.id;
-            }
-            
-            var app_and_owner = {};
-            if (options.data){
-                app_and_owner = $.extend(app_and_owner, { //JQuery purges undefined
-                    app: options.data.app || undefined,
-                    owner: options.data.owner || undefined,
-                    sharing: options.data.sharing || undefined
-                });
-            }
-            defaults.url = splunkDUtils.fullpath(url, app_and_owner);
-            
-            $.extend(true, defaults, options);
-            delete defaults.data.app;
-            delete defaults.data.owner;
-            delete defaults.data.sharing;
-            
-            bbXHR = Backbone.sync.call(this, "read", model, defaults);
-            bbXHR.done(function() {
-                deferredResponse.resolve.apply(deferredResponse, arguments);
-            });
-            bbXHR.fail(function() {
-                deferredResponse.reject.apply(deferredResponse, arguments);
-            });
-            return deferredResponse.promise();
-        },
-        syncUpdate = function(model, options){
-            var bbXHR, splunkDWhiteListXHR, url,
-	            deferredResponse = $.Deferred(),
-	            defaults = {data: {output_mode: 'json'}},
-	            id = model.id;
-
-            url = splunkDUtils.fullpath(id, {});
-            this.splunkDWhiteList.clear();
-            splunkDWhiteListXHR = this.splunkDWhiteList.fetch({
-                url: url,
-                success: function(splunkDWhiteListModel) {
-                    $.extend(true, defaults.data, model.whiteListAttributes());
-                    $.extend(true, defaults, options);
-                    defaults.processData = true;
-                    defaults.type = 'POST';
-                    defaults.url = url;
-
-                    bbXHR = Backbone.sync.call(null, "update", model, defaults);
-                    bbXHR.done(function() {
-                        deferredResponse.resolve.apply(deferredResponse, arguments);
-                    });
-                    bbXHR.fail(function() {
-                        deferredResponse.reject.apply(deferredResponse, arguments);
-                    });
-                }
-            });
-            splunkDWhiteListXHR.fail(function() {
-                deferredResponse.reject.apply(deferredResponse, arguments);
-            });
-            return deferredResponse.promise();
-        },
-        syncDelete = function(model, options){
-            var bbXHR,
-	            deferredResponse = $.Deferred(),
-	            defaults = {data: {output_mode: 'json'}};
-
-            if(options.data && options.data.output_mode){
-                //add layering of url if specified by user
-                defaults.url = splunkDUtils.fullpath(model.id, {}) + '?output_mode=' + encodeURIComponent(options.data.output_mode);
-                delete options.data.output_mode;
-            } else {
-                //add layering of url if specified by user
-                defaults.url = splunkDUtils.fullpath(model.id, {}) + '?output_mode=' + encodeURIComponent(defaults.data.output_mode);
-                delete defaults.data.output_mode;
-            }
-            $.extend(true, defaults, options);
-            defaults.processData = true;
-
-            bbXHR = Backbone.sync.call(this, "delete", model, defaults);
-            bbXHR.done(function() {
-                deferredResponse.resolve.apply(deferredResponse, arguments);
-            });
-            bbXHR.fail(function() {
-                deferredResponse.reject.apply(deferredResponse, arguments);
-            });
-            return deferredResponse.promise();
-        };
-
-        var Model = BaseModel.extend({
-            initialize: function(attributes, options) {
-                BaseModel.prototype.initialize.apply(this, arguments);
-                this.splunkDWhiteList = options && options.splunkDWhiteList ?
-                        options.splunkDWhiteList : new SplunkDWhiteList();
-                
-                this.initializeAssociated();
-                
-                this.on("change:id", function() {
-                    var alt = this.id;
-                    if (alt) {
-                        alt = alt + "/acl";
-                    }
-                    this.acl.set('id', alt);
-                }, this);
-                
-                if (options && options.splunkDPayload){
-                    this.setFromSplunkD(options.splunkDPayload, {silent: true});
-                }
-            },
-            parseSplunkDMessages: function(response) {
-                var messages = BaseModel.prototype.parseSplunkDMessages.call(this, response);
-                if(response && response.entry && response.entry.length > 0) {
-                    messages = _.union(messages, splunkDUtils.parseMessagesObject(response.entry[0].messages));
-                }
-                return messages;
-            },
-            initializeAssociated: function() {
-                // do a dynamic lookup of the current constructor so that this method is inheritance-friendly
-                var RootClass = this.constructor;
-                this.associated = this.associated || {};
-
-                //instance level models
-                this.links = this.links || new RootClass.Links();
-                this.associated.links = this.links;
-                
-                this.generator = this.generator || new RootClass.Generator();
-                this.associated.generator = this.generator;
-                
-                this.paging = this.paging || new RootClass.Paging();
-                this.associated.paging = this.paging;
-
-                //nested instance level on entry
-                if (!this.entry){
-                    this.entry = new RootClass.Entry();
-                    $.extend(this.entry, {
-                        links: new RootClass.Entry.Links(),
-                        acl: new RootClass.Entry.ACL(),
-                        content: new RootClass.Entry.Content(),
-                        fields: new RootClass.Entry.Fields()
-                    });
-                    this.entry.associated.links = this.entry.links;
-                    this.entry.associated.acl = this.entry.acl;
-                    this.entry.associated.content = this.entry.content;
-                    this.entry.associated.fields = this.entry.fields;
-                }
-                this.associated.entry = this.entry;
-                
-                //associated EAI models
-                this.acl = this.acl || new ACLModel();
-                this.associated.acl = this.acl;
-            },
-            url: '',
-            sync: function(method, model, options) {
-                switch(method){
-                    case 'create':
-                        return syncCreate.call(this, model, options);
-                    case 'read':
-                        return syncRead.call(this, model, options);
-                    case 'update':
-                        return syncUpdate.call(this, model, options);
-                    case 'delete':
-                        return syncDelete.call(this, model, options);
-                    default:
-                        throw new Error('invalid method: ' + method);
-                }
-            },
-            parse: function(response) {
-                // make a defensive copy of response since we are going to modify it
-                response = $.extend(true, {}, response);
-                //when called from the collection fetch we will need to ensure that our
-                //associated models are initialized because parse is called before
-                //initialize
-                this.initializeAssociated();
-
-                var newRegex = /.\/_new$/;
-                
-                if (!response || !response.entry || response.entry.length === 0) {
-                    console.log('Response has no content to parse');
-                    return;
-                }
-                var response_entry = response.entry[0];
-
-                //id
-                //this needs to be the first thing so that people can get !isNew()
-                if (!newRegex.test(response_entry.links.alternate)){
-                    this.id = response_entry.links.alternate;
-                    response.id = response_entry.links.alternate;
-                    this.acl.set('id', this.id + '/acl');
-                }
-
-                //top-level
-                this.links.set(response.links);
-                delete response.links;
-                this.generator.set(response.generator);
-                delete response.generator;
-                this.paging.set(response.paging);
-                delete response.paging;
-
-                //sub-entry
-                this.entry.links.set(response_entry.links);
-                delete response_entry.links;
-                this.entry.acl.set(response_entry.acl);
-                delete response_entry.acl;
-                this.entry.content.set(response_entry.content);
-                delete response_entry.content;
-                
-                if (response_entry.fields && response_entry.fields.wildcard) {
-                    response_entry.fields.wildcard = splunkDUtils.addAnchorsToWildcardArray(response_entry.fields.wildcard);
-                }
-                this.entry.fields.set(response_entry.fields);
-                delete response_entry.fields;
-                this.entry.set(response_entry);
-                delete response.entry;
-                return response;
-            },
-            whiteListAttributes: function() {
-                var whiteListOptAndReq = this.splunkDWhiteList.concatOptionalRequired(),
-                    whiteListWild = this.splunkDWhiteList.get('wildcard') || [],
-                    contentAttrs = this.entry.content.filterByKeys(whiteListOptAndReq, {allowEmpty: true});
-
-                return _.extend(contentAttrs, this.entry.content.filterByWildcards(whiteListWild, {allowEmpty: true}));
-            },
-            setFromSplunkD: function(payload, options) {
-                this.attributes = {};
-                var cloned_payload = $.extend(true, {}, payload),
-                    newRegex = /.\/_new$/;
-
-                var oldId = this.id;
-                //object assignment
-                if (cloned_payload) {
-                    if (cloned_payload.entry && cloned_payload.entry[0]) {
-                        var payload_entry = cloned_payload.entry[0];
-
-                        if(payload_entry.links){
-                            //id
-                            //this needs to be the first thing so that people can get !isNew()
-                            if (payload_entry.links.alternate && !newRegex.test(payload_entry.links.alternate)){
-                                this.set({id: payload_entry.links.alternate}, {silent: true});
-                                this.acl.set({id: payload_entry.links.alternate + "/acl"}, options);
-                            }
-
-                            this.entry.links.set(payload_entry.links, options);
-                            delete payload_entry.links;
-                        }
-
-                        if(payload_entry.acl){
-                            this.entry.acl.set(payload_entry.acl, options);
-                            delete payload_entry.acl;
-                        }
-                        if(payload_entry.content){
-                            this.entry.content.set(payload_entry.content, options);
-                            delete payload_entry.content;
-                        }
-                        if(payload_entry.fields){
-                            if (payload_entry.fields.wildcard) {
-                                payload_entry.fields.wildcard = splunkDUtils.addAnchorsToWildcardArray(payload_entry.fields.wildcard);
-                            }
-                            
-                            this.entry.fields.set(payload_entry.fields, options);
-                            delete payload_entry.fields;
-                        }
-
-                        this.entry.set(payload_entry, options);
-                        delete cloned_payload.entry;
-                    }
-
-                    if(cloned_payload.links) {
-                        this.links.set(cloned_payload.links, options);
-                        delete cloned_payload.links;
-                    }
-                    if(cloned_payload.generator) {
-                        this.generator.set(cloned_payload.generator, options);
-                        delete cloned_payload.generator;
-                    }
-                    if(cloned_payload.paging) {
-                        this.paging.set(cloned_payload.paging, options);
-                        delete cloned_payload.paging;
-                    }
-
-                    //reset the internal root model due to pre-init routine
-                    this.set(cloned_payload, options);
-                    if(this.id !== oldId) {
-                        this.trigger('change:' + this.idAttribute);
-                    }
-                }
-            },
-            toSplunkD: function() {
-                var payload = {};
-
-                payload = $.extend(true, {}, this.toJSON());
-
-                payload.links = $.extend(true, {}, this.links.toJSON());
-                payload.generator = $.extend(true, {}, this.generator.toJSON());
-                payload.paging = $.extend(true, {}, this.paging.toJSON());
-                payload.entry = [$.extend(true, {}, this.entry.toJSON())];
-
-                payload.entry[0].links = $.extend(true, {}, this.entry.links.toJSON());
-                payload.entry[0].acl = $.extend(true, {}, this.entry.acl.toJSON());
-                payload.entry[0].content = $.extend(true, {}, this.entry.content.toJSON());
-                payload.entry[0].fields = $.extend(true, {}, this.entry.fields.toJSON());
-
-                //cleanup
-                delete payload.id;
-                return payload;
-            }
-        },
-        {
-            Links: BaseModel,
-            Generator: BaseModel,
-            Paging: BaseModel,
-            Entry: BaseModel.extend(
-                {
-                    initialize: function() {
-                        BaseModel.prototype.initialize.apply(this, arguments);
-                    }
-                },
-                {
-                    Links: BaseModel,
-                    ACL: ACLReadOnlyModel,
-                    Content: BaseModel,
-                    Fields: BaseModel
-                }
-            )
-        });
-
-        return Model;
-    }
-);
-
-/**
- * A reusable model encapsulating the fetch data for EAI endpoints.
- *
- * Adds special handling of the "sortKey" and "sortDirection" attributes, which are mapped to the keys that
- * the EAI-like endpoints expect, and the "filter" attribute, which is mapped from a dictionary of string pairs
- * to a filter search string.
- */
-
-define('models/fetch_data/EAIFetchData',[
-            'underscore',
-            'models/Base'
-        ], 
-        function(
-            _,
-            Base
-        ) {
-
-    return Base.extend({
-
-        defaults: {
-            filter: {}
-        },
-
-        toJSON: function() {
-            var json = Base.prototype.toJSON.call(this);
-
-            if(json.sortKey) {
-                json.sort_key = json.sortKey;
-                json.sort_dir = json.sortDirection;
-            }
-            delete json.sortKey;
-            delete json.sortDirection;
-
-            if(_(json.filter).size() > 0) {
-                var search = [];
-                _(json.filter).each(function(match, key) {
-                    search.push(key + '=*' + match + '*');
-                });
-                json.search = search.join(' ');
-            }
-            delete json.filter;
-
-            return json;
-        }
-
-    });
-
-});
-define('collections/SplunkDsBase',
-    [
-        'jquery',
-        'underscore',
-        'backbone',
-        'models/SplunkDBase',
-        'models/fetch_data/EAIFetchData',
-        'collections/Base',
-        'util/splunkd_utils'
-    ],
-    function(
-        $,
-        _,
-        Backbone,
-        SplunkDBaseModel,
-        EAIFetchData,
-        Base,
-        splunkDUtils
-    )
-    {
-        return Base.extend({
-            model: SplunkDBaseModel,
-            initialize: function(models, options) {
-                options = options || {};
-                options.fetchData = options.fetchData || new EAIFetchData();
-                Base.prototype.initialize.call(this, models, options);
-            },
-            sync: function(method, collection, options) {
-                options = options || {};
-                var bbXHR, url,
-                    defaults = {data: {output_mode: 'json'}, traditional: true};
-
-                switch (method) {
-                    case 'read':
-                        url = _.isFunction(collection.url) ? collection.url() : collection.url;
-                        var appOwner = {};
-                        if(options.data){
-                            appOwner = $.extend(appOwner, { //JQuery purges undefined
-                                app: options.data.app || undefined,
-                                owner: options.data.owner || undefined,
-                                sharing: options.data.sharing || undefined
-                            });
-                        }
-                        defaults.url = splunkDUtils.fullpath(url, appOwner);
-                        $.extend(true, defaults, options);
-
-                        delete defaults.data.app;
-                        delete defaults.data.owner;
-                        delete defaults.data.sharing;
-
-                        return Backbone.sync.call(this, "read", collection, defaults);
-                    default:
-                        throw new Error('invalid method: ' + method);
-                }
-            },
-            parse: function(response){
-                var results = response.entry,
-                    header = $.extend(true, {}, response);
-                delete header.entry;
-
-                return _.map(results, function(result) {
-                    var container = $.extend(true, {}, header);
-                    container.entry = [$.extend(true, {}, result)];
-                    return container;
-                });
-            },
-            setFromSplunkD: function(payload, options){
-                // have to use parse=true or the reset won't work correctly
-                this.reset(payload, $.extend({parse: true}, options));
-            }
-        }, {
-            // When fetching with user equal to wildcard adding this string to the search param will 
-            // limit results to items shared with or created by the owner.
-            availableWithUserWildCardSearchString: function(owner) {
-                return '((eai:acl.sharing="user" AND eai:acl.owner="' + owner + '") OR (eai:acl.sharing!="user"))';
-            }
-        });
-    }
-);
 define('models/SystemMenuSection',[
     'models/Base'
 ],
@@ -848,78 +73,6 @@ define('collections/FlashMessages',
         }
 );
 
-define('models/services/AppLocal',
-    [
-        'models/SplunkDBase'
-    ],
-    function(SplunkDBaseModel) {
-        return SplunkDBaseModel.extend({
-            url: "apps/local",
-            initialize: function() {
-                SplunkDBaseModel.prototype.initialize.apply(this, arguments);
-            },
-            appAllowsDisable: function() {
-                return this.entry.links.get("disable") ? true : false;
-            }
-        });
-    }
-);
-define('collections/services/AppLocals',
-    [
-        "jquery",
-        "underscore",
-        "backbone",
-        "models/services/AppLocal",
-        "collections/SplunkDsBase",
-        'util/general_utils'
-    ],
-    function($, _, Backbone, AppModel, SplunkDsBaseCollection, general_utils) {
-        return SplunkDsBaseCollection.extend({
-            model: AppModel,
-            url: "apps/local",
-            initialize: function() {
-                SplunkDsBaseCollection.prototype.initialize.apply(this, arguments);
-            },
-            /* sort the apps collection based on user preference (appOrderString).
-            any app not declared in the indexDictionary, is sorted alphabetically */
-            sortWithString: function(appOrderString){
-                //FOR SAFETY cast to string
-                appOrderString = typeof appOrderString === 'string' ? appOrderString : '';
-                var indexDictionary = {};
-                var appOrderArray = appOrderString.split(',');
-                if(_.isArray(appOrderArray) && appOrderArray.length > 0){
-                    for(var i=0, len=appOrderArray.length; i<len; i++){
-                        indexDictionary[appOrderArray[i]] = i;
-                    }
-                }
-
-                this.comparator = function(appA, appB){
-                    var nameA = appA.entry.get('name'),
-                        nameB = appB.entry.get('name'),
-                        labelA = appA.entry.content.get('label'),
-                        labelB = appB.entry.content.get('label'),
-                        positionA = indexDictionary[nameA],
-                        positionB = indexDictionary[nameB],
-                        isNumberA = _.isNumber(positionA),
-                        isNumberB = _.isNumber(positionB);
-                    if(isNumberA && isNumberB){
-                        return positionA < positionB ? -1 : 1;
-                    }
-                    if(!isNumberA && !isNumberB){
-                        return general_utils.compareWithDirection(labelA, labelB, false);
-                    }
-                    if(isNumberA && !isNumberB){
-                        return -1;
-                    }
-                    if(!isNumberA && isNumberB){
-                        return 1;
-                    }
-                };
-                this.sort();
-            }
-        });
-    }
-);
 define('models/services/authentication/CurrentContext',
     [
         'models/SplunkDBase'
@@ -972,2185 +125,6 @@ define('collections/services/data/ui/Managers',
             model: ManagerModel,
             initialize: function() {
                 SplunkDsBaseCollection.prototype.initialize.apply(this, arguments);
-            }
-        });
-    }
-);
-// moment.js
-// version : 2.0.0
-// author : Tim Wood
-// license : MIT
-// momentjs.com
-
-(function (undefined) {
-
-    /************************************
-        Constants
-    ************************************/
-
-    var moment,
-        VERSION = "2.0.0",
-        round = Math.round, i,
-        // internal storage for language config files
-        languages = {},
-
-        // check for nodeJS
-        hasModule = (typeof module !== 'undefined' && module.exports),
-
-        // ASP.NET json date format regex
-        aspNetJsonRegex = /^\/?Date\((\-?\d+)/i,
-        aspNetTimeSpanJsonRegex = /(\-)?(\d*)?\.?(\d+)\:(\d+)\:(\d+)\.?(\d{3})?/,
-
-        // format tokens
-        formattingTokens = /(\[[^\[]*\])|(\\)?(Mo|MM?M?M?|Do|DDDo|DD?D?D?|ddd?d?|do?|w[o|w]?|W[o|W]?|YYYYY|YYYY|YY|gg(ggg?)?|GG(GGG?)?|e|E|a|A|hh?|HH?|mm?|ss?|SS?S?|X|zz?|ZZ?|.)/g,
-        localFormattingTokens = /(\[[^\[]*\])|(\\)?(LT|LL?L?L?|l{1,4})/g,
-
-        // parsing tokens
-        parseMultipleFormatChunker = /([0-9a-zA-Z\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]+)/gi,
-
-        // parsing token regexes
-        parseTokenOneOrTwoDigits = /\d\d?/, // 0 - 99
-        parseTokenOneToThreeDigits = /\d{1,3}/, // 0 - 999
-        parseTokenThreeDigits = /\d{3}/, // 000 - 999
-        parseTokenFourDigits = /\d{1,4}/, // 0 - 9999
-        parseTokenSixDigits = /[+\-]?\d{1,6}/, // -999,999 - 999,999
-        parseTokenWord = /[0-9]*[a-z\u00A0-\u05FF\u0700-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]+|[\u0600-\u06FF\/]+(\s*?[\u0600-\u06FF]+){1,2}/i, // any word (or two) characters or numbers including two/three word month in arabic.
-        parseTokenTimezone = /Z|[\+\-]\d\d:?\d\d/i, // +00:00 -00:00 +0000 -0000 or Z
-        parseTokenT = /T/i, // T (ISO seperator)
-        parseTokenTimestampMs = /[\+\-]?\d+(\.\d{1,3})?/, // 123456789 123456789.123
-
-        // preliminary iso regex
-        // 0000-00-00 + T + 00 or 00:00 or 00:00:00 or 00:00:00.000 + +00:00 or +0000
-        isoRegex = /^\s*\d{4}-\d\d-\d\d((T| )(\d\d(:\d\d(:\d\d(\.\d\d?\d?)?)?)?)?([\+\-]\d\d:?\d\d)?)?/,
-        isoFormat = 'YYYY-MM-DDTHH:mm:ssZ',
-
-        // iso time formats and regexes
-        isoTimes = [
-            ['HH:mm:ss.S', /(T| )\d\d:\d\d:\d\d\.\d{1,3}/],
-            ['HH:mm:ss', /(T| )\d\d:\d\d:\d\d/],
-            ['HH:mm', /(T| )\d\d:\d\d/],
-            ['HH', /(T| )\d\d/]
-        ],
-
-        // timezone chunker "+10:00" > ["10", "00"] or "-1530" > ["-15", "30"]
-        parseTimezoneChunker = /([\+\-]|\d\d)/gi,
-
-        // getter and setter names
-        proxyGettersAndSetters = 'Date|Hours|Minutes|Seconds|Milliseconds'.split('|'),
-        unitMillisecondFactors = {
-            'Milliseconds' : 1,
-            'Seconds' : 1e3,
-            'Minutes' : 6e4,
-            'Hours' : 36e5,
-            'Days' : 864e5,
-            'Months' : 2592e6,
-            'Years' : 31536e6
-        },
-
-        unitAliases = {
-            ms : 'millisecond',
-            s : 'second',
-            m : 'minute',
-            h : 'hour',
-            d : 'day',
-            w : 'week',
-            M : 'month',
-            y : 'year'
-        },
-
-        // format function strings
-        formatFunctions = {},
-
-        // tokens to ordinalize and pad
-        ordinalizeTokens = 'DDD w W M D d'.split(' '),
-        paddedTokens = 'M D H h m s w W'.split(' '),
-
-        formatTokenFunctions = {
-            M    : function () {
-                return this.month() + 1;
-            },
-            MMM  : function (format) {
-                return this.lang().monthsShort(this, format);
-            },
-            MMMM : function (format) {
-                return this.lang().months(this, format);
-            },
-            D    : function () {
-                return this.date();
-            },
-            DDD  : function () {
-                return this.dayOfYear();
-            },
-            d    : function () {
-                return this.day();
-            },
-            dd   : function (format) {
-                return this.lang().weekdaysMin(this, format);
-            },
-            ddd  : function (format) {
-                return this.lang().weekdaysShort(this, format);
-            },
-            dddd : function (format) {
-                return this.lang().weekdays(this, format);
-            },
-            w    : function () {
-                return this.week();
-            },
-            W    : function () {
-                return this.isoWeek();
-            },
-            YY   : function () {
-                return leftZeroFill(this.year() % 100, 2);
-            },
-            YYYY : function () {
-                return leftZeroFill(this.year(), 4);
-            },
-            YYYYY : function () {
-                return leftZeroFill(this.year(), 5);
-            },
-            gg   : function () {
-                return leftZeroFill(this.weekYear() % 100, 2);
-            },
-            gggg : function () {
-                return this.weekYear();
-            },
-            ggggg : function () {
-                return leftZeroFill(this.weekYear(), 5);
-            },
-            GG   : function () {
-                return leftZeroFill(this.isoWeekYear() % 100, 2);
-            },
-            GGGG : function () {
-                return this.isoWeekYear();
-            },
-            GGGGG : function () {
-                return leftZeroFill(this.isoWeekYear(), 5);
-            },
-            e : function () {
-                return this.weekday();
-            },
-            E : function () {
-                return this.isoWeekday();
-            },
-            a    : function () {
-                return this.lang().meridiem(this.hours(), this.minutes(), true);
-            },
-            A    : function () {
-                return this.lang().meridiem(this.hours(), this.minutes(), false);
-            },
-            H    : function () {
-                return this.hours();
-            },
-            h    : function () {
-                return this.hours() % 12 || 12;
-            },
-            m    : function () {
-                return this.minutes();
-            },
-            s    : function () {
-                return this.seconds();
-            },
-            S    : function () {
-                return ~~(this.milliseconds() / 100);
-            },
-            SS   : function () {
-                return leftZeroFill(~~(this.milliseconds() / 10), 2);
-            },
-            SSS  : function () {
-                return leftZeroFill(this.milliseconds(), 3);
-            },
-            Z    : function () {
-                var a = -this.zone(),
-                    b = "+";
-                if (a < 0) {
-                    a = -a;
-                    b = "-";
-                }
-                return b + leftZeroFill(~~(a / 60), 2) + ":" + leftZeroFill(~~a % 60, 2);
-            },
-            ZZ   : function () {
-                var a = -this.zone(),
-                    b = "+";
-                if (a < 0) {
-                    a = -a;
-                    b = "-";
-                }
-                return b + leftZeroFill(~~(10 * a / 6), 4);
-            },
-            X    : function () {
-                return this.unix();
-            }
-        };
-
-    function padToken(func, count) {
-        return function (a) {
-            return leftZeroFill(func.call(this, a), count);
-        };
-    }
-    function ordinalizeToken(func, period) {
-        return function (a) {
-            return this.lang().ordinal(func.call(this, a), period);
-        };
-    }
-
-    while (ordinalizeTokens.length) {
-        i = ordinalizeTokens.pop();
-        formatTokenFunctions[i + 'o'] = ordinalizeToken(formatTokenFunctions[i], i);
-    }
-    while (paddedTokens.length) {
-        i = paddedTokens.pop();
-        formatTokenFunctions[i + i] = padToken(formatTokenFunctions[i], 2);
-    }
-    formatTokenFunctions.DDDD = padToken(formatTokenFunctions.DDD, 3);
-
-
-    /************************************
-        Constructors
-    ************************************/
-
-    function Language() {
-
-    }
-
-    // Moment prototype object
-    function Moment(config) {
-        extend(this, config);
-    }
-
-    // Duration Constructor
-    function Duration(duration) {
-        var data = this._data = {},
-            years = duration.years || duration.year || duration.y || 0,
-            months = duration.months || duration.month || duration.M || 0,
-            weeks = duration.weeks || duration.week || duration.w || 0,
-            days = duration.days || duration.day || duration.d || 0,
-            hours = duration.hours || duration.hour || duration.h || 0,
-            minutes = duration.minutes || duration.minute || duration.m || 0,
-            seconds = duration.seconds || duration.second || duration.s || 0,
-            milliseconds = duration.milliseconds || duration.millisecond || duration.ms || 0;
-
-        // representation for dateAddRemove
-        this._milliseconds = milliseconds +
-            seconds * 1e3 + // 1000
-            minutes * 6e4 + // 1000 * 60
-            hours * 36e5; // 1000 * 60 * 60
-        // Because of dateAddRemove treats 24 hours as different from a
-        // day when working around DST, we need to store them separately
-        this._days = days +
-            weeks * 7;
-        // It is impossible translate months into days without knowing
-        // which months you are are talking about, so we have to store
-        // it separately.
-        this._months = months +
-            years * 12;
-
-        // The following code bubbles up values, see the tests for
-        // examples of what that means.
-        data.milliseconds = milliseconds % 1000;
-        seconds += absRound(milliseconds / 1000);
-
-        data.seconds = seconds % 60;
-        minutes += absRound(seconds / 60);
-
-        data.minutes = minutes % 60;
-        hours += absRound(minutes / 60);
-
-        data.hours = hours % 24;
-        days += absRound(hours / 24);
-
-        days += weeks * 7;
-        data.days = days % 30;
-
-        months += absRound(days / 30);
-
-        data.months = months % 12;
-        years += absRound(months / 12);
-
-        data.years = years;
-    }
-
-
-    /************************************
-        Helpers
-    ************************************/
-
-
-    function extend(a, b) {
-        for (var i in b) {
-            if (b.hasOwnProperty(i)) {
-                a[i] = b[i];
-            }
-        }
-        return a;
-    }
-
-    function absRound(number) {
-        if (number < 0) {
-            return Math.ceil(number);
-        } else {
-            return Math.floor(number);
-        }
-    }
-
-    // left zero fill a number
-    // see http://jsperf.com/left-zero-filling for performance comparison
-    function leftZeroFill(number, targetLength) {
-        var output = number + '';
-        while (output.length < targetLength) {
-            output = '0' + output;
-        }
-        return output;
-    }
-
-    // helper function for _.addTime and _.subtractTime
-    function addOrSubtractDurationFromMoment(mom, duration, isAdding) {
-        var ms = duration._milliseconds,
-            d = duration._days,
-            M = duration._months,
-            currentDate;
-
-        if (ms) {
-            mom._d.setTime(+mom + ms * isAdding);
-        }
-        if (d) {
-            mom.date(mom.date() + d * isAdding);
-        }
-        if (M) {
-            currentDate = mom.date();
-            mom.date(1)
-                .month(mom.month() + M * isAdding)
-                .date(Math.min(currentDate, mom.daysInMonth()));
-        }
-    }
-
-    // check if is an array
-    function isArray(input) {
-        return Object.prototype.toString.call(input) === '[object Array]';
-    }
-
-    // compare two arrays, return the number of differences
-    function compareArrays(array1, array2) {
-        var len = Math.min(array1.length, array2.length),
-            lengthDiff = Math.abs(array1.length - array2.length),
-            diffs = 0,
-            i;
-        for (i = 0; i < len; i++) {
-            if (~~array1[i] !== ~~array2[i]) {
-                diffs++;
-            }
-        }
-        return diffs + lengthDiff;
-    }
-
-    function normalizeUnits(units) {
-        return units ? unitAliases[units] || units.toLowerCase().replace(/(.)s$/, '$1') : units;
-    }
-
-
-    /************************************
-        Languages
-    ************************************/
-
-
-    Language.prototype = {
-        set : function (config) {
-            var prop, i;
-            for (i in config) {
-                prop = config[i];
-                if (typeof prop === 'function') {
-                    this[i] = prop;
-                } else {
-                    this['_' + i] = prop;
-                }
-            }
-        },
-
-        _months : "January_February_March_April_May_June_July_August_September_October_November_December".split("_"),
-        months : function (m) {
-            return this._months[m.month()];
-        },
-
-        _monthsShort : "Jan_Feb_Mar_Apr_May_Jun_Jul_Aug_Sep_Oct_Nov_Dec".split("_"),
-        monthsShort : function (m) {
-            return this._monthsShort[m.month()];
-        },
-
-        monthsParse : function (monthName) {
-            var i, mom, regex;
-
-            if (!this._monthsParse) {
-                this._monthsParse = [];
-            }
-
-            for (i = 0; i < 12; i++) {
-                // make the regex if we don't have it already
-                if (!this._monthsParse[i]) {
-                    mom = moment([2000, i]);
-                    regex = '^' + this.months(mom, '') + '|^' + this.monthsShort(mom, '');
-                    this._monthsParse[i] = new RegExp(regex.replace('.', ''), 'i');
-                }
-                // test the regex
-                if (this._monthsParse[i].test(monthName)) {
-                    return i;
-                }
-            }
-        },
-
-        _weekdays : "Sunday_Monday_Tuesday_Wednesday_Thursday_Friday_Saturday".split("_"),
-        weekdays : function (m) {
-            return this._weekdays[m.day()];
-        },
-
-        _weekdaysShort : "Sun_Mon_Tue_Wed_Thu_Fri_Sat".split("_"),
-        weekdaysShort : function (m) {
-            return this._weekdaysShort[m.day()];
-        },
-
-        _weekdaysMin : "Su_Mo_Tu_We_Th_Fr_Sa".split("_"),
-        weekdaysMin : function (m) {
-            return this._weekdaysMin[m.day()];
-        },
-
-        weekdaysParse : function (weekdayName) {
-            var i, mom, regex;
-
-            if (!this._weekdaysParse) {
-                this._weekdaysParse = [];
-            }
-
-            for (i = 0; i < 7; i++) {
-                // make the regex if we don't have it already
-                if (!this._weekdaysParse[i]) {
-                    mom = moment([2000, 1]).day(i);
-                    regex = '^' + this.weekdays(mom, '') + '|^' + this.weekdaysShort(mom, '') + '|^' + this.weekdaysMin(mom, '');
-                    this._weekdaysParse[i] = new RegExp(regex.replace('.', ''), 'i');
-                }
-                // test the regex
-                if (this._weekdaysParse[i].test(weekdayName)) {
-                    return i;
-                }
-            }
-        },
-
-        _longDateFormat : {
-            LT : "h:mm A",
-            L : "MM/DD/YYYY",
-            LL : "MMMM D YYYY",
-            LLL : "MMMM D YYYY LT",
-            LLLL : "dddd, MMMM D YYYY LT"
-        },
-        longDateFormat : function (key) {
-            var output = this._longDateFormat[key];
-            if (!output && this._longDateFormat[key.toUpperCase()]) {
-                output = this._longDateFormat[key.toUpperCase()].replace(/MMMM|MM|DD|dddd/g, function (val) {
-                    return val.slice(1);
-                });
-                this._longDateFormat[key] = output;
-            }
-            return output;
-        },
-
-        meridiem : function (hours, minutes, isLower) {
-            if (hours > 11) {
-                return isLower ? 'pm' : 'PM';
-            } else {
-                return isLower ? 'am' : 'AM';
-            }
-        },
-
-        _calendar : {
-            sameDay : '[Today at] LT',
-            nextDay : '[Tomorrow at] LT',
-            nextWeek : 'dddd [at] LT',
-            lastDay : '[Yesterday at] LT',
-            lastWeek : '[Last] dddd [at] LT',
-            sameElse : 'L'
-        },
-        calendar : function (key, mom) {
-            var output = this._calendar[key];
-            return typeof output === 'function' ? output.apply(mom) : output;
-        },
-
-        _relativeTime : {
-            future : "in %s",
-            past : "%s ago",
-            s : "a few seconds",
-            m : "a minute",
-            mm : "%d minutes",
-            h : "an hour",
-            hh : "%d hours",
-            d : "a day",
-            dd : "%d days",
-            M : "a month",
-            MM : "%d months",
-            y : "a year",
-            yy : "%d years"
-        },
-        relativeTime : function (number, withoutSuffix, string, isFuture) {
-            var output = this._relativeTime[string];
-            return (typeof output === 'function') ?
-                output(number, withoutSuffix, string, isFuture) :
-                output.replace(/%d/i, number);
-        },
-        pastFuture : function (diff, output) {
-            var format = this._relativeTime[diff > 0 ? 'future' : 'past'];
-            return typeof format === 'function' ? format(output) : format.replace(/%s/i, output);
-        },
-
-        ordinal : function (number) {
-            return this._ordinal.replace("%d", number);
-        },
-        _ordinal : "%d",
-
-        preparse : function (string) {
-            return string;
-        },
-
-        postformat : function (string) {
-            return string;
-        },
-
-        week : function (mom) {
-            return weekOfYear(mom, this._week.dow, this._week.doy).week;
-        },
-        _week : {
-            dow : 0, // Sunday is the first day of the week.
-            doy : 6  // The week that contains Jan 1st is the first week of the year.
-        }
-    };
-
-    // Loads a language definition into the `languages` cache.  The function
-    // takes a key and optionally values.  If not in the browser and no values
-    // are provided, it will load the language file module.  As a convenience,
-    // this function also returns the language values.
-    function loadLang(key, values) {
-        values.abbr = key;
-        if (!languages[key]) {
-            languages[key] = new Language();
-        }
-        languages[key].set(values);
-        return languages[key];
-    }
-
-    // Determines which language definition to use and returns it.
-    //
-    // With no parameters, it will return the global language.  If you
-    // pass in a language key, such as 'en', it will return the
-    // definition for 'en', so long as 'en' has already been loaded using
-    // moment.lang.
-    function getLangDefinition(key) {
-        if (!key) {
-            return moment.fn._lang;
-        }
-        if (!languages[key] && hasModule) {
-            require('./lang/' + key);
-        }
-        return languages[key];
-    }
-
-
-    /************************************
-        Formatting
-    ************************************/
-
-
-    function removeFormattingTokens(input) {
-        if (input.match(/\[.*\]/)) {
-            return input.replace(/^\[|\]$/g, "");
-        }
-        return input.replace(/\\/g, "");
-    }
-
-    function makeFormatFunction(format) {
-        var array = format.match(formattingTokens), i, length;
-
-        for (i = 0, length = array.length; i < length; i++) {
-            if (formatTokenFunctions[array[i]]) {
-                array[i] = formatTokenFunctions[array[i]];
-            } else {
-                array[i] = removeFormattingTokens(array[i]);
-            }
-        }
-
-        return function (mom) {
-            var output = "";
-            for (i = 0; i < length; i++) {
-                output += array[i] instanceof Function ? array[i].call(mom, format) : array[i];
-            }
-            return output;
-        };
-    }
-
-    // format date using native date object
-    function formatMoment(m, format) {
-        var i = 5;
-
-        function replaceLongDateFormatTokens(input) {
-            return m.lang().longDateFormat(input) || input;
-        }
-
-        while (i-- && localFormattingTokens.test(format)) {
-            format = format.replace(localFormattingTokens, replaceLongDateFormatTokens);
-        }
-
-        if (!formatFunctions[format]) {
-            formatFunctions[format] = makeFormatFunction(format);
-        }
-
-        return formatFunctions[format](m);
-    }
-
-
-    /************************************
-        Parsing
-    ************************************/
-
-
-    // get the regex to find the next token
-    function getParseRegexForToken(token) {
-        switch (token) {
-        case 'DDDD':
-            return parseTokenThreeDigits;
-        case 'YYYY':
-            return parseTokenFourDigits;
-        case 'YYYYY':
-            return parseTokenSixDigits;
-        case 'S':
-        case 'SS':
-        case 'SSS':
-        case 'DDD':
-            return parseTokenOneToThreeDigits;
-        case 'MMM':
-        case 'MMMM':
-        case 'dd':
-        case 'ddd':
-        case 'dddd':
-        case 'a':
-        case 'A':
-            return parseTokenWord;
-        case 'X':
-            return parseTokenTimestampMs;
-        case 'Z':
-        case 'ZZ':
-            return parseTokenTimezone;
-        case 'T':
-            return parseTokenT;
-        case 'MM':
-        case 'DD':
-        case 'YY':
-        case 'HH':
-        case 'hh':
-        case 'mm':
-        case 'ss':
-        case 'M':
-        case 'D':
-        case 'd':
-        case 'H':
-        case 'h':
-        case 'm':
-        case 's':
-            return parseTokenOneOrTwoDigits;
-        default :
-            return new RegExp(token.replace('\\', ''));
-        }
-    }
-
-    // function to convert string input to date
-    function addTimeToArrayFromToken(token, input, config) {
-        var a, b,
-            datePartArray = config._a;
-
-        switch (token) {
-        // MONTH
-        case 'M' : // fall through to MM
-        case 'MM' :
-            datePartArray[1] = (input == null) ? 0 : ~~input - 1;
-            break;
-        case 'MMM' : // fall through to MMMM
-        case 'MMMM' :
-            a = getLangDefinition(config._l).monthsParse(input);
-            // if we didn't find a month name, mark the date as invalid.
-            if (a != null) {
-                datePartArray[1] = a;
-            } else {
-                config._isValid = false;
-            }
-            break;
-        // DAY OF MONTH
-        case 'D' : // fall through to DDDD
-        case 'DD' : // fall through to DDDD
-        case 'DDD' : // fall through to DDDD
-        case 'DDDD' :
-            if (input != null) {
-                datePartArray[2] = ~~input;
-            }
-            break;
-        // YEAR
-        case 'YY' :
-            datePartArray[0] = ~~input + (~~input > 68 ? 1900 : 2000);
-            break;
-        case 'YYYY' :
-        case 'YYYYY' :
-            datePartArray[0] = ~~input;
-            break;
-        // AM / PM
-        case 'a' : // fall through to A
-        case 'A' :
-            config._isPm = ((input + '').toLowerCase() === 'pm');
-            break;
-        // 24 HOUR
-        case 'H' : // fall through to hh
-        case 'HH' : // fall through to hh
-        case 'h' : // fall through to hh
-        case 'hh' :
-            datePartArray[3] = ~~input;
-            break;
-        // MINUTE
-        case 'm' : // fall through to mm
-        case 'mm' :
-            datePartArray[4] = ~~input;
-            break;
-        // SECOND
-        case 's' : // fall through to ss
-        case 'ss' :
-            datePartArray[5] = ~~input;
-            break;
-        // MILLISECOND
-        case 'S' :
-        case 'SS' :
-        case 'SSS' :
-            datePartArray[6] = ~~ (('0.' + input) * 1000);
-            break;
-        // UNIX TIMESTAMP WITH MS
-        case 'X':
-            config._d = new Date(parseFloat(input) * 1000);
-            break;
-        // TIMEZONE
-        case 'Z' : // fall through to ZZ
-        case 'ZZ' :
-            config._useUTC = true;
-            a = (input + '').match(parseTimezoneChunker);
-            if (a && a[1]) {
-                config._tzh = ~~a[1];
-            }
-            if (a && a[2]) {
-                config._tzm = ~~a[2];
-            }
-            // reverse offsets
-            if (a && a[0] === '+') {
-                config._tzh = -config._tzh;
-                config._tzm = -config._tzm;
-            }
-            break;
-        }
-
-        // if the input is null, the date is not valid
-        if (input == null) {
-            config._isValid = false;
-        }
-    }
-
-    // convert an array to a date.
-    // the array should mirror the parameters below
-    // note: all values past the year are optional and will default to the lowest possible value.
-    // [year, month, day , hour, minute, second, millisecond]
-    function dateFromArray(config) {
-        var i, date, input = [];
-
-        if (config._d) {
-            return;
-        }
-
-        for (i = 0; i < 7; i++) {
-            config._a[i] = input[i] = (config._a[i] == null) ? (i === 2 ? 1 : 0) : config._a[i];
-        }
-
-        // add the offsets to the time to be parsed so that we can have a clean array for checking isValid
-        input[3] += config._tzh || 0;
-        input[4] += config._tzm || 0;
-
-        date = new Date(0);
-
-        if (config._useUTC) {
-            date.setUTCFullYear(input[0], input[1], input[2]);
-            date.setUTCHours(input[3], input[4], input[5], input[6]);
-        } else {
-            date.setFullYear(input[0], input[1], input[2]);
-            date.setHours(input[3], input[4], input[5], input[6]);
-        }
-
-        config._d = date;
-    }
-
-    // date from string and format string
-    function makeDateFromStringAndFormat(config) {
-        // This array is used to make a Date, either with `new Date` or `Date.UTC`
-        var tokens = config._f.match(formattingTokens),
-            string = config._i,
-            i, parsedInput;
-
-        config._a = [];
-
-        for (i = 0; i < tokens.length; i++) {
-            parsedInput = (getParseRegexForToken(tokens[i]).exec(string) || [])[0];
-            if (parsedInput) {
-                string = string.slice(string.indexOf(parsedInput) + parsedInput.length);
-            }
-            // don't parse if its not a known token
-            if (formatTokenFunctions[tokens[i]]) {
-                addTimeToArrayFromToken(tokens[i], parsedInput, config);
-            }
-        }
-        // handle am pm
-        if (config._isPm && config._a[3] < 12) {
-            config._a[3] += 12;
-        }
-        // if is 12 am, change hours to 0
-        if (config._isPm === false && config._a[3] === 12) {
-            config._a[3] = 0;
-        }
-        // return
-        dateFromArray(config);
-    }
-
-    // date from string and array of format strings
-    function makeDateFromStringAndArray(config) {
-        var tempConfig,
-            tempMoment,
-            bestMoment,
-
-            scoreToBeat = 99,
-            i,
-            currentScore;
-
-        for (i = config._f.length; i > 0; i--) {
-            tempConfig = extend({}, config);
-            tempConfig._f = config._f[i - 1];
-            makeDateFromStringAndFormat(tempConfig);
-            tempMoment = new Moment(tempConfig);
-
-            if (tempMoment.isValid()) {
-                bestMoment = tempMoment;
-                break;
-            }
-
-            currentScore = compareArrays(tempConfig._a, tempMoment.toArray());
-
-            if (currentScore < scoreToBeat) {
-                scoreToBeat = currentScore;
-                bestMoment = tempMoment;
-            }
-        }
-
-        extend(config, bestMoment);
-    }
-
-    // date from iso format
-    function makeDateFromString(config) {
-        var i,
-            string = config._i;
-        if (isoRegex.exec(string)) {
-            config._f = 'YYYY-MM-DDT';
-            for (i = 0; i < 4; i++) {
-                if (isoTimes[i][1].exec(string)) {
-                    config._f += isoTimes[i][0];
-                    break;
-                }
-            }
-            if (parseTokenTimezone.exec(string)) {
-                config._f += " Z";
-            }
-            makeDateFromStringAndFormat(config);
-        } else {
-            config._d = new Date(string);
-        }
-    }
-
-    function makeDateFromInput(config) {
-        var input = config._i,
-            matched = aspNetJsonRegex.exec(input);
-
-        if (input === undefined) {
-            config._d = new Date();
-        } else if (matched) {
-            config._d = new Date(+matched[1]);
-        } else if (typeof input === 'string') {
-            makeDateFromString(config);
-        } else if (isArray(input)) {
-            config._a = input.slice(0);
-            dateFromArray(config);
-        } else {
-            config._d = input instanceof Date ? new Date(+input) : new Date(input);
-        }
-    }
-
-
-    /************************************
-        Relative Time
-    ************************************/
-
-
-    // helper function for moment.fn.from, moment.fn.fromNow, and moment.duration.fn.humanize
-    function substituteTimeAgo(string, number, withoutSuffix, isFuture, lang) {
-        return lang.relativeTime(number || 1, !!withoutSuffix, string, isFuture);
-    }
-
-    function relativeTime(milliseconds, withoutSuffix, lang) {
-        var seconds = round(Math.abs(milliseconds) / 1000),
-            minutes = round(seconds / 60),
-            hours = round(minutes / 60),
-            days = round(hours / 24),
-            years = round(days / 365),
-            args = seconds < 45 && ['s', seconds] ||
-                minutes === 1 && ['m'] ||
-                minutes < 45 && ['mm', minutes] ||
-                hours === 1 && ['h'] ||
-                hours < 22 && ['hh', hours] ||
-                days === 1 && ['d'] ||
-                days <= 25 && ['dd', days] ||
-                days <= 45 && ['M'] ||
-                days < 345 && ['MM', round(days / 30)] ||
-                years === 1 && ['y'] || ['yy', years];
-        args[2] = withoutSuffix;
-        args[3] = milliseconds > 0;
-        args[4] = lang;
-        return substituteTimeAgo.apply({}, args);
-    }
-
-
-    /************************************
-        Week of Year
-    ************************************/
-
-
-    // firstDayOfWeek       0 = sun, 6 = sat
-    //                      the day of the week that starts the week
-    //                      (usually sunday or monday)
-    // firstDayOfWeekOfYear 0 = sun, 6 = sat
-    //                      the first week is the week that contains the first
-    //                      of this day of the week
-    //                      (eg. ISO weeks use thursday (4))
-    function weekOfYear(mom, firstDayOfWeek, firstDayOfWeekOfYear) {
-        var end = firstDayOfWeekOfYear - firstDayOfWeek,
-            daysToDayOfWeek = firstDayOfWeekOfYear - mom.day(),
-            adjustedMoment;
-
-
-        if (daysToDayOfWeek > end) {
-            daysToDayOfWeek -= 7;
-        }
-
-        if (daysToDayOfWeek < end - 7) {
-            daysToDayOfWeek += 7;
-        }
-
-        adjustedMoment = moment(mom).add('d', daysToDayOfWeek);
-        return {
-            week: Math.ceil(adjustedMoment.dayOfYear() / 7),
-            year: adjustedMoment.year()
-        };
-    }
-
-
-    /************************************
-        Top Level Functions
-    ************************************/
-
-    function makeMoment(config) {
-        var input = config._i,
-            format = config._f;
-
-        if (input === null || input === '') {
-            return null;
-        }
-
-        if (typeof input === 'string') {
-            config._i = input = getLangDefinition().preparse(input);
-        }
-
-        if (moment.isMoment(input)) {
-            config = extend({}, input);
-            config._d = new Date(+input._d);
-        } else if (format) {
-            if (isArray(format)) {
-                makeDateFromStringAndArray(config);
-            } else {
-                makeDateFromStringAndFormat(config);
-            }
-        } else {
-            makeDateFromInput(config);
-        }
-
-        return new Moment(config);
-    }
-
-    moment = function (input, format, lang) {
-        return makeMoment({
-            _i : input,
-            _f : format,
-            _l : lang,
-            _isUTC : false
-        });
-    };
-
-    // creating with utc
-    moment.utc = function (input, format, lang) {
-        return makeMoment({
-            _useUTC : true,
-            _isUTC : true,
-            _l : lang,
-            _i : input,
-            _f : format
-        });
-    };
-
-    // creating with unix timestamp (in seconds)
-    moment.unix = function (input) {
-        return moment(input * 1000);
-    };
-
-    // duration
-    moment.duration = function (input, key) {
-        var isDuration = moment.isDuration(input),
-            isNumber = (typeof input === 'number'),
-            duration = (isDuration ? input._data : (isNumber ? {} : input)),
-            matched = aspNetTimeSpanJsonRegex.exec(input),
-            sign,
-            ret;
-
-        if (isNumber) {
-            if (key) {
-                duration[key] = input;
-            } else {
-                duration.milliseconds = input;
-            }
-        } else if (matched) {
-            sign = (matched[1] === "-") ? -1 : 1;
-            duration = {
-                y: 0,
-                d: ~~matched[2] * sign,
-                h: ~~matched[3] * sign,
-                m: ~~matched[4] * sign,
-                s: ~~matched[5] * sign,
-                ms: ~~matched[6] * sign
-            };
-        }
-
-        ret = new Duration(duration);
-
-        if (isDuration && input.hasOwnProperty('_lang')) {
-            ret._lang = input._lang;
-        }
-
-        return ret;
-    };
-
-    // version number
-    moment.version = VERSION;
-
-    // default format
-    moment.defaultFormat = isoFormat;
-
-    // This function will load languages and then set the global language.  If
-    // no arguments are passed in, it will simply return the current global
-    // language key.
-    moment.lang = function (key, values) {
-        var i;
-
-        if (!key) {
-            return moment.fn._lang._abbr;
-        }
-        if (values) {
-            loadLang(key, values);
-        } else if (!languages[key]) {
-            getLangDefinition(key);
-        }
-        moment.duration.fn._lang = moment.fn._lang = getLangDefinition(key);
-    };
-
-    // returns language data
-    moment.langData = function (key) {
-        if (key && key._lang && key._lang._abbr) {
-            key = key._lang._abbr;
-        }
-        return getLangDefinition(key);
-    };
-
-    // compare moment object
-    moment.isMoment = function (obj) {
-        return obj instanceof Moment;
-    };
-
-    // for typechecking Duration objects
-    moment.isDuration = function (obj) {
-        return obj instanceof Duration;
-    };
-
-
-    /************************************
-        Moment Prototype
-    ************************************/
-
-
-    moment.fn = Moment.prototype = {
-
-        clone : function () {
-            return moment(this);
-        },
-
-        valueOf : function () {
-            return +this._d;
-        },
-
-        unix : function () {
-            return Math.floor(+this._d / 1000);
-        },
-
-        toString : function () {
-            return this.format("ddd MMM DD YYYY HH:mm:ss [GMT]ZZ");
-        },
-
-        toDate : function () {
-            return this._d;
-        },
-
-        toJSON : function () {
-            return formatMoment(moment(this).utc(), 'YYYY-MM-DD[T]HH:mm:ss.SSS[Z]');
-        },
-
-        toArray : function () {
-            var m = this;
-            return [
-                m.year(),
-                m.month(),
-                m.date(),
-                m.hours(),
-                m.minutes(),
-                m.seconds(),
-                m.milliseconds()
-            ];
-        },
-
-        isValid : function () {
-            if (this._isValid == null) {
-                if (this._a) {
-                    this._isValid = !compareArrays(this._a, (this._isUTC ? moment.utc(this._a) : moment(this._a)).toArray());
-                } else {
-                    this._isValid = !isNaN(this._d.getTime());
-                }
-            }
-            return !!this._isValid;
-        },
-
-        utc : function () {
-            this._isUTC = true;
-            return this;
-        },
-
-        local : function () {
-            this._isUTC = false;
-            return this;
-        },
-
-        format : function (inputString) {
-            var output = formatMoment(this, inputString || moment.defaultFormat);
-            return this.lang().postformat(output);
-        },
-
-        add : function (input, val) {
-            var dur;
-            // switch args to support add('s', 1) and add(1, 's')
-            if (typeof input === 'string') {
-                dur = moment.duration(+val, input);
-            } else {
-                dur = moment.duration(input, val);
-            }
-            addOrSubtractDurationFromMoment(this, dur, 1);
-            return this;
-        },
-
-        subtract : function (input, val) {
-            var dur;
-            // switch args to support subtract('s', 1) and subtract(1, 's')
-            if (typeof input === 'string') {
-                dur = moment.duration(+val, input);
-            } else {
-                dur = moment.duration(input, val);
-            }
-            addOrSubtractDurationFromMoment(this, dur, -1);
-            return this;
-        },
-
-        diff : function (input, units, asFloat) {
-            var that = this._isUTC ? moment(input).utc() : moment(input).local(),
-                zoneDiff = (this.zone() - that.zone()) * 6e4,
-                diff, output;
-
-            units = normalizeUnits(units);
-
-            if (units === 'year' || units === 'month') {
-                diff = (this.daysInMonth() + that.daysInMonth()) * 432e5; // 24 * 60 * 60 * 1000 / 2
-                output = ((this.year() - that.year()) * 12) + (this.month() - that.month());
-                output += ((this - moment(this).startOf('month')) - (that - moment(that).startOf('month'))) / diff;
-                if (units === 'year') {
-                    output = output / 12;
-                }
-            } else {
-                diff = (this - that) - zoneDiff;
-                output = units === 'second' ? diff / 1e3 : // 1000
-                    units === 'minute' ? diff / 6e4 : // 1000 * 60
-                    units === 'hour' ? diff / 36e5 : // 1000 * 60 * 60
-                    units === 'day' ? diff / 864e5 : // 1000 * 60 * 60 * 24
-                    units === 'week' ? diff / 6048e5 : // 1000 * 60 * 60 * 24 * 7
-                    diff;
-            }
-            return asFloat ? output : absRound(output);
-        },
-
-        from : function (time, withoutSuffix) {
-            return moment.duration(this.diff(time)).lang(this.lang()._abbr).humanize(!withoutSuffix);
-        },
-
-        fromNow : function (withoutSuffix) {
-            return this.from(moment(), withoutSuffix);
-        },
-
-        calendar : function () {
-            var diff = this.diff(moment().startOf('day'), 'days', true),
-                format = diff < -6 ? 'sameElse' :
-                diff < -1 ? 'lastWeek' :
-                diff < 0 ? 'lastDay' :
-                diff < 1 ? 'sameDay' :
-                diff < 2 ? 'nextDay' :
-                diff < 7 ? 'nextWeek' : 'sameElse';
-            return this.format(this.lang().calendar(format, this));
-        },
-
-        isLeapYear : function () {
-            var year = this.year();
-            return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-        },
-
-        isDST : function () {
-            return (this.zone() < moment([this.year()]).zone() ||
-                this.zone() < moment([this.year(), 5]).zone());
-        },
-
-        day : function (input) {
-            var day = this._isUTC ? this._d.getUTCDay() : this._d.getDay();
-            if (input != null) {
-                if (typeof input === 'string') {
-                    input = this.lang().weekdaysParse(input);
-                    if (typeof input !== 'number') {
-                        return this;
-                    }
-                }
-                return this.add({ d : input - day });
-            } else {
-                return day;
-            }
-        },
-
-        month : function (input) {
-            var utc = this._isUTC ? 'UTC' : '';
-            if (input != null) {
-                if (typeof input === 'string') {
-                    input = this.lang().monthsParse(input);
-                    if (typeof input !== 'number') {
-                        return this;
-                    }
-                }
-                this._d['set' + utc + 'Month'](input);
-                return this;
-            } else {
-                return this._d['get' + utc + 'Month']();
-            }
-        },
-
-        startOf: function (units) {
-            units = normalizeUnits(units);
-            // the following switch intentionally omits break keywords
-            // to utilize falling through the cases.
-            switch (units) {
-            case 'year':
-                this.month(0);
-                /* falls through */
-            case 'month':
-                this.date(1);
-                /* falls through */
-            case 'week':
-            case 'day':
-                this.hours(0);
-                /* falls through */
-            case 'hour':
-                this.minutes(0);
-                /* falls through */
-            case 'minute':
-                this.seconds(0);
-                /* falls through */
-            case 'second':
-                this.milliseconds(0);
-                /* falls through */
-            }
-
-            // weeks are a special case
-            if (units === 'week') {
-                this.day(0);
-            }
-
-            return this;
-        },
-
-        endOf: function (units) {
-            return this.startOf(units).add(units, 1).subtract('ms', 1);
-        },
-
-        isAfter: function (input, units) {
-            units = typeof units !== 'undefined' ? units : 'millisecond';
-            return +this.clone().startOf(units) > +moment(input).startOf(units);
-        },
-
-        isBefore: function (input, units) {
-            units = typeof units !== 'undefined' ? units : 'millisecond';
-            return +this.clone().startOf(units) < +moment(input).startOf(units);
-        },
-
-        isSame: function (input, units) {
-            units = typeof units !== 'undefined' ? units : 'millisecond';
-            return +this.clone().startOf(units) === +moment(input).startOf(units);
-        },
-
-        zone : function () {
-            return this._isUTC ? 0 : this._d.getTimezoneOffset();
-        },
-
-        daysInMonth : function () {
-            return moment.utc([this.year(), this.month() + 1, 0]).date();
-        },
-
-        dayOfYear : function (input) {
-            var dayOfYear = round((moment(this).startOf('day') - moment(this).startOf('year')) / 864e5) + 1;
-            return input == null ? dayOfYear : this.add("d", (input - dayOfYear));
-        },
-
-        weekYear : function (input) {
-            var year = weekOfYear(this, this.lang()._week.dow, this.lang()._week.doy).year;
-            return input == null ? year : this.add("y", (input - year));
-        },
-
-        isoWeekYear : function (input) {
-            var year = weekOfYear(this, 1, 4).year;
-            return input == null ? year : this.add("y", (input - year));
-        },
-
-        week : function (input) {
-            var week = this.lang().week(this);
-            return input == null ? week : this.add("d", (input - week) * 7);
-        },
-
-        isoWeek : function (input) {
-            var week = weekOfYear(this, 1, 4).week;
-            return input == null ? week : this.add("d", (input - week) * 7);
-        },
-
-        weekday : function (input) {
-            var weekday = (this._d.getDay() + 7 - this.lang()._week.dow) % 7;
-            return input == null ? weekday : this.add("d", input - weekday);
-        },
-
-        isoWeekday : function (input) {
-            // iso weeks start on monday, which is 1, so we subtract 1 (and add
-            // 7 for negative mod to work).
-            var weekday = (this._d.getDay() + 6) % 7;
-            return input == null ? weekday : this.add("d", input - weekday);
-        },
-
-        // If passed a language key, it will set the language for this
-        // instance.  Otherwise, it will return the language configuration
-        // variables for this instance.
-        lang : function (key) {
-            if (key === undefined) {
-                return this._lang;
-            } else {
-                this._lang = getLangDefinition(key);
-                return this;
-            }
-        }
-    };
-
-    // helper for adding shortcuts
-    function makeGetterAndSetter(name, key) {
-        moment.fn[name] = moment.fn[name + 's'] = function (input) {
-            var utc = this._isUTC ? 'UTC' : '';
-            if (input != null) {
-                this._d['set' + utc + key](input);
-                return this;
-            } else {
-                return this._d['get' + utc + key]();
-            }
-        };
-    }
-
-    // loop through and add shortcuts (Month, Date, Hours, Minutes, Seconds, Milliseconds)
-    for (i = 0; i < proxyGettersAndSetters.length; i ++) {
-        makeGetterAndSetter(proxyGettersAndSetters[i].toLowerCase().replace(/s$/, ''), proxyGettersAndSetters[i]);
-    }
-
-    // add shortcut for year (uses different syntax than the getter/setter 'year' == 'FullYear')
-    makeGetterAndSetter('year', 'FullYear');
-
-    // add plural methods
-    moment.fn.days = moment.fn.day;
-    moment.fn.months = moment.fn.month;
-    moment.fn.weeks = moment.fn.week;
-    moment.fn.isoWeeks = moment.fn.isoWeek;
-
-    /************************************
-        Duration Prototype
-    ************************************/
-
-
-    moment.duration.fn = Duration.prototype = {
-        weeks : function () {
-            return absRound(this.days() / 7);
-        },
-
-        valueOf : function () {
-            return this._milliseconds +
-              this._days * 864e5 +
-              (this._months % 12) * 2592e6 +
-              ~~(this._months / 12) * 31536e6;
-        },
-
-        humanize : function (withSuffix) {
-            var difference = +this,
-                output = relativeTime(difference, !withSuffix, this.lang());
-
-            if (withSuffix) {
-                output = this.lang().pastFuture(difference, output);
-            }
-
-            return this.lang().postformat(output);
-        },
-
-        get : function (units) {
-            units = normalizeUnits(units);
-            return this[units.toLowerCase() + 's']();
-        },
-
-        as : function (units) {
-            units = normalizeUnits(units);
-            return this['as' + units.charAt(0).toUpperCase() + units.slice(1) + 's']();
-        },
-
-        lang : moment.fn.lang
-    };
-
-    function makeDurationGetter(name) {
-        moment.duration.fn[name] = function () {
-            return this._data[name];
-        };
-    }
-
-    function makeDurationAsGetter(name, factor) {
-        moment.duration.fn['as' + name] = function () {
-            return +this / factor;
-        };
-    }
-
-    for (i in unitMillisecondFactors) {
-        if (unitMillisecondFactors.hasOwnProperty(i)) {
-            makeDurationAsGetter(i, unitMillisecondFactors[i]);
-            makeDurationGetter(i.toLowerCase());
-        }
-    }
-
-    makeDurationAsGetter('Weeks', 6048e5);
-    moment.duration.fn.asMonths = function () {
-        return (+this - this.years() * 31536e6) / 2592e6 + this.years() * 12;
-    };
-
-
-    /************************************
-        Default Lang
-    ************************************/
-
-
-    // Set default language, other languages will inherit from English.
-    moment.lang('en', {
-        ordinal : function (number) {
-            var b = number % 10,
-                output = (~~ (number % 100 / 10) === 1) ? 'th' :
-                (b === 1) ? 'st' :
-                (b === 2) ? 'nd' :
-                (b === 3) ? 'rd' : 'th';
-            return number + output;
-        }
-    });
-
-
-    /************************************
-        Exposing Moment
-    ************************************/
-
-
-    // CommonJS module is defined
-    if (hasModule) {
-        module.exports = moment;
-    }
-    /*global ender:false */
-    if (typeof ender === 'undefined') {
-        // here, `this` means `window` in the browser, or `global` on the server
-        // add `moment` as a global object via a string identifier,
-        // for Closure Compiler "advanced" mode
-        this['moment'] = moment;
-    }
-    /*global define:false */
-    if (typeof define === "function" && define.amd) {
-        define("moment", [], function () {
-            return moment;
-        });
-    }
-}).call(this);
-
-define('util/moment',['splunk.i18n', 'moment'],function(i18n, moment){
-    var initFn = i18n.moment_install;
-    if(typeof initFn === 'function') {
-        initFn(moment);
-    }
-    return moment;
-});
-define('util/time_utils',
-    [
-        'underscore',
-        'splunk.i18n',
-        'splunk.util',
-        'util/moment'
-    ],
-    function(_, i18n, splunkUtils, moment) {
-
-        var BD_TIME_REGEX_MILLIS = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d+)[+-]{1}\d{2}[:]?\d{2}$/,
-            BD_TIME_REGEX_NO_MILLIS = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})[+-]{1}\d{2}[:]?\d{2}$/,
-            u = {},
-            language = i18n.locale_name().substring(0, 2),
-            ISO_PATTERN = '%Y-%m-%dT%H:%M:%S.%Q%:z';
-        
-        u.s = u.sec = u.secs = u.second = u.seconds = {abbr: "s",  singular: _("second").t(), plural: _("seconds").t()};
-        u.m = u.min = u.mins = u.minute = u.minutes = {abbr: "m", singular: _("minute").t(), plural: _("minutes").t()};
-        u.h = u.hr  = u.hrs  = u.hour   = u.hours   = {abbr: "h", singular: _("hour").t(), plural: _("hours").t()};
-        u.d = u.day = u.days = {abbr: "d", singular: _("day").t(), plural: _("days").t()};
-        u.w = u.week = u.weeks = {abbr: "w", singular: _("week").t(), plural: _("weeks").t()};
-        u.mon = u.month = u.months = {abbr: "mon", singular: _("month").t(), plural: _("months").t()};
-        u.q = u.qtr = u.qtrs = u.quarter = u.quarters = {abbr: "q", singular: _("quarter").t(), plural: _("quarters").t()};
-        u.y = u.yr = u.yrs = u.year = u.years = {abbr: "y", singular: _("year").t(), plural: _("years").t()};
-            
-        var TIME_UNITS = u;
-    
-        var BdTime = function(isoString) {
-            var bdPieces = BD_TIME_REGEX_MILLIS.exec(isoString) || BD_TIME_REGEX_NO_MILLIS.exec(isoString);
-            if(!bdPieces) {
-                this.isInvalid = true;
-            }
-            else {
-                this.year   = parseInt(bdPieces[1], 10);
-                this.month  = parseInt(bdPieces[2], 10);
-                this.day    = parseInt(bdPieces[3], 10);
-                this.hour   = parseInt(bdPieces[4], 10);
-                this.minute = parseInt(bdPieces[5], 10);
-                this.second = parseInt(bdPieces[6], 10);
-                this.millisecond = bdPieces.length > 7 ? parseInt(bdPieces[7], 10) : 0;
-            }
-        };
-    
-        var extractBdTime = function(timeString) {
-            return new BdTime(timeString);
-        };
-    
-        var bdTimeToDateObject = function(bdTime) {
-            var year     = bdTime.year,
-                month    = bdTime.month - 1,
-                day      = bdTime.day,
-                hour     = bdTime.hour,
-                minute   = bdTime.minute,
-                second   = bdTime.second,
-                millisecond = bdTime.millisecond;
-    
-            return new Date(year, month, day, hour, minute, second, millisecond);
-        };
-    
-        var isoToDateObject = function(isoString) {
-            var bdTime = extractBdTime(isoString);
-            return bdTimeToDateObject(bdTime);
-        };
-        
-        var jsDateToSplunkDateTimeWithMicroseconds = function(jsDate) {
-            var dateTime = new i18n.DateTime({
-                date: jsDate,
-                year: jsDate.getFullYear(),
-                month: jsDate.getMonth() + 1,
-                day: jsDate.getDate(),
-                hour: jsDate.getHours(),
-                minute: jsDate.getMinutes(),
-                second: jsDate.getSeconds(),
-                microsecond: jsDate.getMilliseconds() * 1000
-            });
-            dateTime.weekday = function() {
-                var d = this.date.getDay() - 1;
-                if (d < 0)
-                    d = 6;
-                return d;
-            };
-            return dateTime;
-        };
-    
-        var determineLabelGranularity = function(times) {
-            if(times.length === 1) {
-                return 'second';
-            }
-            if(!(times[0] instanceof BdTime)) {
-                times = _(times).map(extractBdTime);
-            }
-            var seconds = [],
-                minutes = [],
-                hours   = [],
-                days    = [],
-                months  = [],
-    
-                allInListMatch = function(list, matchMe) {
-                    for(var i = 0; i < list.length; i++) {
-                        if(list[i] !== matchMe) {
-                            return false;
-                        }
-                    }
-                    return true;
-                };
-    
-            _(times).each(function(time){
-                seconds.push(time.second);
-                minutes.push(time.minute);
-                hours.push(time.hour);
-                days.push(time.day);
-                months.push(time.month);
-            });
-    
-            if(!allInListMatch(seconds, 0)) {
-                return 'second';
-            }
-            if(!allInListMatch(minutes, 0)) {
-                return 'minute';
-            }
-            if((!allInListMatch(hours, 0))) {
-                return 'hour';
-            }
-            if(!allInListMatch(days, 1)) {
-                return 'day';
-            }
-            if(!allInListMatch(months, 1)) {
-                return 'month';
-            }
-            return 'year';
-        };
-    
-        var isValidIsoTime = function(str) {
-            return BD_TIME_REGEX_MILLIS.test(str) || BD_TIME_REGEX_NO_MILLIS.test(str);
-        };
-        
-    
-        /**
-         * Epoch seconds to LocaleString
-         * @param epochTime
-         * @return {String}
-         */
-        var convertToLocalTime = function(epochTime) {
-            if (!epochTime) {
-                return null;
-            }
-            return new Date(epochTime*1000).toLocaleString();
-        };
-    
-        /**
-         * Converts time difference to "1 year, 6 months ago"; "20 minutes, 30 seconds ago"
-         * @param endTime Unix epoch seconds
-         * @param startTime [optional] Unix epoch seconds; By default - current time.
-         * @param withoutSuffix [optional] true to omit the "ago" suffix
-         * @return {String}
-         */
-        var convertToRelativeTime = function(endTime, startTime, withoutSuffix) {
-            if (!endTime) {
-                return null;
-            }
-            var endMoment = moment.unix(endTime);
-            return startTime !== undefined ?
-                    endMoment.from(moment.unix(startTime), withoutSuffix) :
-                    endMoment.fromNow(withoutSuffix);
-        };
-
-        /**
-         * Converts parsed time amount and unit to seconds. Converts 1h to 3600.
-         * @param amount {Number}
-         * @param unit {String} ('s', 'm', 'h', 'd')
-         * @return {Number}
-         */
-        var convertAmountAndUnitToSeconds = function(amount, unit) {
-            var seconds = amount;
-            switch (unit) {
-                case 'd':
-                    seconds *= 24 * 60 * 60;
-                    break;
-                case 'h':
-                    seconds *= 60 * 60;
-                    break;
-                case 'm':
-                    seconds *= 60;
-                    break;
-            }
-            return seconds;
-        };
-
-        var getRelativeStringFromSeconds = function(seconds, removeAgo) {
-            if (_.isString(seconds)) {
-                seconds = parseInt(seconds, 10);
-            }
-            
-            var now = new Date(),
-                startTime = now.getTime() / 1000,
-                endTime = startTime - seconds;
-            
-            return convertToRelativeTime(endTime, startTime, removeAgo);
-        };
-        
-        /*  
-         * Normalize units to their shortest abbreviations.
-         * Required is an optional parameter, defaults to true.
-         * If required and there is no match, s is returned.
-         * 
-         */
-        var normalizeUnit = function(abbr, required) {
-            var hasUnit = TIME_UNITS.hasOwnProperty(abbr),
-                defaultUnit = required === false ? '' : TIME_UNITS.s.abbr;
-            return hasUnit ? TIME_UNITS[abbr].abbr : defaultUnit;
-        };
-        
-        var parseTimeString = function(timeString){
-            if (!_.isString(timeString)) {
-                return false;
-            }
-            //This regex is not a validator of splunk time! Use the TimeParser for that!
-            //-1, -1s, -1@s, -1s@s, +1, +1s, +1@s, +1s@s, s@s, rt@s, @s, rtnow, now
-            var parse = timeString.match(/^\s*(rt|)([-+]?)(\d*)([a-zA-Z]*)(@?)([a-zA-Z]*)(\d*)\s*$/);
-                                           //   1     2     3       4       5       6      7
-            if (parse) {
-                var normalizedUnit = normalizeUnit(parse[4], false),
-                    hasSnap = (parse[5] !== '');
-                
-                return {
-                    amount: (normalizedUnit ? (parseInt(parse[3], 10) || 1) : 0),
-                    unit: normalizedUnit,
-                    hasSnap: hasSnap,
-                    snapUnit: normalizeUnit(parse[6], false),
-                    snapUnitAmount: parseInt(parse[7], 10),
-                    isNow: parse[4] === "now",
-                    isRealTime: parse[1] === 'rt',
-                    isPositive: parse[2] === "+" || true,
-                    parse: parse 
-                };
-            }
-            
-            return false;
-        };
-        
-        var isRealtime = function(time) {
-            return (_.isString(time) && time.indexOf("rt") === 0);
-        };
-        
-        var stripRTSafe = function(timeString, isLatest) {
-            var sign,
-                parsedTimeString,
-                strippedString;
-            
-            if (!isRealtime(timeString)) {
-                return timeString;
-            }
-            
-            parsedTimeString = parseTimeString(timeString);
-            if (!parsedTimeString) {
-                return timeString;
-            }
-            
-            if (parsedTimeString.unit || parsedTimeString.isNow) {
-                return parsedTimeString.parse.slice(2, parsedTimeString.parse.length).join("");
-            }
-            
-            strippedString = parsedTimeString.parse.slice(3, parsedTimeString.parse.length).join("");
-            if (strippedString) {
-                sign = parsedTimeString.isPositive ? "+" : "-";
-                return sign + strippedString;
-            }
-            
-            if (isLatest) {
-                return "now";
-            } else {
-                return "0";
-            }
-        };
-
-        var rangeFromIsoAndOffset = function(iso, offset) {
-            var lowerRange = new Date(iso),
-                upperRange = new Date(iso);
-            switch(offset) {
-                case 'w': 
-                    lowerRange.setDate(lowerRange.getDate()-7);
-                    upperRange.setDate(upperRange.getDate()+7);
-                    break;
-                case 'd': 
-                    lowerRange.setDate(lowerRange.getDate()-1);
-                    upperRange.setDate(upperRange.getDate()+1);
-                    break;
-                case 'h': 
-                    lowerRange.setHours(lowerRange.getHours()-1);
-                    upperRange.setHours(upperRange.getHours()+1);
-                    break;
-                case 'm': 
-                    lowerRange.setMinutes(lowerRange.getMinutes()-1);
-                    upperRange.setMinutes(upperRange.getMinutes()+1);
-                    break;
-                case 's': 
-                    lowerRange.setSeconds(lowerRange.getSeconds()-1);
-                    upperRange.setSeconds(upperRange.getSeconds()+1);
-                    break;
-                case 'ms': 
-                    lowerRange.setMilliseconds(lowerRange.getMilliseconds()-1);
-                    upperRange.setMilliseconds(upperRange.getMilliseconds()+1);
-                    break;
-            }
-            return { lowerRange: lowerRange, upperRange: upperRange }; 
-        };
-        
-        var isAbsolute = function(time) {
-            if (time === undefined) {
-                return false;
-            }
-            return _.isNumber(time) || !(/^(now|-|\+|@|rt).*/.test(time));
-        };
-        
-        var isEpoch = function(time) {
-            return _.isNumber(time) || (_.isString(time) && /^\d+((\.\d+)|(\d*))$/.test(time) && time !== '0');
-        };
-        
-        var timeAndJsDateIsWholeDay = function(time, jsDate) {
-            if (isAbsolute(time) && jsDate) {
-                return (jsDate.getHours() == 0) && (jsDate.getMinutes() == 0) && (jsDate.getSeconds() == 0) && (jsDate.getMilliseconds() == 0);
-            }
-            return false;
-        };
-        
-        var isNow = function(time) {        
-            if (!time) {
-                return true;
-            }
-            return (_.isString(time) && ((time === '') || (/now/.test(time))));
-        };
-        
-        var isEmpty = function(time) {
-            if (time === '0') {
-                return true;
-            }
-            return (!time);
-        };
-        
-        var findPresetLabel = function(presetsCollection, earliest, latest) {
-            var presetModel;
-            
-            if (presetsCollection.length > 0) {
-                //TODO: this should probably get moved to the Times collection
-                presetModel = presetsCollection.find(function(model) {
-                    var timesConfEarliest = model.entry.content.get("earliest_time"),
-                        timesConfLatest = model.entry.content.get("latest_time"),
-                        noEarliests = (isEmpty(timesConfEarliest) && isEmpty(earliest)),
-                        noLatests = (isEmpty(timesConfLatest) && isEmpty(latest)),
-                        isDisabled = model.isDisabled(),
-                        isSubMenu = model.isSubMenu();
-                    
-                    return ((!isDisabled && !isSubMenu) && (noEarliests || (timesConfEarliest == earliest)) && (noLatests || (timesConfLatest == latest)));
-                });
-                
-                if (presetModel) {
-                    return presetModel.entry.content.get("label");
-                }
-            }
-            return false;
-        };
-        
-        var generateRealtimeLabel = function(earliest, latest) {
-            var earliestParse, latestIsNow;
-            
-            if (isRealtime(earliest) || isRealtime(latest)) {
-                earliestParse = parseTimeString(earliest);
-                latestIsNow = isNow(latest);
-                
-                var labelTemplates = {
-                    s:_("%t second window").t(),
-                    m: _("%t minute window").t(),
-                    h: _("%t hour window").t(),
-                    d: _("%t day window").t(),
-                    w: _("%t week window").t(),
-                    mon: _("%t month window").t(),
-                    q: _("%t quarter window").t(),
-                    y: _("%t year window").t()
-                };
-            
-                //A windowed time with a latest time of now.
-                if (earliestParse && earliestParse.amount && latestIsNow && labelTemplates.hasOwnProperty(earliestParse.unit)) {
-                    return labelTemplates[earliestParse.unit].replace(/%t/, earliestParse.amount);
-                } 
-                
-                //Other Real-Time.
-                return _("Real-time").t();
-            }
-            return false;
-        };
-        
-        var generateRelativeTimeLabel = function(earliest, latest) {
-            var earliestParse = parseTimeString(earliest),
-                latestIsNow = isNow(latest),
-                latestParse = parseTimeString(latest);
-            
-            if (!earliestParse || earliestParse.isRealTime || latestParse.isRealTime) {
-                return false;
-            }
-            
-            if (earliestParse.amount
-                    && (!earliestParse.snapUnit || earliestParse.unit === earliestParse.snapUnit)
-                    && (latestParse.isNow || latestParse.snapUnit)
-                    && (!latestParse.snapUnit || earliestParse.unit === latestParse.snapUnit)) {
-                var relativeLabel = _("Last %amount %unit").t();
-                relativeLabel = relativeLabel.replace(/%amount/, earliestParse.amount);
-                relativeLabel = relativeLabel.replace(/%unit/, TIME_UNITS[earliestParse.unit][earliestParse.amount > 1? 'plural' : 'singular']);
-                return relativeLabel;
-            }
-            
-            return false;
-        };
-        
-        var generateBetweenTimeLabel = function(earliest, earliestJSDate, latest, latestJSDate) {
-            var earliestIsWholeDay = timeAndJsDateIsWholeDay(earliest, earliestJSDate),
-                latestIsWholeDay = timeAndJsDateIsWholeDay(latest, latestJSDate);
-            
-            if (earliestIsWholeDay && latestIsWholeDay) {
-                if (language == 'en') {
-                    return i18n.format_datetime_range(null, earliestJSDate, latestJSDate, true);
-                } else {
-                    var dateLabel = _("%1 through %2").t();
-                    var labelDate = new Date(latestJSDate.getTime());
-                    labelDate.setDate(labelDate.getDate() -1);
-                    return dateLabel.replace('%1', i18n.format_date(earliestJSDate, 'short')).replace('%2', i18n.format_date(labelDate, 'short'));
-                }
-            }
-            
-            return false;
-        };
-        
-        var generateSinceDateLabel = function(earliest, earliestJSDate, latest){
-            var earliestIsWholeDay = timeAndJsDateIsWholeDay(earliest, earliestJSDate),
-                latestIsNow = isNow(latest);
-            
-            if (earliestIsWholeDay && latestIsNow) {
-                var dateLabel = _("Since %1").t();
-                return dateLabel.replace('%1', i18n.format_date(earliestJSDate, 'short'));
-            }
-            
-            return false;
-        };
-        
-        var generateBeforeDateLabel = function(earliest, latest, latestJSDate) {            
-            if (isEmpty(earliest) && timeAndJsDateIsWholeDay(latest, latestJSDate)) {
-                var dateLabel = _("Before %1").t();
-                return dateLabel.replace('%1', i18n.format_date(latestJSDate, 'short'));
-            }
-            
-            return false;
-        };
-        
-        var generateDateTimeRangeLabel = function(earliest, latest) {
-            if (!isEmpty(earliest) && isAbsolute(earliest) && isAbsolute(latest)) {
-                return _("Date time range").t();
-            }
-            return false;
-        };
-        
-        var generateSinceTimeRangeLabel = function(earliest, latest) {
-            if (isAbsolute(earliest) && isNow(latest)) {
-                return _("Since date time").t();
-            }
-            return false;
-         };
-         
-         var generateBeforeTimeRangeLabel = function(earliest, latest) {
-             if (isEmpty(earliest) && isAbsolute(latest)) {
-                 return _("Before date time").t();
-             }
-             return false;
-         };
-         
-         var generateAllTimeLabel = function(earliest, latest) {
-             if (isEmpty(earliest) && isNow(latest)) {
-                 return _("All time").t();
-             }
-             return false;
-         };
-    
-        /**
-        * presets: <collections.services.data.ui.TimesV2>
-        **/
-        var generateLabel = function(presetsCollection, earliest, earliestJSDate, latest, latestJSDate) {
-            return generateAllTimeLabel(earliest, latest) ||
-                findPresetLabel(presetsCollection, earliest, latest) ||
-                generateRealtimeLabel(earliest, latest) ||
-                generateRelativeTimeLabel(earliest, latest) ||
-                generateBetweenTimeLabel(earliest, earliestJSDate, latest, latestJSDate) ||
-                generateSinceDateLabel(earliest, earliestJSDate, latest) ||
-                generateBeforeDateLabel(earliest, latest, latestJSDate) ||
-                generateDateTimeRangeLabel(earliest, latest) ||
-                generateSinceTimeRangeLabel(earliest, latest) ||
-                generateBeforeTimeRangeLabel(earliest, latest) ||
-                _("Custom time").t();
-        };
-        
-        return ({
-            extractBdTime: extractBdTime,
-            bdTimeToDateObject: bdTimeToDateObject,
-            rangeFromIsoAndOffset: rangeFromIsoAndOffset,
-            isoToDateObject: isoToDateObject,
-            determineLabelGranularity: determineLabelGranularity,
-            isValidIsoTime: isValidIsoTime,
-            TIME_UNITS: TIME_UNITS,
-            ISO_PATTERN: ISO_PATTERN,
-            normalizeUnit: normalizeUnit,
-            parseTimeString: parseTimeString,
-            isRealtime: isRealtime,
-            stripRTSafe: stripRTSafe,
-            isAbsolute: isAbsolute,
-            isEpoch: isEpoch,
-            timeAndJsDateIsWholeDay: timeAndJsDateIsWholeDay,
-            isNow: isNow,
-            isEmpty: isEmpty,
-            findPresetLabel: findPresetLabel,
-            generateRealtimeLabel: generateRealtimeLabel,
-            generateRelativeTimeLabel: generateRelativeTimeLabel,
-            generateBetweenTimeLabel: generateBetweenTimeLabel,
-            generateSinceDateLabel: generateSinceDateLabel,
-            generateBeforeDateLabel: generateBeforeDateLabel,
-            generateDateTimeRangeLabel: generateDateTimeRangeLabel,
-            generateSinceTimeRangeLabel: generateSinceTimeRangeLabel,
-            generateBeforeTimeRangeLabel: generateBeforeTimeRangeLabel,
-            generateAllTimeLabel: generateAllTimeLabel,
-            generateLabel: generateLabel,
-            convertToRelativeTime: convertToRelativeTime,
-            convertToLocalTime: convertToLocalTime,
-            jsDateToSplunkDateTimeWithMicroseconds: jsDateToSplunkDateTimeWithMicroseconds,
-            getRelativeStringFromSeconds: getRelativeStringFromSeconds,
-            convertAmountAndUnitToSeconds: convertAmountAndUnitToSeconds
-        });
-    }
-);
-
-define('models/services/data/ui/Time',
-    [
-        'jquery',
-        'splunk.util',
-        'models/SplunkDBase',
-        'util/time_utils'
-    ],
-    function($, splunkutil, SplunkDBaseModel, time_utils) {
-        return SplunkDBaseModel.extend({
-            url: "data/ui/times",
-            initialize: function() {
-                SplunkDBaseModel.prototype.initialize.apply(this, arguments);
-            },
-            isRealTime: function() {
-                if (this.isDisabled()) {
-                    return false;
-                }
-                return time_utils.isRealtime(this.entry.content.get("latest_time"));
-            },
-            isPeriod: function() {
-                if (this.isDisabled()) {
-                    return false;
-                }
-                
-                var earliest =  this.entry.content.get("earliest_time");
-                var latest =  this.entry.content.get("latest_time");
-                
-                if (earliest && (earliest.indexOf("@") != -1) && (earliest.indexOf("-") != 0)) return true; // Period to date 
-                if (earliest && latest && (earliest.indexOf("@") != -1) && (latest.indexOf("@") != -1)) return true;  // Previous period
-                
-                return false;
-            },
-            isLast: function() {
-                if (this.isDisabled()) {
-                    return false;
-                }
-                
-                if (this.isPeriod()) {
-                    return false;
-                }
-            
-                var earliest =  this.entry.content.get("earliest_time");
-                if (!earliest) {
-                    return false;
-                }
-                return (earliest.indexOf("-") == 0);
-            },
-            isOther: function() {
-                if (this.isDisabled()) {
-                    return false;
-                }
-                
-                return !this.isRealTime() && !this.isPeriod() && !this.isLast() && !this.isSubMenu();
-            },
-            isDisabled: function() {
-                return this.entry.content.get("disabled");
-            },
-            isSubMenu: function() {
-                return this.entry.content.get('is_sub_menu') === '1';
-            }
-        });
-    }
-);
-define('collections/services/data/ui/Times',
-    [
-        'models/services/data/ui/Time',
-        'collections/SplunkDsBase'
-    ],
-    function(TimeModel, SplunkDsBaseCollection) {
-        return SplunkDsBaseCollection.extend({
-            url: 'data/ui/times',
-            model: TimeModel,
-            initialize: function() {
-                SplunkDsBaseCollection.prototype.initialize.apply(this, arguments);
-            },
-            filterToRealTime: function(type) {
-                return this.filter(function(model) {
-                    return model.isRealTime();
-                });
-            },
-            filterToPeriod: function(type) {
-                return this.filter(function(model) {
-                    return model.isPeriod();
-                });
-            },
-            filterToLast: function(type) {
-                return this.filter(function(model) {
-                    return model.isLast();
-                });
-            },
-            filterToOther: function(type) {
-                return this.filter(function(model) {
-                    return model.isOther();
-                });
-            },
-            comparator: function(model) {
-                return parseInt(model.entry.content.get('order'), 10);
             }
         });
     }
@@ -3433,7 +407,36 @@ define('collections/services/search/TimeParsers',
     }
 );
 
-define('models/Application',
+define('models/services/data/ui/Nav',
+    [
+        'models/SplunkDBase'
+    ],
+    function(SplunkDBaseModel) {
+        return SplunkDBaseModel.extend({
+            url: "data/ui/nav",
+            id: "data/ui/nav",
+            initialize: function() {
+                SplunkDBaseModel.prototype.initialize.apply(this, arguments);
+            }
+        });
+    }
+);
+define('collections/services/data/ui/Navs',
+    [
+        "models/services/data/ui/Nav",
+        "collections/SplunkDsBase"
+    ],
+    function(NavModel, SplunkDsBaseCollection) {
+        return SplunkDsBaseCollection.extend({
+            url: "data/ui/nav",
+            model: NavModel,
+            initialize: function() {
+                SplunkDsBaseCollection.prototype.initialize.apply(this, arguments);
+            }
+        });
+    }
+);
+define('models/SelectedField',
     [
         'models/Base'
     ],
@@ -3442,11 +445,1987 @@ define('models/Application',
             initialize: function() {
                 BaseModel.prototype.initialize.apply(this, arguments);
             },
-            getPermissions: function(permission){
-            	return {
-            		app: this.get("app"),
-            		owner: ((permission === 'private') ? this.get("owner") : 'nobody')
-            	};
+            sync: function() {
+                throw 'Method disabled';
+            }
+        });
+    }
+);
+
+define('collections/SelectedFields',
+	[
+        'collections/Base',
+        'models/SelectedField'
+    ],
+    function(BaseCollection, SelectedFieldModel) {
+        return BaseCollection.extend({
+            model: SelectedFieldModel,
+            initialize: function() {
+                BaseCollection.prototype.initialize.apply(this, arguments);
+                this.on('reset add remove', function() {
+                    delete this._names;
+                }, this);
+            },
+            sync: function() {
+                throw 'Method disabled';
+            },
+            valuesToJSONString: function() {
+                return JSON.stringify(this.pluck('name'));
+            },
+            names: function() {
+                if (!this._names) {
+                    this._names = this.pluck('name');
+                }
+                return this._names;
+            },
+            findByName: function(name) {
+                return this.find(function(model) {
+                    return name === model.get('name');
+                });
+            }
+        });
+    }
+);
+
+define('models/services/configs/EventRenderer',
+    [
+        'models/SplunkDBase'
+    ],
+    function(SplunkDBaseModel) {
+        return SplunkDBaseModel.extend({
+            url: "configs/conf-event_renderers",
+            initialize: function() {
+                SplunkDBaseModel.prototype.initialize.apply(this, arguments);
+            }
+        });
+    }
+);
+
+define('collections/services/configs/EventRenderers',
+    [
+        'underscore',   
+        'models/services/configs/EventRenderer',
+        'collections/SplunkDsBase'
+    ],
+    function(_, EventRendererModel, SplunkDsBaseCollection) {
+        return SplunkDsBaseCollection.extend({
+            url: "configs/conf-event_renderers",
+            model: EventRendererModel,
+            initialize: function() {
+                SplunkDsBaseCollection.prototype.initialize.apply(this, arguments);
+            },
+            getRenderer: function(eventtype) {
+                if(!eventtype) return;
+                if(eventtype.length==1){
+                    return this._matchEventType(eventtype[0]);
+                } else {
+                    var priorities = {};
+                    _(eventtype).each(function(v, i) {
+                        var renderer = this._matchEventType(v);
+                        if(renderer) 
+                            priorities[parseInt(renderer.entry.content.get('priority'), 10)] = renderer;    
+                    },this);
+                    if(!priorities) return;
+                    return priorities[_.chain(priorities).keys().map(function(v) { return parseInt(v, 10); }).max().value()];
+                }
+            },
+            _matchEventType: function(eventtype) {
+                for(var i=0; i<this.models.length; i++){
+                    var renderer = this.models[i];
+                    if(renderer.entry.content.get('eventtype')===eventtype){
+                        return renderer;
+                    }
+                }
+            }
+        });
+    }
+);
+
+define('models/services/data/ui/WorkflowAction',
+    [
+        'backbone',
+        'underscore',
+        'models/SplunkDBase'
+    ],
+    function(Backbone, _, SplunkDBaseModel) {
+        return SplunkDBaseModel.extend({
+            url: "data/ui/workflow-actions",
+            initialize: function() {
+                SplunkDBaseModel.prototype.initialize.apply(this, arguments);
+            },
+            /**
+             *  $field$ 
+             */
+            fieldSubstitute: function(text, data) {
+                var settings = {
+                        interpolate : /\$([\s\S]+?)\$/g 
+                    },
+                    $matches$ = text.match(settings.interpolate);
+
+                //underscore templates will raise if the value to be replaced
+                //is undefined.  Like 5.0, we will strip out $ delimited values
+                //if they do not exist in event.  
+                if($matches$) { 
+                    _($matches$).each(function($string$) {
+                        if(!data[$string$.match(/\$([\s\S]+?)\$/)[1]]){
+                            text = text.replace($string$, '');
+                        }
+                    },this);
+                }
+                return _.template(text, data, settings);
+            },
+            /**
+             * $@sid$ $@offset$, $@namespace$, $@latest_time$, $@field_name$, $@field_value$ 
+             */
+            systemSubstitute: function(text, sid, offset, namespace, latest_time, fieldName, fieldValue) {
+                var settings = {
+                        interpolate : /\$@([\s\S]+?)\$/g
+                    },
+                    data = {
+                        sid: sid,
+                        offset: offset,
+                        namespace: namespace,
+                        //FIXME: why was the old UI passing this as empty 
+                        latest_time: '', //latest_time,
+                        field_name: fieldName,
+                        field_value: fieldValue
+                    };
+                return _.template(text, data, settings);
+            }
+        });
+    }
+);
+
+define('collections/services/data/ui/WorkflowActions',
+    [
+        'jquery',
+        'underscore',
+        'backbone',
+        'models/services/data/ui/WorkflowAction',
+        'collections/SplunkDsBase'
+    ],
+    function($, _, Backbone, WorkflowActionModel, SplunkDsBaseCollection) {
+        return SplunkDsBaseCollection.extend({
+            url: 'data/ui/workflow-actions',
+            model: WorkflowActionModel,
+            initialize: function(){
+                SplunkDsBaseCollection.prototype.initialize.apply(this, arguments);
+            },
+            getEventActions: function(event) {
+                var idxs = [];
+                this.each(function(model, i) {
+                    if(model.entry.content.get('display_location') != 'field_menu'){
+                        idxs.push(i);
+                    }
+                },this);
+                return idxs;
+            },
+            getFieldActions: function(field, event) {
+                return this._filterByField(field, event);
+            },
+            _filterByField: function(field, event) {
+                var idxs = [];
+                this.each(function(model, i) {
+                    var fields_str = model.entry.content.get('fields'),
+                        fields = _(fields_str.split(',')).map(function(field) { return $.trim(field); },this),
+                        eventtypes = _((model.entry.content.get('eventtypes') || '').split(',')).map(function(eventtype) {
+                            return $.trim(eventtype);
+                        },this),
+                        eventtype = event.get('eventtype');
+
+                    if(eventtype && _(eventtype).intersection(eventtypes).length > 0) {
+                        if(model.entry.content.get('display_location') != "event_menu") {
+                            if(fields.length == 1){
+                                var f = fields[0];
+                                if(f.indexOf('*')>-1){
+                                     if(f === '*'){
+                                        idxs.push(i);
+                                     } else {
+                                        var r;
+                                        try { r = new RegExp(f); } catch(e) {}
+                                        if(r) {
+                                            var result = r.exec(field);
+                                            if(result && result.length>0) {
+                                                idxs.push(i);
+                                            }
+                                        }
+                                     }
+                                } else {
+                                    if(f == field){
+                                        idxs.push(i);
+                                    }    
+                                }
+                            } else {
+                                if(fields_str.indexOf('*') == -1){ 
+                                    var allFieldsPresent = true;
+                                    if(fields.indexOf(field) > -1) {
+                                        _(fields).each(function(f) {
+                                            if(!event.get(f)){
+                                                allFieldsPresent = false;
+                                            }
+                                        },this);
+                                        allFieldsPresent && idxs.push(i);
+                                    }
+                                }                        
+                            }
+                        }
+                    }
+                },this);
+                return idxs;
+            }
+        });
+    }
+);
+
+define('models/services/search/jobs/Control',
+    [
+         'jquery',
+         'backbone',
+         'models/Base',
+         'util/splunkd_utils'
+     ],
+     function($, Backbone, BaseModel, splunkDUtils) {
+        return BaseModel.extend({
+            initialize: function(attributes, options) {
+                BaseModel.prototype.initialize.apply(this, arguments);
+            },
+            sync: function(method, model, options) {
+                var defaults = {
+                    data: {
+                        output_mode: 'json'
+                    }
+                };
+                switch(method) {
+                case 'update':
+                    defaults.processData = true;
+                    defaults.type = 'POST';
+                    defaults.url = splunkDUtils.fullpath(model.id);
+                    $.extend(true, defaults, options);
+                    break;
+                default:
+                    throw new Error('invalid method: ' + method);
+                }
+                return Backbone.sync.call(this, method, model, defaults);
+            }
+        });
+    }
+);
+
+define('models/services/search/jobs/Summary',
+    [
+        'jquery',
+        'underscore',
+        'backbone',
+        'models/Base',
+        'collections/Base',
+        'util/splunkd_utils'
+    ],
+    function(
+        $,
+        _,
+        Backbone,
+        BaseModel,
+        BaseCollection,
+        splunkdutils
+    ) 
+    {
+        var Field = Backbone.Model.extend(
+            {
+                isNumeric: function() {
+                    return this.get('numeric_count') > this.get('count') / 2;
+                },
+                replace: function() {
+                    return BaseModel.prototype.replace.apply(this, arguments);
+                },
+                deepOff: function() {
+                    this.off();
+                }
+            }
+        );
+        var Fields = BaseCollection.extend({
+            model: Field
+        });
+        
+        var Model = BaseModel.extend({
+            url: '',
+            initialize: function(data, options) {
+                BaseModel.prototype.initialize.apply(this, arguments);
+                this.initializeAssociated();
+                if (options && options.splunkDPayload) {
+                    this.setFromSplunkD(options.splunkDPayload, {silent: true});
+                }
+                this.memoizedFrequency = {};
+                this.memoizedFields = {};
+                this.memoizedFilterByMinFrequency = {};
+                
+                this.fields.on('reset', function() {
+                    this.memoizedFrequency = {};
+                    this.memoizedFields = {};
+                    this.memoizedFilterByMinFrequency = {};
+                }, this);
+            },
+            initializeAssociated: function() {
+                // do a dynamic lookup of the current constructor so that this method is inheritance-friendly
+                var RootClass = this.constructor;
+                this.associated = this.associated || {};
+                //instance level models
+                this.fields = this.fields || new RootClass.Fields();
+                this.associated.fields = this.fields;
+            },
+            sync: function(method, model, options) {
+                if (method!=='read') {
+                    throw new Error('invalid method: ' + method);
+                }
+                options = options || {};
+                var appOwner = {},
+                    defaults = {data: {output_mode: 'json'}},
+                    url = _.isFunction(model.url) ? model.url() : model.url || model.id;
+                    
+                if(options.data){
+                    appOwner = $.extend(appOwner, { //JQuery purges undefined
+                        app: options.data.app || undefined,
+                        owner: options.data.owner || undefined,
+                        sharing: options.data.sharing || undefined
+                    });
+                }
+                defaults.url = splunkdutils.fullpath(url, appOwner);
+                $.extend(true, defaults, options);
+                delete defaults.data.app;
+                delete defaults.data.owner;
+                delete defaults.data.sharing;
+                return Backbone.sync.call(this, method, model, defaults);
+            },
+            _fields: function(data) {
+                var fields = [];
+                _.each(data, function(fieldValue, fieldName) {
+                    var field = {name: fieldName};
+                    _.each(fieldValue, function(fieldPropertyValue, fieldPropertyName){
+                        field[fieldPropertyName] = fieldPropertyValue;
+                    });
+                    fields.push(field);
+                }, this);
+                return fields;
+            },
+            parse: function(response) {
+                this.initializeAssociated();
+                if (!response) {
+                    return {};
+                }
+                var fields = this._fields(response.fields);
+                delete response.fields;
+                this.set(response);
+                this.fields.reset(fields);
+                return {};
+            },
+            setFromSplunkD: function(payload, options) {
+                var fields;
+                payload = $.extend(true, {}, payload);
+                this.attributes = {};
+                if (payload) {
+                    fields = this._fields(payload.fields);
+                    delete payload.fields;
+                    this.set(payload, options);
+                    this.fields.reset(fields, options);
+                }
+            },
+            filterByMinFrequency: function(frequency) {
+                if (this.memoizedFilterByMinFrequency.hasOwnProperty(frequency)) {
+                    return this.memoizedFilterByMinFrequency[frequency];
+                }
+                
+                var eventCount = this.get('event_count'),
+                    filteredByMinFreq = this.associated.fields.filter(function(field) {
+                        return (field.get('count')/eventCount) >= frequency;
+                    });
+                this.memoizedFilterByMinFrequency[frequency] = filteredByMinFreq;
+                return filteredByMinFreq;
+            },
+            frequency: function(fieldName) {
+                if (this.memoizedFrequency[fieldName] !== void(0)) {
+                    return this.memoizedFrequency[fieldName];
+                }
+                
+                var field = this.findByFieldName(fieldName),
+                    freq;
+                
+                if (!field) {
+                    this.memoizedFrequency[fieldName] = 0;
+                    return 0;
+                }
+                
+                freq = field.get('count')/this.get('event_count');
+                this.memoizedFrequency[fieldName] = freq;
+                return freq;
+            },
+            findByFieldName: function(fieldName) {
+                if (this.memoizedFields.hasOwnProperty(fieldName)) {
+                    return this.memoizedFields[fieldName];
+                }
+                
+                var field = this.fields.find(function(model) {
+                    return fieldName === model.get('name');
+                });
+                
+                this.memoizedFields[fieldName] = field;
+                return field;
+            },
+            distribution: function(fieldName) {
+                var fieldHistogram,
+                    field = this.findByFieldName(fieldName),
+                    rootHistogram = this.get('histogram');
+                if (!field) {
+                    return [];
+                }
+                fieldHistogram = field.get('histogram');
+                if (!rootHistogram || !fieldHistogram) {
+                    return [];
+                }
+
+                var numBuckets = Math.min(rootHistogram.length, fieldHistogram.length);
+                
+                // flatten histogram and summaryHistogram data into arrays of counts and totals
+                var counts = [];
+                var totals = [];
+                var i;
+                for (i = 0; i < numBuckets; i++) {
+                    counts.push(fieldHistogram[i].count);
+                    totals.push(rootHistogram[i].count);
+                }
+    
+                // merge buckets so there are no more than maxBuckets
+                var maxBuckets = 30;
+                var mergedCounts;
+                var mergedTotals;
+                while (numBuckets > maxBuckets) {
+                    mergedCounts = [];
+                    mergedTotals = [];
+                    for (i = numBuckets - 1; i >= 0; i -= 2) {
+                        if (i > 0) {
+                            mergedCounts.unshift(counts[i] + counts[i - 1]);
+                            mergedTotals.unshift(totals[i] + totals[i - 1]);
+                        } else {
+                            mergedCounts.unshift(counts[i]);
+                            mergedTotals.unshift(totals[i]);
+                        }
+                    }
+                    counts = mergedCounts;
+                    totals = mergedTotals;
+                    numBuckets = counts.length;
+                }
+    
+                // compute percentages from counts and totals
+                var percentages = [];
+                for (i = 0; i < numBuckets; i++) {
+                    percentages.push((totals[i] > 0) ? (Math.min(100, ((counts[i] / totals[i]) * 100))) : 0);
+                }
+                
+                return percentages;
+            }            
+        },
+        {
+            Fields: Fields,
+            Field: Field
+        });
+        
+        return Model;
+    }
+);
+
+// TODO: a lot of repeated code here and SplunkDBaseV2, consider making this a subclass of SplunkDBaseV2
+
+define('models/services/search/Job',
+    [
+        'jquery',
+        'underscore',
+        'backbone',
+        'models/Base',
+        'models/ACLReadOnly',
+        'models/services/ACL',
+        'models/services/search/jobs/Control',
+        'models/services/search/jobs/Summary',
+        'util/splunkd_utils',
+        'splunk.util',
+        'util/console'
+    ],
+    function($, _, Backbone, BaseModel, ACLReadOnlyModel, ACLModel, ControlModel, SummaryModel, splunkd_utils, splunkUtil, console) {
+
+        //private sync CRUD methods
+        var syncCreate = function(model, options){
+            var rootOptions = options,
+                rootModel = model,
+                deferredResponse = $.Deferred(),
+                createModel = new BaseModel(),
+                fetchModel = new BaseModel(),
+                //TODO: we have some defaults but in reality people should be responsible for passing these
+                //in options.data like they are responsible for app and owner
+                //Simon asks: does the endpoint set any of these defaults for us????
+                createDefaults = {
+                    data: {
+                        rf: "*",
+                        auto_cancel: Model.DEFAULT_AUTO_CANCEL,
+                        status_buckets: 300,
+                        output_mode: 'json'
+                    }
+                },
+                app_and_owner = {},
+                customAttrs = this.getCustomDataPayload();
+                       
+            options = options || {};
+            options.data = options.data || {};
+            app_and_owner = $.extend(app_and_owner, { //JQuery purges undefined
+                app: options.data.app || undefined,
+                owner: options.data.owner || undefined,
+                sharing: options.data.sharing || undefined
+            });
+            
+            var url = splunkd_utils.fullpath(model.url, app_and_owner);
+            
+            //append the values from the entry.content.custom model
+            $.extend(true, createDefaults.data, customAttrs || {});
+            $.extend(true, createDefaults.data, options.data);
+            delete createDefaults.data.app;
+            delete createDefaults.data.owner;
+            delete createDefaults.data.sharing;
+            
+            //add the leading search command if it isn't present
+            if (createDefaults.data.search) {
+                createDefaults.data.search = splunkUtil.addLeadingSearchCommand(createDefaults.data.search, true);
+            }
+            
+            //reset options.data to only the app and owner
+            options.data = $.extend(true, {}, app_and_owner);
+            
+            //TODO: Maybe we should be faithful to SplunkD here and make it the consumer's responsibility to fetch after create
+            //this would mean that parse would need to handle the sid only payload and the full object payload
+            createModel.save({}, {
+                url: url,
+                processData: true,
+                data: createDefaults.data,
+                success: function(createModel, response, options) {
+                    // need an id so that in case of an empty response we don't blow up
+                    rootModel.set('id', createModel.get('sid'));
+                    fetchModel.fetch({
+                        url: url + "/" + createModel.get("sid"),
+                        data: {
+                            output_mode: "json"
+                        },
+                        success: function(fetchModel, response, options) {
+                            rootOptions.success.call(null, rootModel, response, rootOptions);
+                            rootModel.trigger('sync', rootModel, response, rootOptions);
+                            deferredResponse.resolve.apply(deferredResponse, arguments);
+                        },
+                        error: function(fetchModel, response, options) {
+                            if(rootOptions.error) {
+                                rootOptions.error.call(null, rootModel, response, rootOptions);
+                            }
+                            rootModel.trigger('error', rootModel, response, rootOptions);
+                            deferredResponse.reject.apply(deferredResponse, arguments);
+                        }
+                    });
+                },
+                error: function(createModel, response, options) {
+                    if(rootOptions.error) {
+                        rootOptions.error.call(null, rootModel, response, rootOptions);
+                    }
+                    rootModel.trigger('error', rootModel, response, rootOptions);
+                    deferredResponse.reject.apply(deferredResponse, arguments);
+                }
+            });
+            return deferredResponse.promise();
+        },
+        syncRead = function(model, options){
+            var defaults = {
+                    data: {
+                        output_mode: 'json'
+                    }
+                },
+                app_and_owner = {};
+
+            if (model.isNew()){
+                throw new Error('You cannot read a job without an id.');
+            }
+            
+            if (options && options.data){
+                app_and_owner = $.extend(app_and_owner, { //JQuery purges undefined
+                    app: options.data.app || undefined,
+                    owner: options.data.owner || undefined,
+                    sharing: options.data.sharing || undefined
+                });
+            }
+
+            defaults.url = splunkd_utils.fullpath(model.url + "/" + model.id, app_and_owner);
+            $.extend(true, defaults, options || {});
+            
+            delete defaults.data.app;
+            delete defaults.data.owner;
+            delete defaults.data.sharing;
+            
+            return Backbone.sync.call(this, "read", model, defaults);
+        },
+        syncUpdate = function(model, options){
+            var defaults = {data: {output_mode: 'json'}},
+                app_and_owner = {},
+                customAttrs = this.getCustomDataPayload();
+            
+            if (options && options.data){
+                app_and_owner = $.extend(app_and_owner, { //JQuery purges undefined
+                    app: options.data.app || undefined,
+                    owner: options.data.owner || undefined,
+                    sharing: options.data.sharing || undefined
+                });
+            }
+            
+            //append the values from the entry.content.custom model
+            $.extend(true, defaults.data, customAttrs || {});
+
+            defaults.url = splunkd_utils.fullpath(model.url + "/" + model.id, app_and_owner);
+            defaults.processData = true;
+            defaults.type = 'POST';
+            
+            $.extend(true, defaults, options || {});
+            
+            delete defaults.data.app;
+            delete defaults.data.owner;
+            delete defaults.data.sharing;
+            
+            return Backbone.sync.call(this, "update", model, defaults);
+        },
+        syncDelete = function(model, options){
+            var defaults = {data: {output_mode: 'json'}},
+                url = model.url + "/" + model.id;
+
+            if(options.data && options.data.output_mode){
+                //add layering of url if specified by user
+                defaults.url = splunkd_utils.fullpath(url, {}) + '?output_mode=' + encodeURIComponent(options.data.output_mode);
+                delete options.data.output_mode;
+            } else {
+                //add layering of url if specified by user
+                defaults.url = splunkd_utils.fullpath(url, {}) + '?output_mode=' + encodeURIComponent(defaults.data.output_mode);
+                delete defaults.data.output_mode;
+            }
+            $.extend(true, defaults, options);
+            defaults.processData = true;
+
+            return Backbone.sync.call(this, "delete", model, defaults);
+        };
+        
+        var Model = BaseModel.extend({
+            url: "search/jobs",
+            initialize: function(attributes, options) {
+                BaseModel.prototype.initialize.apply(this, arguments);
+                
+                this.initializeAssociated();
+                
+                this.entry.links.on("change:control", function() {
+                    this.control.set('id', this.entry.links.get('control'));
+                }, this);
+
+                this.entry.links.on("change:summary", function() {
+                    this.summary.set('id', this.entry.links.get('summary'));
+                }, this);
+
+                this.entry.links.on("change:alternate", function() {
+                    var alt = this.entry.links.get('alternate');
+                    if (alt) {
+                        alt = alt + "/acl";
+                    }
+                    this.acl.set('id', alt);
+                }, this);
+
+                if (options && options.splunkDPayload){
+                    this.setFromSplunkD(options.splunkDPayload, {silent: true});
+                }
+            },
+            parseSplunkDMessages: function(response) {
+                var messages = BaseModel.prototype.parseSplunkDMessages.call(this, response);
+                if(response && response.entry && response.entry.length > 0) {
+                    var entry = response.entry[0],
+                        content = entry.content || {};
+
+                    messages = _.union(
+                        messages,
+                        splunkd_utils.parseMessagesObject(entry.messages),
+                        splunkd_utils.parseMessagesObject(content.messages)
+                    );
+                    // handle zombie jobs, which often show up without any associated messages
+                    if(content.isZombie) {
+                        messages.push(splunkd_utils.createMessageObject(splunkd_utils.FATAL, 'Job terminated unexpectedly'));
+                    }
+                }
+                return messages;
+            },
+            initializeAssociated: function() {
+                // do a dynamic lookup of the current constructor so that this method is inheritance-friendly
+                var RootClass = this.constructor;
+                this.associated = this.associated || {};
+
+                //instance level models
+                this.links = this.links || new RootClass.Links();
+                this.associated.links = this.links;
+                
+                this.generator = this.generator || new RootClass.Generator();
+                this.associated.generator = this.generator;
+                
+                this.paging = this.paging || new RootClass.Paging();
+                this.associated.paging = this.paging;
+
+                //nested instance level on entry
+                if (!this.entry){
+                    this.entry = new RootClass.Entry();
+
+                    this.entry.links = new RootClass.Entry.Links();
+                    this.entry.associated.links = this.entry.links;
+
+                    this.entry.acl = new RootClass.Entry.ACL();
+                    this.entry.associated.acl = this.entry.acl;
+
+                    //nested on content
+                    this.entry.content = new RootClass.Entry.Content();
+
+                    this.entry.content.performance = new RootClass.Entry.Content.Performance();
+                    this.entry.content.associated.performance = this.entry.content.performance;
+
+                    this.entry.content.request = new RootClass.Entry.Content.Request();
+                    this.entry.content.associated.request = this.entry.content.request;
+                    
+                    this.entry.content.runtime = new RootClass.Entry.Content.Runtime();
+                    this.entry.content.associated.runtime = this.entry.content.runtime;
+                    
+                    this.entry.content.custom = new RootClass.Entry.Content.Custom();
+                    this.entry.content.associated.custom = this.entry.content.custom;
+                    
+                    this.entry.associated.content = this.entry.content;
+                }
+                this.associated.entry = this.entry;
+                
+                //associated EAI endpoint models
+                this.control = this.control || new ControlModel();
+                this.associated.control = this.control;
+                
+                this.summary = this.summary || new SummaryModel();
+                this.associated.summary = this.summary;
+                
+                this.acl = this.acl || new ACLModel();
+                this.associated.acl = this.acl;
+            },
+            sync: function(method, model, options) {
+                switch(method){
+                    case 'create':
+                        return syncCreate.call(this, model, options);
+                    case 'read':
+                        return syncRead.call(this, model, options);
+                    case 'update':
+                        return syncUpdate.call(this, model, options);
+                    case 'delete':
+                        return syncDelete.call(this, model, options);
+                    default:
+                        throw new Error('invalid method: ' + method);
+                }
+            },
+            parse: function(response) {
+                // make a defensive copy of response since we are going to modify it
+                response = $.extend(true, {}, response);
+                //when called from the collection fetch we will need to ensure that our
+                //associated models are initialized because parse is called before
+                //initialize
+                this.initializeAssociated();
+                
+                if (!response || !response.entry || response.entry.length === 0) {
+                    console.log('Response has no content to parse');
+                    return;
+                }
+                var response_entry = response.entry[0];
+
+                //id
+                //this needs to be the first thing so that people can get !isNew()
+                this.id = response_entry.content.sid;
+                response.id = response_entry.content.sid;
+
+                //top-level
+                this.links.set(response.links);
+                delete response.links;
+                this.generator.set(response.generator);
+                delete response.generator;
+                this.paging.set(response.paging);
+                delete response.paging;
+                
+                //sub-entry
+                this.entry.links.set(response_entry.links);
+                delete response_entry.links;
+                
+                this.entry.acl.set(response_entry.acl);
+                delete response_entry.acl;
+                
+                //sub-content
+                this.entry.content.performance.set(response_entry.content.performance);
+                delete response_entry.content.performance;
+                
+                this.entry.content.request.set(response_entry.content.request);
+                delete response_entry.content.request;
+                
+                this.entry.content.runtime.set(response_entry.content.runtime);
+                delete response_entry.content.runtime;
+                
+                this.entry.content.custom.set(response_entry.content.custom);
+                delete response_entry.content.custom;
+                
+                //content remainder
+                this.entry.content.set(response_entry.content);
+                delete response_entry.content;
+                
+                //entry remainder
+                this.entry.set(response_entry);
+                delete response.entry;
+                return response;
+            },
+            setFromSplunkD: function(payload, options) {
+                this.attributes = {};
+                var cloned_payload = $.extend(true, {}, payload);
+                var oldId = this.id;
+
+                //object assignment
+                if (cloned_payload) {
+                    if (cloned_payload.entry && cloned_payload.entry[0]) {
+                        var payload_entry = cloned_payload.entry[0];
+
+                        if(payload_entry.content){
+                            //id
+                            //this needs to be the first thing so that people can get !isNew()
+                            this.set({id: payload_entry.content.sid}, {silent: true});
+                            cloned_payload.id = payload_entry.content.sid;
+
+                            if (payload_entry.content.performance) {
+                                this.entry.content.performance.set(payload_entry.content.performance, options);
+                                delete payload_entry.content.performance;
+                            }
+
+                            if (payload_entry.content.request) {
+                                this.entry.content.request.set(payload_entry.content.request, options);
+                                delete payload_entry.content.request;
+                            }
+                            
+                            if (payload_entry.content.runtime) {
+                                this.entry.content.runtime.set(payload_entry.content.runtime, options);
+                                delete payload_entry.content.runtime;
+                            }
+                            
+                            if (payload_entry.content.custom) {
+                                this.entry.content.custom.set(payload_entry.content.custom, options);
+                                delete payload_entry.content.custom;
+                            }
+
+                            this.entry.content.set(payload_entry.content, options);
+                            delete payload_entry.content;
+                        }
+
+                        if(payload_entry.links){
+                            this.entry.links.set(payload_entry.links, options);
+                            if (payload_entry.links.control) {
+                                this.control.set('id', payload_entry.links.control, options);
+                            }
+                            if (payload_entry.links.summary) {
+                                this.summary.set('id', payload_entry.links.summary, options);
+                            }
+                            if (payload_entry.links.alternate) {
+                                this.acl.set('id', payload_entry.links.alternate + "/acl", options);
+                            }
+                            delete payload_entry.links;
+                        }
+
+                        if(payload_entry.acl){
+                            this.entry.acl.set(payload_entry.acl, options);
+                            delete payload_entry.acl;
+                        }
+                        
+                        this.entry.set(payload_entry, options);
+                        delete cloned_payload.entry;
+                    }
+                    if(cloned_payload.links) {
+                        this.links.set(cloned_payload.links, options);
+                        delete cloned_payload.links;
+                    }
+                    if(cloned_payload.generator) {
+                        this.generator.set(cloned_payload.generator, options);
+                        delete cloned_payload.generator;
+                    }
+                    if(cloned_payload.paging) {
+                        this.paging.set(cloned_payload.paging, options);
+                        delete cloned_payload.paging;
+                    }
+                    
+                    //reset the internal root model due to pre-init routine
+                    this.set(cloned_payload, options);
+                    if(this.id !== oldId) {
+                        this.trigger('change:' + this.idAttribute);
+                    }
+                }
+            },
+            toSplunkD: function() {
+                var payload = {};
+
+                payload = $.extend(true, {}, this.toJSON());
+
+                payload.links = $.extend(true, {}, this.links.toJSON());
+                payload.generator = $.extend(true, {}, this.generator.toJSON());
+                payload.paging = $.extend(true, {}, this.paging.toJSON());
+                payload.entry = [$.extend(true, {}, this.entry.toJSON())];
+
+                payload.entry[0].links = $.extend(true, {}, this.entry.links.toJSON());
+                payload.entry[0].acl = $.extend(true, {}, this.entry.acl.toJSON());
+                payload.entry[0].content = $.extend(true, {}, this.entry.content.toJSON());
+
+                payload.entry[0].content.performance = $.extend(true, {}, this.entry.content.performance.toJSON());
+                payload.entry[0].content.request = $.extend(true, {}, this.entry.content.request.toJSON());
+                payload.entry[0].content.runtime = $.extend(true, {}, this.entry.content.runtime.toJSON());
+                payload.entry[0].content.custom = $.extend(true, {}, this.entry.content.custom.toJSON());
+
+                //cleanup
+                delete payload.id;
+
+                return payload;
+            },
+            getCustomDataPayload: function() {
+                var payload = $.extend(true, {}, this.entry.content.custom.toJSON()),
+                    keys = _.keys(payload);
+                
+                _.each(keys, function(key){
+                    var newKey = "custom." + key;
+                    payload[newKey] = payload[key];
+                    delete payload[key];
+                });
+                
+                return payload;
+            },
+            canSummarize: function() {
+                return splunkUtil.normalizeBoolean(this.entry.content.get('canSummarize'));
+            }
+        },
+        {
+            // constants for the dispatch states
+            QUEUED: 'QUEUED',
+            PARSING: 'PARSING',
+            RUNNING: 'RUNNING',
+            PAUSED: 'PAUSED',
+            FINALIZING: 'FINALIZING',
+            FAILED: 'FAILED',
+            DONE: 'DONE',
+            
+            //constants for the polling and intervals
+            //seconds
+            DEFAULT_AUTO_CANCEL: 30,
+            DEFAULT_AUTO_PAUSE: 30,
+            
+            //milliseconds
+            DEFAULT_POLLING_INTERVAL: 1000,
+            DEFAULT_METADATA_POLLING_INTERVAL: 3000,
+            DEFAULT_KEEP_ALIVE_INTERVAL: 15000,
+
+            Links: BaseModel,
+            Generator: BaseModel,
+            Paging: BaseModel,
+            Entry: BaseModel.extend(
+                {
+                    initialize: function() {
+                        BaseModel.prototype.initialize.apply(this, arguments);
+                    }
+                },
+                {
+                    Links: BaseModel,
+                    ACL: ACLReadOnlyModel,
+                    Content: BaseModel.extend(
+                        {
+                            initialize: function() {
+                                BaseModel.prototype.initialize.apply(this, arguments);
+                            }
+                        }, 
+                        {
+                            Performance: BaseModel,
+                            Request: BaseModel,
+                            Runtime: BaseModel,
+                            Custom: BaseModel
+                        }
+	                )
+                }
+            )
+        });
+
+        return Model;
+    }
+);
+
+define('collections/services/search/Jobs',
+    [
+        "models/services/search/Job",
+        "collections/SplunkDsBase"
+    ],
+    function(JobModel, SplunkDsBaseCollection) {
+        return SplunkDsBaseCollection.extend({
+            url: 'search/jobs',
+            model: JobModel,
+            initialize: function() {
+                SplunkDsBaseCollection.prototype.initialize.apply(this, arguments);
+            }
+        });
+    }
+);
+define('helpers/Session',
+    [ 
+        'backbone', 
+        'underscore',
+        'splunk.session'
+    ], function(Backbone, _, SplunkSession){
+    
+    var Session = function() {
+        this._session = new SplunkSession(); 
+        this.cid = _.uniqueId();
+        this.timeout = 'SessionTimeout.' + this.cid;
+        this.start = 'SessionStart.' + this.cid;
+        this.restart = 'HaltOnRestart.' + this.cid; //Stop all the pollers when restart is initiated from the UI
+
+        $(document).on(this.timeout, function() {
+            this.trigger('timeout');
+        }.bind(this));
+        $(document).on(this.start, function() {
+            this.trigger('start');
+        }.bind(this));
+        $(document).on(this.restart, function() {
+            this.trigger('restart');
+        }.bind(this));
+    };
+
+    _.extend(Session.prototype, Backbone.Events, {
+        dispose: function() {
+            $(document).off(this.timeout);
+            $(document).off(this.start);
+            $(document).off(this.restart);
+        }
+    });
+    
+    return new Session;
+});
+
+// (c) 2012 Uzi Kilon, Splunk Inc.
+// Backbone Poller may be freely distributed under the MIT license.
+define('helpers/polling_manager',[
+    'underscore',
+    'jquery',
+    'backbone',
+    'helpers/Session'
+],
+function(
+    _,
+    $,
+    Backbone,
+    Session
+){
+        // Private variables
+        var pollerDefaults = {
+            delay: 1000,
+            stopOnError: true,
+            condition: function(){return true;}
+        };
+        var eventTypes = ['start', 'stop', 'success', 'error', 'complete'];
+
+        /**
+         * Private Poller
+         */
+        var Poller = function Poller(model, options) {
+            this.set(model, options);
+            if (options.ui_inactivity) {
+                Session.on('timeout', function() {
+                    this.stop();
+                    Session.off(null, null, this);
+                }, this);
+            }
+        };
+        _.extend(Poller.prototype, Backbone.Events, {
+            set: function(model, options) {
+                this.model = model;
+                this.options = _.extend(_.clone(pollerDefaults), options || {});
+
+                _.each(eventTypes, function(eventName){
+                    var handler = this.options[eventName];
+                    if(typeof handler === 'function') {
+                        this.on(eventName, handler, this);
+                    }
+                }, this);
+
+                if ( this.model instanceof Backbone.Model ) {
+                    this.model.on('destroy', this.stop, this);
+                }
+
+                return this.stop({silent: true});
+            },
+            start: function(options){
+                if(this.active() === true) {
+                    return this;
+                }
+                options = options || {};
+                if(!options.silent) {
+                    this.trigger('start');
+                }
+                this.options.active = true;
+                run(this);
+                return this;
+            },
+            stop: function(options){
+                options = options || {};
+                if(!options.silent) {
+                    this.trigger('stop');
+                }
+                this.options.active = false;
+                clearTimeout(this.timeoutId);
+                if(this.xhr && typeof this.xhr.abort === 'function') {
+                    this.xhr.abort();
+                }
+                this.xhr = null;
+                return this;
+            },
+            active: function(){
+                return this.options.active === true;
+            }
+        });
+
+        // private methods
+        function run(poller) {
+            if ( poller.active() !== true ) {
+                window.clearTimeout(poller.timeoutId);
+                return ;
+            }
+
+            var onSuccess = function(){
+                poller.trigger('success');
+                poller.model.off('sync', onSuccess);
+            };
+            
+            var options = $.extend(true, {}, poller.options || {}, {
+                success: function(model, response, options) {
+                    poller.trigger('success');
+                    if( poller.options.condition(poller.model) !== true ) {
+                        poller.trigger('complete');
+                        poller.stop({silent: true});
+                    }
+                    else {
+                        poller.timeoutId = window.setTimeout(function(){ run(poller); }, poller.options.delay);
+                    }
+                },
+                error: function(model, response, options){
+                    poller.trigger('error');
+                    if (poller.options.stopOnError) {
+                        poller.stop({silent: true});
+                    } else {
+                        poller.timeoutId = window.setTimeout(function(){ run(poller); }, poller.options.delay);
+                    }
+                }
+            });
+            poller.xhr = poller.model.fetch(options);
+        }
+
+        /**
+         * Polling Manager
+         */
+        var pollers = [];
+
+        return {
+            get: function(model) {
+                return _.find(pollers, function(poller){
+                    return poller.model === model;
+                });
+            },
+            getPoller: function(model, options){
+                var poller = this.get(model);
+                if( poller ) {
+                    poller.set(model, options);
+                }
+                else {
+                    poller = new Poller(model, options);
+                    pollers.push(poller);
+                }
+                return poller;
+            },
+            start: function(model, options) {
+                return this.getPoller(model, options).start({silent: true});
+            },
+            stop: function(model) {
+                var poller = this.get(model);
+                if( poller ) {
+                    poller.stop();
+                    return true;
+                }
+                return false;
+            },
+            size: function(){
+                return pollers.length;
+            }
+        };
+    }
+);
+
+define('util/Ticker',['underscore', 'backbone'], function(_, Backbone) {
+    var Ticker = function(delay) {
+        this.delay = delay || 1000;
+    };
+    _.extend(Ticker.prototype, Backbone.Events, {
+        start: function(force) {
+            if (this._intervalId) {
+                return;
+            }
+            if (force) {
+                this.force();
+            }
+            this._intervalId = setInterval(
+                function() {
+                    this.trigger('tick', (new Date).getTime());
+                }.bind(this),
+                this.delay
+            );
+        },
+        stop: function() {
+            if (this._intervalId) {
+                clearInterval(this._intervalId);
+                delete this._intervalId;
+            }
+        },
+        reset: function(options) {
+            options || (options = {});
+            this.stop();
+            if (options.delay) {
+                this.delay = options.delay;
+            }
+            this.start(options.force);
+        },
+        force: function() {
+            this.trigger('tick', (new Date).getTime());
+            if (this._intervalId) {
+                this.reset();
+            }
+        }
+    });
+    return Ticker;
+});
+define('models/Job',
+    [
+        'jquery',
+        'underscore',
+        'backbone',
+        'models/services/search/Job',
+        'helpers/polling_manager',
+        'util/splunkd_utils',
+        'util/time_utils',
+        'util/console',
+        'splunk.util',
+        'helpers/Session',
+        'util/Ticker'
+    ],
+    function($, _, Backbone, SearchJob, polling_manager, splunkd_utils, time_utils, console, splunkUtil, Session, Ticker) {
+        
+        // -------------- private helpers --------------- //
+        
+        var DEFAULT_POLLING_OPTIONS = {
+                delay: SearchJob.DEFAULT_POLLING_INTERVAL,
+                condition: function(model) {
+                    return ((model.entry.content.get('isDone') !== true) && (model.entry.content.get('isFailed') !== true));
+                }
+            };
+        
+        // a helper object to encapsulate the behavior of a job-associated observable model or collection
+        var ManagedChildObject = function(observable, fetchParams, parent) {
+            this.observable = observable;
+            this.fetchParams = fetchParams || {};
+            var oldFetch = observable.fetch;
+
+            observable.fetch = function(options) {
+                options = options || {};
+                options.sid = parent.id;
+                return oldFetch.call(observable, options);
+            };
+            this.xhr = null;
+        };
+        
+        ManagedChildObject.prototype = {
+                
+            fetch: function(baseParams) {
+                this.abortXhr();
+                var customParams = _(this.fetchParams).isFunction() ? this.fetchParams() : this.fetchParams;
+                this.xhr = this.observable.fetch($.extend(true, {}, customParams, baseParams));
+            },
+
+            destroy: function() {
+                this.abortXhr();
+                if(this.observable instanceof Backbone.Model) {
+                    this.observable.clear();
+                }
+                else if(this.observable instanceof Backbone.Collection) {
+                    this.observable.reset();
+                }
+                this.observable.trigger('destroy');
+            },
+
+            getObservable: function() {
+                return this.observable;
+            },
+
+            abortXhr: function() {
+                if(this.xhr && _(this.xhr.abort).isFunction()) {
+                    this.xhr.abort();
+                }
+                this.xhr = null;
+            }
+
+        };
+        
+        var JobModel = SearchJob.extend({
+            initialize: function(attributes, options) {
+                SearchJob.prototype.initialize.apply(this, arguments);
+                options = options || {};
+                
+                this.enableSimplePoller = options.enableSimplePoller || false;
+                
+                //poller setup
+                this.pollingOptions = $.extend(true, {}, DEFAULT_POLLING_OPTIONS, options);
+                
+                this.prepared = (this.entry.content.get('dispatchState') && !this.isPreparing());
+                this.processKeepAlive = options.processKeepAlive || false;
+                this.keepAlivePoller = null;
+                this.keepAliveInterval = options.keepAliveInterval || SearchJob.DEFAULT_KEEP_ALIVE_INTERVAL;
+
+                this.entry.content.on('change', function() {
+                    var changedAttributes = this.entry.content.changedAttributes(),
+                        previousAttributes = this.entry.content.previousAttributes();
+
+                    this.handleJobProgress(changedAttributes, previousAttributes);
+                }, this);
+                
+                this.entry.content.on("change:dispatchState", function() {
+                    if (this.entry.content.get('dispatchState') && !this.isPreparing() && !this.prepared) {
+                        this.prepared = true;
+                        this.trigger("prepared");
+                    }
+                }, this);
+
+                //new simplistic polling with safeFetch and a ticker
+                if (this.enableSimplePoller) {
+                    
+                    //poll aggressively to begin with
+                    this.ticker = new Ticker(100);
+                    this.ticker.on('tick', function() {
+                        this.safeFetch({
+                            data: {
+                                app: this.entry.acl.get('app'),
+                                owner: this.entry.acl.get('owner'),
+                                sharing: this.entry.acl.get('sharing')
+                            }
+                        });
+                    }, this);
+                    
+                    this.entry.content.on('change:dispatchState', function() {                        
+                        //stop polling when the job is done
+                        if (this.entry.content.get('isDone')) {
+                            this.ticker.stop();
+                        }
+                    }, this);
+                    
+                    this.on("prepared", function() {
+                        var attemptCount = 0;
+                        var maxAttempts = 30;
+                       
+                        var _private_progress = function() {
+                            var count;
+                            attemptCount++;
+                            
+                            if (this.entry.content.get('isDone')) {
+                                this.off('sync', _private_progress, this);
+                                return;
+                            }
+                            
+                            if (this.isReportSearch()) {
+                                if (this.entry.content.get('isPreviewEnabled')) {
+                                    count = this.entry.content.get('resultPreviewCount');
+                                } else {
+                                    count = this.entry.content.get('resultCount');
+                                }   
+                            } else {
+                                count = this.entry.content.get('eventAvailableCount');
+                            }
+                            
+                            if ((count > 0) || (attemptCount === maxAttempts)) {
+                                this.off('sync', _private_progress, this);
+                                this.trigger('slowDownPoller');
+                            }
+                            
+                        }.bind(this);
+                        
+                        this.on('slowDownPoller', function() {
+                            this.ticker.reset({
+                                delay: this.pollingOptions.delay, 
+                                force: true
+                            });
+                        }, this);
+                        
+                        this.on('sync', _private_progress, this);
+                    }, this);
+                    
+                //traditional complex and not intuitive 
+                } else {
+                    this.jobPoller = polling_manager.getPoller(this, this.pollingOptions);
+                    this.childObjects = [];
+                    this.preserveChildrenOnDestroy = options.preserveChildrenOnDestroy || false;
+                    this.entry.acl.on('change', function() {
+                        //update the job poller to be able to fetch from the correct location
+                        $.extend(this.jobPoller.options, {
+                            data: {
+                                app: this.entry.acl.get("app"),
+                                owner: this.entry.acl.get("owner"),
+                                sharing: this.entry.acl.get("sharing")
+                            }
+                        });
+                    }, this);
+                }
+                
+                this.error.on("change", function(){
+                    if (splunkd_utils.messagesContainsOneOfTypes(this.error.get("messages"), [splunkd_utils.NOT_FOUND])) {
+                        this.handleJobDestroy();
+                    }
+                }, this);
+                
+                this.entry.content.on("change:isFailed", function(){
+                    if (this.entry.content.get("isFailed") === true) {
+                        this.handleJobDestroy();
+                    }
+                }, this);
+                
+                this.on('destroy', this.handleJobDestroy, this);
+            },
+            
+            handleJobProgress: function(changed, previous) {
+                if (this.isNew()) {
+                    return false;
+                }
+                
+                var jobIsRealTime = this.entry.content.get('isRealTimeSearch'),
+                    jobIsReportSearch = this.entry.content.get('reportSearch'),
+                    jobAdHocModeIsVerbose = (this.getAdhocSearchMode() === splunkd_utils.VERBOSE),
+                    jobPreviewEnabled = this.entry.content.get('isPreviewEnabled'),
+                    jobIsDoneInModel = this.entry.content.get('isDone'),
+                    changeIsEmpty = _.isEmpty(changed);
+                
+                // if the job is not previewable and also not done, ignore the progress 
+                if (
+                    changeIsEmpty ||
+                    (!jobIsDoneInModel && jobIsReportSearch && !jobPreviewEnabled && !jobAdHocModeIsVerbose)
+                ) {
+                    return false;
+                }
+                
+                // examine changes to the job model and determine if the child objects should be updated
+                var scanCountChanged = !_(changed.scanCount).isUndefined() && (changed.scanCount > previous.scanCount),
+                    eventCountChanged = !_(changed.eventCount).isUndefined(),
+                    resultCountChanged = !_(changed.resultCount).isUndefined(),
+                    jobIsDone = !_(changed.isDone).isUndefined() && (changed.isDone === true),
+                    jobIsUpdated = scanCountChanged || eventCountChanged || resultCountChanged || jobIsDone || jobIsRealTime;
+
+                if (!jobIsUpdated) {
+                    return false;
+                }
+                
+                //we have determined that the job has been updated, so go and fetch the managed child object
+                this.trigger("jobProgress");
+                
+                if (!this.enableSimplePoller) {
+                    this.fetchManagedChildren();
+                }
+                
+                if (jobIsDone && this.processKeepAlive) {
+                    this.startKeepAlive();
+                }
+                
+                return true;
+            },
+            
+            handleJobDestroy: function() {
+                if (!this.enableSimplePoller) {
+                    if (!this.preserveChildrenOnDestroy) {
+                        _(this.childObjects).each(function(observer) {
+                            observer.destroy();
+                        });
+                    }
+                }
+                
+                this.stopPolling();
+                this.processKeepAlive = false;
+                this.stopKeepAlive();
+            },
+            
+            startKeepAlive: function() {
+                //remove/add session observers to start/stop the keep alive poller based on UI session 
+                Session.off('timeout', null, this);
+                Session.off('start', null, this);
+                Session.on('timeout', this.stopKeepAlive, this);
+                Session.on('start', this.startKeepAlive, this);
+                
+                this.stopKeepAlive();//ensure you never create more than one keep alive poller
+                this.keepAlivePoller = new Ticker(this.keepAliveInterval);
+                this.keepAlivePoller.on('tick', function() {
+                    this.control.save({}, {
+                        data: {
+                            action: 'touch' 
+                        },
+                        success: function(model, response, options) {
+                            console.log('touched job:', model.id);
+                        }.bind(this),
+                        error: function(model, response, options) {
+                            if (response.hasOwnProperty('status') && (response.status == 0 || response.status == 12029)) {
+                                return;
+                            }
+                            console.log("error touching job (stopping keep alive):", model.id);
+                            this.keepAlivePoller.stop();
+                        }.bind(this)
+                    });
+                }, this);
+                this.keepAlivePoller.start();
+            },
+            
+            stopKeepAlive: function() {
+                if (this.keepAlivePoller) {
+                    this.keepAlivePoller.stop();
+                    this.keepAlivePoller.off();
+                }
+            },
+            
+            startPolling: function(force) {
+                //remove/add session observers to start/stop the job poller based on UI session
+                Session.off('timeout', null, this);
+                Session.off('start', null, this);
+                Session.on('timeout', this.stopPolling, this);
+                Session.on('start', function() {
+                    this.startPolling(true);//force a new update from the server
+                }, this);
+                
+                if (this.enableSimplePoller) {
+                    if (force || (!this.entry.content.get('isDone') && !this.entry.content.get('isFailed'))) {
+                        this.ticker.start(true);
+                    }
+                } else {
+                    this.jobPoller.start();
+                }
+            },
+            
+            stopPolling: function() {
+                if (this.enableSimplePoller) {
+                    this.ticker.stop();
+                } else {
+                    this.jobPoller.stop();
+                }
+            },
+            
+            noParamControlUpdate: function(action, options) {
+                if(options && options.data) {
+                    delete options.data;
+                }
+                return this.control.save({}, $.extend(true, options, { data: { action: action } }));                
+            },
+
+            pause: function(options) {
+                return this.noParamControlUpdate("pause", options);
+            },
+
+            unpause: function(options) {
+                return this.noParamControlUpdate("unpause", options);
+            },
+
+            finalize: function(options) {
+                return this.noParamControlUpdate("finalize", options);
+            },
+            
+            cancel: function(options) {
+                return this.noParamControlUpdate("cancel", options);
+            },
+            
+            touch: function(options) {
+                return this.noParamControlUpdate("touch", options);
+            },
+            
+            setTTL: function(ttl, options) {
+                if(options && options.data) {
+                    delete options.data;
+                }
+                return this.control.save({}, $.extend(true, options, { data: { action: 'setttl', ttl: ttl} }));
+            },
+            
+            setPriority: function(priority, options) {
+                if(options && options.data) {
+                    delete options.data;
+                }
+                return this.control.save({}, $.extend(true, options, { data: { action: 'setpriority', priority: priority} } ));
+            },
+            
+            enablePreview: function(options) {
+                return this.noParamControlUpdate("enablepreview", options);
+            },
+            
+            disablePreview: function(options) {
+                return this.noParamControlUpdate("disablepreview", options);
+            },
+            
+            saveControlUpdate: function(action, options) {
+                options = options || {};
+                options.data = options.data || {};
+                
+                var data = {
+                    action: action,
+                    auto_cancel: options.data.auto_cancel,
+                    auto_pause: options.data.auto_pause,
+                    email_list: options.data.email_list,
+                    email_subject: options.data.email_subject,
+                    email_results: options.data.email_results,
+                    ttl: options.data.ttl
+                }; 
+                
+                if(options && options.data) {
+                    delete options.data;
+                }
+                
+                return this.control.save({}, $.extend(true, options, {data: data}));               
+            },
+            
+            saveJob: function(options) {                
+                return this.saveControlUpdate("save", options);
+            },
+            
+            unsaveJob: function(options) {
+                return this.saveControlUpdate("unsave", options);
+            },
+            
+            makeWorldReadable: function(options) {
+                var owner = this.entry.acl.get("owner"),
+                    data = {
+                        sharing: splunkd_utils.GLOBAL,
+                        owner: this.entry.acl.get("owner"),
+                        'perms.read': "*"                
+                    };
+                
+                if (options && options.data) {
+                    delete options.data;
+                }
+                
+                return this.acl.save({}, $.extend(true, options, { data: data }));                
+            },
+            
+            undoWorldReadable: function(options) {
+                var owner = this.entry.acl.get("owner"),
+                    data = {
+                        sharing: splunkd_utils.GLOBAL,
+                        owner: owner,
+                        'perms.read': ""              
+                    };
+                
+                if (options && options.data) {
+                    delete options.data;
+                }
+                
+                return this.acl.save({}, $.extend(true, options, { data: data }));                
+            },
+            
+            isSharedAccordingToTTL: function(defaultSaveTTL) {
+                var perms = this.entry.acl.permsToObj();
+                if ((perms.read.indexOf("*") != -1) && (this.entry.content.get("ttl") === defaultSaveTTL)) {
+                    return true;
+                }
+                return false;
+            },
+            
+            saveIsBackground: function(options) {
+                this.entry.content.custom.set("isBackground", "1");
+                return this.save({}, options);
+            },
+            
+            isBackground: function() {
+                return splunkUtil.normalizeBoolean(this.entry.content.custom.get("isBackground"));
+            }, 
+            
+            /**
+             * Register an external model or collection to be refreshed whenever the job has progress.
+             *
+             * @param observable {Model | Collection} the model or collection to register
+             * @param fetchParams {Object | Function} at fetch time the object or the result of calling the function will be merged with the default fetch parameters
+             */
+
+            register: function(observable, fetchParams) {
+                var childObject = new ManagedChildObject(observable, fetchParams, this);
+                this.childObjects.push(childObject);
+                if(this.entry.content.get('isDone') === true) {
+                    childObject.fetch({ sid: this.id });
+                }
+            },
+            
+            /**
+             * Explicitly triggers a fetch of a previously-registered model or collection
+             *
+             * @param observable {Model | Collection} to be looked up in the instance-level childObjects array
+             */
+
+            fetchManagedChild: function(observable) {
+                var childObject = _(this.childObjects).find(function(object) { return object.getObservable() === observable; });
+                if(!childObject) {
+                    console.error('Search Job Manager: can only refresh an object that has already been registered', observable);
+                    return false;
+                }
+                childObject.fetch({ sid: this.id });
+            },
+            
+            fetchManagedChildren: function() {
+                _(this.childObjects).each(function(observer) {
+                    observer.fetch({ sid: this.id });
+                }.bind(this));               
+            },
+            
+            resultCountSafe: function() {
+                return (this.entry.content.get('isPreviewEnabled') && !this.entry.content.get('isDone')) ? this.entry.content.get('resultPreviewCount') : this.entry.content.get('resultCount');
+            },
+            
+            eventAvailableCountSafe: function() {
+                return (this.entry.content.get('statusBuckets') == 0) ? this.resultCountSafe() : this.entry.content.get('eventAvailableCount');
+            },
+
+
+            // a job can be dispatched without a latest time, in which case return the published time
+            latestTimeSafe: function() {
+                var entry = this.entry;
+                return entry.content.get('latestTime') || entry.get('published');
+            },
+            
+            isQueued: function() {
+                return this.checkUppercaseValue('dispatchState', JobModel.QUEUED);
+            },
+            
+            isParsing: function() {
+                return this.checkUppercaseValue('dispatchState', JobModel.PARSING);
+            },
+            
+            isFinalizing: function() {
+                return this.checkUppercaseValue('dispatchState', JobModel.FINALIZING);
+            },
+            
+            isPreparing: function() {
+                return this.isQueued() || this.isParsing();
+            },
+            
+            isRunning: function() {
+                return !this.isNew() && !this.entry.content.get('isPaused') && !this.entry.content.get('isDone') && !this.isPreparing() && !this.isFinalizing();
+            },
+            
+            isReportSearch: function() {
+                return (this.entry.content.get('reportSearch') ? true : false);
+            },
+
+            // returns true if the job was dispatched over all time, returns false for all-time real-time
+            isOverAllTime: function() {
+                var dispatchEarliestTime = this.getDispatchEarliestTime();
+                return ((!dispatchEarliestTime || dispatchEarliestTime === '0') && !this.getDispatchLatestTime());
+            },
+
+            isRealtime: function() {
+                return this.entry.content.get('isRealTimeSearch');
+            },
+            
+            checkUppercaseValue: function(key, uc_value) {
+                var value = this.entry.content.get(key);
+                if (!value) {
+                    return false;
+                }
+                return (value.toUpperCase() === uc_value);
+            },
+            
+            getDispatchEarliestTime: function() {
+                var earliest = this.entry.content.request.get('earliest_time');
+                if (earliest === void(0)) {
+                    return this.entry.content.get('searchEarliestTime');
+                }
+                return earliest;
+            },
+            
+            getDispatchEarliestTimeOrAllTime: function() {
+                if (this.entry.content.get('delegate')==='scheduler' && this.entry.content.get('searchLatestTime') !== void(0)) {
+                    // windowed rt or all time rt alerts
+                    return this.entry.content.get('searchEarliestTime') || '0';
+                } else {
+                    return this.entry.content.request.get('earliest_time') || '0';
+                }
+            },
+            
+            getDispatchLatestTime: function() {
+                var latest = this.entry.content.request.get('latest_time');
+                if (latest === void(0)) {
+                    return this.entry.content.get('searchLatestTime');
+                }
+                return latest;
+            },
+            
+            getDispatchLatestTimeOrAllTime: function() {
+                var searchLatestTime = this.entry.content.get('searchLatestTime');
+                if (this.entry.content.get('delegate')==='scheduler' && searchLatestTime !== void(0)) {
+                    return searchLatestTime;
+                } else {
+                    return this.entry.content.request.get('latest_time') || '';
+                }
+            },
+            
+            getStrippedEventSearch: function() {
+                var search = this.entry.content.get('eventSearch');
+                if (search) {
+                    search = splunkUtil.stripLeadingSearchCommand(search);
+                }
+                return search;
+            },
+            
+            getSearch: function() {
+                var search = this.entry.get('name');
+                if (!search) {
+                    return this.entry.content.request.get('search');
+                }
+                return search;
+            },
+            
+            getAdhocSearchMode: function() {
+                var mode = this.entry.content.request.get('adhoc_search_level'),
+                    statusBuckets = this.entry.content.get('statusBuckets'),
+                    delegate;
+                
+                if (!mode) {
+                    if ((statusBuckets !== void(0)) && (statusBuckets == 0)) {
+                        return splunkd_utils.FAST;
+                    }
+                    
+                    delegate = this.entry.content.get('delegate');
+                    if (this.entry.content.get('isSavedSearch') && delegate === 'scheduler') {
+                        return splunkd_utils.FAST;
+                    }
+                }
+                
+                return mode;
+            },
+            
+            canBePausedOnRemove: function() {
+                if (!this.isNew() &&
+                        (!this.entry.content.get("isDone") && !this.get("cannotPauseOnRemove")) &&
+                        !this.entry.content.get("isPaused") &&
+                        !this.isBackground() && 
+                        !this.entry.content.get("isSaved")) {
+                    return true;
+                }
+                return false;
+            },
+
+            deepOff: function () {
+                SearchJob.prototype.deepOff.apply(this, arguments);
+                Session.off(null, null, this);
+            }
+            
+        },
+        {            
+            createMetaDataSearch: function(search, deferred, applicationModel) {
+                var job = new JobModel({}, {delay: SearchJob.DEFAULT_METADATA_POLLING_INTERVAL, enableSimplePoller: true});
+                    
+                job.save({}, {
+                    data: {
+                        app: applicationModel.get("app"),
+                        owner: applicationModel.get("owner"),
+                        search: search,
+                        preview: "true",
+                        earliest_time: "rt",
+                        latest_time: "rt",
+                        auto_cancel: SearchJob.DEFAULT_AUTO_CANCEL,
+                        max_count: 100000
+                    },
+                    success: function(model, response) {
+                        deferred.resolve();
+                    },
+                    error: function(model, response) {
+                        deferred.resolve();
+                    }
+                });
+                
+                return job;
+            }
+        });
+        
+        return JobModel;
+    }
+);
+
+define('collections/Jobs',
+    [
+        "underscore",
+        "models/Job",
+        "collections/services/search/Jobs"
+    ],
+    function(_, JobModel, JobsCollection) {
+        return JobsCollection.extend({
+            model: JobModel,
+            comparator: function(job) {
+                var date = new Date(job.entry.get('published'));
+                return date.valueOf() || 0;
+            },
+            initialize: function() {
+                JobsCollection.prototype.initialize.apply(this, arguments);
+            },
+            fetchNonAutoSummaryJobs: function(options) {
+                //this is the port of modules/jobs/JobManager.py's generateResults()
+                var omit_autosummary = '(NOT _AUTOSUMMARY AND NOT "|*summarize*action=")',
+                    filters = {};
+                
+                options = options || {};
+                options.data = options.data || {};
+                options.data.count = options.data.count || 10;
+                options.data.offset = options.data.offset || 0;
+                options.data.sortKey = options.data.sortKey || 'dispatch_time';
+                options.data.sortDir = options.data.sortDir || 'desc';
+                
+                //Omit _AUTOSUMMARY_ jobs and their summarization jobs
+                if (options.data.search) {
+                    options.data.search = omit_autosummary + ' AND (' + options.data.search + ')';
+                } else {
+                    options.data.search = omit_autosummary;
+                }
+                
+                //Omit data preview jobs by adding to the search string.
+                filters['NOT isDataPreview'] = '1';
+                
+                if (options.data.app && (options.data.app !== '*')){
+                    filters['eai:acl.app'] = options.data.app;
+                }
+                delete options.data.app;
+                
+                if (options.data.owner && (options.data.owner !== '*')){
+                    filters['eai:acl.owner'] = options.data.owner;
+                }
+                delete options.data.owner;
+                
+                if (options.data.label){
+                    filters.label = options.data.label;
+                }
+                delete options.data.label;
+                    
+                if (options.data.jobStatus && (options.data.jobStatus !== '*')){
+                    if (options.data.jobStatus === 'running') {
+                        filters['isDone'] = 0;
+                        filters['isPaused'] = 0;
+                        filters['isFinalized'] = 0;                 
+                    } else if (options.data.jobStatus === 'done') {
+                        filters['isDone'] = 1;
+                    } else if (options.data.jobStatus === 'paused') {
+                        filters['isPaused'] = 1;
+                    } else if (options.data.jobStatus === 'finalized') {
+                        filters['isFinalized'] = 1;
+                    }
+                }
+                delete options.data.jobStatus;
+                
+                _.each(filters, function(value, key) {
+                    options.data.search = options.data.search + ' ' + key + '="' + value + '"'; 
+                });
+                
+                return this.fetch(options);
             }
         });
     }
@@ -3861,58 +2840,6 @@ define('models/TimeRange',
     }
 );
 
-define('models/services/authentication/User',[
-    'underscore',
-    'models/SplunkDBase'
-],
-function(_, SplunkDBaseModel) {
-    return SplunkDBaseModel.extend({
-        urlRoot: "authentication/users",
-        url: "authentication/users",
-        initialize: function() {
-            SplunkDBaseModel.prototype.initialize.apply(this, arguments);
-        },
-        getCapabilities: function() {
-            return this.entry.content.get('capabilities') || [];
-        },
-        //the ability to run searches.
-        canSearch: function() {
-            return this.isNew() || (_.indexOf(this.getCapabilities(), "search") !== -1);
-        },
-        //the ability to run real-time searches.
-        canRTSearch: function() {
-            return this.isNew() || (_.indexOf(this.getCapabilities(), "rtsearch") !== -1);
-        },
-        canScheduleRTSearch: function() {
-            return this.isNew() || (_.indexOf(this.getCapabilities(), "schedule_rtsearch") !== -1);
-        },
-        //the ability to schedule saved searches, create and update alerts, review triggered alert information, and turn on report acceleration for searches.
-        canScheduleSearch: function() {
-            return this.isNew() || (_.indexOf(this.getCapabilities(), "schedule_search") !== -1);
-        },
-        //the ability to add new or edit existing inputs
-        canEditMonitor: function() {
-            return this.isNew() || (_.indexOf(this.getCapabilities(), "edit_monitor") !== -1);
-        },
-        canManageRemoteApps: function() {
-            return this.isNew() || (_.indexOf(this.getCapabilities(), "rest_apps_management") !== -1);
-        }
-    });
-});
-define('models/services/data/ui/Nav',
-    [
-        'models/SplunkDBase'
-    ],
-    function(SplunkDBaseModel) {
-        return SplunkDBaseModel.extend({
-            url: "data/ui/nav",
-            id: "data/ui/nav",
-            initialize: function() {
-                SplunkDBaseModel.prototype.initialize.apply(this, arguments);
-            }
-        });
-    }
-);
 define('models/services/data/UserPref',
     [
         'models/SplunkDBase'
@@ -3927,20 +2854,425 @@ define('models/services/data/UserPref',
         });
     }
 );
-define('models/services/server/ServerInfo',
+define('models/services/configs/Web',
     [
         'models/SplunkDBase'
     ],
     function(SplunkDBaseModel) {
         return SplunkDBaseModel.extend({
-            urlRoot: "server/info",
-            id: 'server-info',
+            url: "configs/conf-web",
+            urlRoot: "configs/conf-web",
             initialize: function() {
                 SplunkDBaseModel.prototype.initialize.apply(this, arguments);
             }
         });
     }
 );
+/**
+ * A reusable model encapsulating the fetch data for "results-like" endpoints.
+ *
+ * Adds special handling of the "sortKey" and "sortDirection" attributes, which are mapped to a trailing "| sort" in the
+ * post-process search, and the "filter" attribute, which is mapped from a dictionary of string pairs
+ * to keyword filters in the post-process search string.
+ */
+
+define('models/fetch_data/ResultsFetchData',[
+            'underscore',
+            'models/Base'
+        ],
+        function(
+            _,
+            Base
+        ) {
+
+    return Base.extend({
+
+        defaults: {
+            filter: {}
+        },
+
+        toJSON: function() {
+            var json = Base.prototype.toJSON.call(this),
+                sortKey = json.sortKey,
+                sortDirection = json.sortDirection,
+                search = [];
+            if(_(json.filter).size() > 0) {
+                _(json.filter).each(function(match, key) {
+                    search.push('(' + key + '=*' + match + '*' + ')');
+                });
+                search = ['search ' + search.join(' OR ')];
+            }
+            delete json.filter;
+
+            if(sortKey) {
+                search.push('| sort ' + (sortDirection === 'desc' ? '-' : '') + '"' + sortKey + '"');
+            }
+            delete json.sortKey;
+            delete json.sortDirection;
+
+            if(search.length > 0) {
+                json.search = search.join(' ');
+            }
+            return json;
+        }
+
+    });
+
+});
+
+define('models/services/search/jobs/Result',
+    [
+        'jquery',
+        'underscore',
+        'backbone',
+        'models/Base',
+        'models/fetch_data/ResultsFetchData',
+        'collections/Base',
+        'util/splunkd_utils',
+        'util/time_utils',
+        'splunk.i18n'
+    ],
+    function(
+        $,
+        _,
+        Backbone,
+        BaseModel,
+        ResultsFetchData,
+        BaseCollection,
+        splunkd_utils,
+        time_utils, 
+        i18n
+    ) 
+    {
+        var Result = Backbone.Model.extend({
+            initialize: function(attributes, options) {
+                //cache buster
+                this.on('change', function() {
+                    this._keys = void(0); 
+                    this._strip = void(0);
+                }, this);
+            },
+            idAttribute: '1ee63861-c188-11e2-8743-0017f209b4d8',
+            systemFields: [
+                 'host', 
+                 'source', 
+                 'sourcetype',
+                 'punct'
+            ],
+            timeFields: [
+                 '_time',
+                 'date_zone',
+                 'date_year',
+                 'date_month',
+                 'date_mday',
+                 'date_wday',
+                 'date_hour',
+                 'date_minute',
+                 'date_second',
+                 'timeendpos',
+                 'timestartpos'
+            ],
+            //cache keys
+            keys: function() {
+                if(!this._keys) {
+                    this._keys = _.keys(this.toJSON());
+                }
+                return this._keys; 
+            },
+            strip: function() {
+                if(!this._strip){
+                    this._strip = _.intersection(this.keys(),  _.filter(this.keys(), function(key) {
+                        return !(key.indexOf('_')===0 || key.indexOf('tag::')===0 || key.indexOf('_raw')===0);
+                    }));
+                }
+                return this._strip;
+            },
+            system: function() {
+                 return _.intersection(this.strip(), this.systemFields);
+            },
+            notSystemOrTime: function() {
+                var fields = this.strip();
+                return _.intersection(fields, _.difference(fields, _.union(this.time(), this.system())));
+            },
+            time: function() {
+                return _.intersection(this.keys(), this.timeFields);
+            },
+            isTruncated: function() {
+                return (this.rawToText().split('\n').length < this.get('linecount'));
+            },
+            getFieldsLength: function(fields) {
+                return _(fields).reduce(function(m, f){ 
+                    return m + this.get(f).length; 
+                }, 0, this);
+            },
+            getTags: function(field) {
+                var tag = this.get('tag::' + field);
+                if(tag && !_.isArray(tag)){
+                    return [tag];
+                } else if(!tag){
+                    return [];
+                }
+                return tag;
+            },
+            setTags: function(field, tags) {
+                this.set('tag::'+field, tags);
+            },
+            rawToHTML: function(segment) {
+                var raw    = this.get('_raw');
+                if (!raw) {return '';}
+                var tokens = raw.tokens,
+                    stree  = raw.segment_tree,
+                    types  = raw.types;
+        
+                function _rawToHtml (stree) {
+                    var html = [], i = 0;
+                    for (i=0; i<stree.length; i++) {
+                        var leaf = stree[i];
+                        if(typeof leaf === 'object' ) {
+                            html.push('<span class="t'+((leaf.highlight)?' a':'')+'">', _rawToHtml(leaf.array), '</span>');
+                        } else {
+                            html.push(tokens[leaf] || '');
+                        }
+                    }
+                    return html.join('');
+                }
+                return _rawToHtml(stree);
+            },
+            rawToText: function() {
+                var raw = this.get('_raw');
+                if (!raw) {return '';}
+                return _.isArray(raw) ? raw[0]: raw.tokens.join('');
+            },
+            getRaw: function(){
+                var raw = this.get('_raw');
+                return _.isArray(raw) ? raw[0]: this.rawToHTML();
+            },
+            formattedTime: function() {
+                var time = this.get('_time');
+                if (! time ) { return '';}
+                return i18n.format_datetime_microseconds(
+                    time_utils.jsDateToSplunkDateTimeWithMicroseconds(time_utils.isoToDateObject(time)), 'short', 'full'
+                );    
+            },
+            replace: function() {
+                return BaseModel.prototype.replace.apply(this, arguments);
+            },
+            deepOff: function() {
+                this.off();
+            }
+        });
+        
+        var Model = BaseModel.extend({
+            url: '',
+            initialize: function(data, options) {
+                options = options || {};
+                options.fetchData = options.fetchData || new ResultsFetchData();
+                BaseModel.prototype.initialize.call(this, data, options);
+                this.initializeAssociated();
+                if (options && options.splunkDPayload) {
+                    this.setFromSplunkD(options.splunkDPayload, {silent: true});
+                }
+            },
+            initializeAssociated: function() {
+                // do a dynamic lookup of the current constructor so that this method is inheritance-friendly
+                var RootClass = this.constructor;
+                this.associated = this.associated || {};
+                
+                //instance level models
+                this.results = this.results || new RootClass.Results();
+                this.associated.results = this.results;
+                this.messages = this.messages || new RootClass.Messages();
+                this.associated.messages = this.messages;
+                this.fields = this.fields || new RootClass.Fields();
+                this.associated.fields = this.fields;
+            },
+            sync: function(method, model, options) {
+                if (method!=='read') {
+                    throw new Error('invalid method: ' + method);
+                }
+                options = options || {};
+                var appOwner = {},
+                    defaults = {
+                        data: {output_mode: 'json'},
+                        dataType: 'text'
+                    },
+                    url = _.isFunction(model.url) ? model.url() : model.url || model.id;
+                    
+                if(options.data){
+                    appOwner = $.extend(appOwner, { //JQuery purges undefined
+                        app: options.data.app || undefined,
+                        owner: options.data.owner || undefined,
+                        sharing: options.data.sharing || undefined
+                    });
+                }
+                
+                defaults.url = splunkd_utils.fullpath(url, appOwner);
+                $.extend(true, defaults, options);
+                
+                delete defaults.data.app;
+                delete defaults.data.owner;
+                delete defaults.data.sharing;
+                
+                return Backbone.sync.call(this, method, model, defaults);
+            },
+            setFromSplunkD: function(payload, options) {
+                options = options || {};
+                if(!options.clone) {
+                    this.responseText = JSON.stringify(payload);    
+                }
+
+                this.attributes = {};
+                if (payload) {
+                    if (payload.messages) {
+                        this.messages.reset(payload.messages, options);
+                        delete payload.messages;
+                    }
+                    if (payload.fields) {
+                        this.fields.reset(payload.fields, options);
+                        delete payload.fields;
+                    }
+                    this.set(payload, options);
+                    
+                    if (payload.results) {
+                        _(payload.results).each(function(result, idx) {
+                            _.each(result, function(v, k) {
+                                result[k] = (typeof v === 'string') ? [v]: v;
+                            },this);
+                        },this);
+                        this.results.reset(payload.results, options);
+                        delete payload.results;
+                    }
+                }
+            },
+            parse: function(response, options) {
+                this.initializeAssociated();
+                this.responseText = response; //store string representation
+                
+                response = JSON.parse(response);
+                
+                if (options.sparseMode) {
+                    this.results.reset(_(response.results).map(function() { return {}; }));
+                    return {};
+                }
+                
+                _(response.results).each(function(result, idx) {
+                    _.each(result, function(v, k) {
+                        result[k] = (typeof v === 'string') ? [v]: v;
+                    },this);
+                },this);
+                
+                this.messages.reset(response.messages);
+                delete response.messages;
+                
+                this.fields.reset(response.fields);
+                delete response.fields;
+                
+                var results = response.results;
+                delete response.results;
+                
+                this.set(response);
+                delete response;
+
+                this.results.reset(results);
+                return {};
+            },
+            endOffset: function() {
+                return (this.get('init_offset') || 0) + this.results.length;
+            },
+            lineNumber: function(offset, isRealTime) {
+                return isRealTime ? this.endOffset() - offset : (this.get('init_offset') || 0) + offset + 1;
+            },
+            offset: function(index) {
+                return (this.get('init_offset') || 0) + index;
+            },
+            getTags: function(field, value) {
+                var tags = this.get('tags'),
+                    matched = [];
+      
+                if (tags) {
+                    matched = tags[field];
+                    if (matched) {
+                        matched = matched[value] || [];
+                    }
+                }
+                return matched || [];
+            },
+            setTags: function(field, value, tags) {
+                if (!this.get('tags')) {
+                   this.set('tags', {});
+                }
+                if (!this.get('tags')[field]) {
+                    this.get('tags')[field] = {}; 
+                }
+                if (!this.get('tags')[field][value]) {
+                    this.get('tags')[field][value] = [];
+                }
+                this.get('tags')[field][value] = tags;
+                this.trigger('tags-updated'); //TODO: must fix this (make synthetic/namespaced)
+            }
+        },
+        {
+            Results: BaseCollection.extend(
+                {
+                    model: Result,
+                    get: function(obj) {
+                      if (obj == null) return void 0;
+                      this._idAttr || (this._idAttr = this.model.prototype.idAttribute);
+                      return this._byId[obj[this._idAttr]];
+                    }
+                },
+                {
+                    Result: Result
+                }
+            ),
+            Messages: BaseCollection.extend({model: BaseModel}),
+            Fields: BaseCollection.extend({model: BaseModel})
+        });
+    
+        return Model;
+    }
+);
+
+define('models/services/saved/FVTags',['jquery', 'underscore', 'models/SplunkDBase'], function($, _, BaseModel) {
+    return BaseModel.extend({
+        url: 'saved/fvtags',
+        initialize: function() {
+            BaseModel.prototype.initialize.apply(this, arguments);
+        },
+        resetTags: function(tags) {
+
+            //unset tag prefixed keys 
+            _(this.entry.content.toJSON()).each(function(v, k) {
+                if(k.match(/^tag.+/g)){
+                    this.entry.content.unset(k);
+                }
+            }, this);
+            //unset the tags array
+            this.entry.content.unset('tags');
+            
+            if (tags) {
+                var attrs = {};
+                _(tags).each(function(tag) {
+                    attrs['tag.' + tag] = tag;
+                }, this);
+                this.entry.content.set(attrs);
+            }
+
+        },
+        setId: function(app, owner, fieldName, fieldValue){
+            this.set('id', '/servicesNS/' + encodeURIComponent(owner) + '/' + encodeURIComponent(app) + '/saved/fvtags/' + encodeURIComponent(fieldName) + '%3D' + encodeURIComponent(fieldValue));
+        }
+    },
+    // class-level properties
+    {
+        tagStringtoArray: function(tag) {
+            return tag ? $.trim(tag.replace(/,/g,' ')).split(/\s+/): [];
+        },
+        tagArraytoString: function(tags) {
+            return tags.join(', ');
+        }
+    });
+});
 
 define('helpers/user_agent',['underscore'], function(_) {
 
@@ -3949,11 +3281,16 @@ define('helpers/user_agent',['underscore'], function(_) {
      *
      * Chrome 26 - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/537.31 (KHTML, like Gecko) Chrome/26.0.1410.65 Safari/537.31"
      * Firefox 21 - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:21.0) Gecko/20100101 Firefox/21.0"
-     * Safari 5 - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/534.59.8 (KHTML, like Gecko) Version/5.1.9 Safari/534.59.8"
+     * Safari 6 - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8) AppleWebKit/536.25 (KHTML, like Gecko) Version/6.0 Safari/536.25"
      * IE 10 - "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; Trident/6.0)"
      * IE 9 - "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)"
      * IE 8 - "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; Trident/4.0)"
      * IE 7 - "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1)"
+     *
+     * (not officially supported)
+     *
+     * Safari (iOS iPhone) - "Mozilla/5.0 (iPhone; CPU iPhone OS 6_0 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10A5376e Safari/8536.25"
+     * Safari (iOS iPad) - "Mozilla/5.0 (iPad; CPU OS 6_0 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10A5376e Safari/8536.25"
      */
 
     var TESTS = {
@@ -3964,8 +3301,12 @@ define('helpers/user_agent',['underscore'], function(_) {
         IE10: /msie 10\.0/i,
         IE9: /msie 9\.0/i,
         IE8: /msie 8\.0/i,
-        IE7: /msie 7\.0/i
+        IE7: /msie 7\.0/i,
+        SafariiPhone: /iPhone/,
+        SafariiPad: /iPad/
     };
+
+    var IE_URL_LIMIT = 2048;
 
     var helper = {
 
@@ -3981,10 +3322,19 @@ define('helpers/user_agent',['underscore'], function(_) {
         isIE8: function() { return TESTS.IE8.test(helper.agentString); },
         isIE7: function() { return TESTS.IE7.test(helper.agentString); },
         // Safari is a little more complicated
-        isSafari: function() { return !helper.isChrome() && TESTS.Safari.test(helper.agentString); },
+        isSafari: function() { return !helper.isChrome() && !helper.isSafariiPhone() && !helper.isSafariiPad() && TESTS.Safari.test(helper.agentString); },
+        isSafariiPhone: function() { return TESTS.SafariiPhone.test(helper.agentString); },
+        isSafariiPad: function() { return TESTS.SafariiPad.test(helper.agentString); },
 
         isIELessThan: function(testVersion) {
             return helper.isIE() && parseFloat(TESTS.IE.exec(helper.agentString)[1]) < testVersion;
+        },
+
+        hasUrlLimit: function() {
+            return helper.isIELessThan(10);
+        },
+        getUrlLimit: function() {
+            return helper.hasUrlLimit() ? IE_URL_LIMIT : Infinity;
         }
 
     };
@@ -4010,11 +3360,8 @@ define('util/router_utils',
             inMemoryHistory = {};
 
         // visible for testing only
-        exports.AGENT_HAS_URL_LIMIT = userAgent.isIELessThan(10);
-        exports.URL_MAX_LENGTH = 2048;
-
-//        exports.AGENT_HAS_URL_LIMIT = true
-//        exports.URL_MAX_LENGTH = 10
+        exports.AGENT_HAS_URL_LIMIT = userAgent.hasUrlLimit();
+        exports.URL_MAX_LENGTH = userAgent.getUrlLimit();
 
         var fragmentIsLegal = function(fragment) {
             if(!exports.AGENT_HAS_URL_LIMIT) {
@@ -4086,7 +3433,6 @@ define('util/router_utils',
         // in production, start_backbone_history should always be called with no arguments
         exports.start_backbone_history = function(forceNoPushState) {
             var hasPushstate = "pushState" in window.history;
-//            hasPushstate = false
             if (forceNoPushState || !hasPushstate) {
                 $(document).ready(function() {
                     var hash = Backbone.history.getHash(),
@@ -4102,7 +3448,7 @@ define('util/router_utils',
                     if(!fragmentIsLegal(adjustedHash)) {
                         adjustedHash = storeFullFragment(adjustedHash);
                     }
-                    window.location.hash = adjustedHash;
+                    window.location.replace(window.location.href.split('#')[0] + '#' + adjustedHash);
                     Backbone.history.start();
                 });
             } else {
@@ -4115,12 +3461,13 @@ define('util/router_utils',
 define('models/classicurl',
     [
         'jquery',
+        'underscore',
         'splunk.util',
         'backbone',
         'models/Base',
         'util/router_utils'
     ],
-    function($, util, Backbone, BaseModel, routerUtils) {
+    function($, _, util, Backbone, BaseModel, routerUtils) {
         var Model = BaseModel.extend({
             id: 'classicURL',
             initialize: function() {
@@ -4145,7 +3492,7 @@ define('models/classicurl',
                 if (method==='read') {
                     resp = model.currentQueryString();
                 } else if (method==='create' || method==='update') {
-                    state = model.toURLEncodedQueryString();
+                    state = model.toURLEncodedQueryString(options);
                     if (replaceState){
                         model.replaceState(state, options);
                     } else {
@@ -4162,7 +3509,23 @@ define('models/classicurl',
                 return dfd.resolve(model, resp, options).promise();
             },
             parse: function(response) {
-                return util.queryStringToProp(response);
+                // Parse "a=1&b=2" -> {'a': '1', 'b': '2'}
+                var urlQueryParameters = util.queryStringToProp(response);
+                
+                /* 
+                 * Insert undefined values for each old attribute that
+                 * is not specified in the new query parameters.
+                 * 
+                 * That way, attributes missing from the new URL will
+                 * be blanked out appropriately.
+                 */
+                var newAttributesWithBlanks = _.clone(this.attributes);
+                _.each(newAttributesWithBlanks, function(value, key) {
+                    newAttributesWithBlanks[key] = undefined;
+                });
+                _.extend(newAttributesWithBlanks, urlQueryParameters);
+                
+                return newAttributesWithBlanks;
             },
             currentQueryString: function() {
                 var fragment;
@@ -4190,5 +3553,836 @@ define('models/classicurl',
             }
         });
         return new Model();
+    }
+);
+
+define('models/AlertAction',['underscore','models/SplunkDBase'],function(_, Base){
+
+    return Base.extend({
+        urlRoot: 'configs/conf-alert_actions',
+        getSetting: function(key, defaultValue) {
+            return this.entry.content.has(key) ? this.entry.content.get(key) : defaultValue;
+        },
+        initialize: function() {
+            Base.prototype.initialize.apply(this, arguments);
+        }
+    });
+
+});
+define('models/services/data/ui/Viewstate',
+    [
+        'underscore',
+        'models/SplunkDBase',
+        'util/splunkd_utils',
+        'splunk.util'
+    ],
+    function(
+        _,
+        BaseModel,
+        splunkd_utils,
+        splunkUtil
+    ) {
+        return BaseModel.extend({
+            url: 'data/ui/viewstates',
+            initialize: function() {
+                BaseModel.prototype.initialize.apply(this, arguments);
+            },
+            getFlattenedAndDedupedModules: function() {
+                var content = this.entry.content.toJSON(),
+                    flattenedModules = {};
+                
+                delete content['eai:acl'];
+                delete content['eai:appName'];
+                delete content['eai:userName'];
+                delete content['disabled'];
+            
+                //flatten the contents
+                _.each(content, function(value, module){
+                    var keySplit = module.split("."),
+                        key = keySplit[0].split("_")[0],
+                        child = keySplit[1];
+                    
+                    if (!flattenedModules[key]) {
+                        flattenedModules[key] = {};
+                    }
+                    
+                    if (!flattenedModules[key][child]) {
+                        flattenedModules[key][child] = value;
+                    }
+                });
+
+                return flattenedModules;
+            },
+            convertToReportPoperties: function() {
+                var flattenedModules = this.getFlattenedAndDedupedModules(),
+                    props = {},
+                    eventsTabSelected, statsTabSelected, vizTabSelected,
+                    buttonSwitcher, count, softWrap, segmentation, fields, rowNumbers;
+                
+                /*
+                 * AxisScaleFormatter.default => display.visualizations.charting.axisY.scale
+                 * ChartTitleFormatter.default => NOT IMPLEMENTED
+                 * ChartTypeFormatter.default => display.visualizations.charting.chart
+                 * FancyChartTypeFormatter.default => display.visualizations.charting.chart
+                 * LegendFormatter.default => display.visualizations.charting.legend.placement
+                 * LineMarkerFormatter.default => display.visualizations.charting.axisX.markers (MISSING)
+                 * NullValueFormatter.default => display.visualizations.charting.chart.nullValueMode
+                 * SplitModeFormatter.default => NOT IMPLEMENTED
+                 * StackModeFormatter.default => display.visualizations.charting.chart.stackMode
+                 * XAxisTitleFormatter.default => display.visualizations.charting.axisTitleX.text
+                 * YAxisRangeMaximumFormatter.default => display.visualizations.charting.axisY.maximumNumber
+                 * YAxisRangeMinimumFormatter.default => display.visualizations.charting.axisY.minimumNumber
+                 * YAxisTitleFormatter.default => display.visualizations.charting.axisTitleY.text
+                 * FlashChart.height => display.visualizations.chartHeight
+                 * FlashTimeline.height => NOT IMPLEMENTED
+                 * FlashTimeline.minimized => display.page.search.timeline.format = [hidden|compact|full] (MUST REMAP FROM BOOLEAN)
+                 * FlashWrapper.height => NOT IMPLEMENTED
+                 * JSChart.height => display.visualizations.chartHeight
+                 * Count.default OR Count.count => display.prefs.statistics.count OR display.prefs.events.count
+                 * DataOverlay.default OR DataOverlay.dataOverlayMode => display.statistics.overlay
+                 * HiddenSoftWrap.enable => display.events.list.wrap OR display.events.table.wrap OR display.statistics.wrap
+                 * SoftWrap.enable => display.events.list.wrap OR display.events.table.wrap OR display.statistics.wrap
+                 * MaxLines.default OR MaxLines.maxLines => display.events.maxLines
+                 * RowNumbers.default OR RowNumbers.displayRowNumbers => display.events.rowNumbers OR display.statistics.rowNumbers
+                 * Segmentation.default OR Segmentation.segmentation => display.events.raw.drilldown OR display.events.list.drilldown OR display.statistics.drilldown
+                 * FieldPicker.fields => display.events.fields
+                 * FieldPicker.sidebarDisplay => display.page.search.showFields
+                 * ButtonSwitcher.selected => display.general.type REQUIRES REMAPPING
+                 * 
+                 * 
+                Possible values from flashtimeline:
+                |    ButtonSwitcher_0_9_0.selected =  "splIcon-results-table"
+                |    ChartTypeFormatter_0_14_0.default =  "column"
+                |    Count_0_8_1.default =  "50"
+                |    DataOverlay_0_14_0.dataOverlayMode =  "none"
+                |    DataOverlay_0_14_0.default =  "heatmap"
+                |    FieldPicker_0_6_0.fields =  "host,sourcetype,source"
+                |    FieldPicker_0_6_0.sidebarDisplay =  "True"
+                |    FlashTimeline_0_4_1.height =  "95px"
+                |    FlashTimeline_0_4_1.minimized =  "False"
+                |    JSChart_0_14_1.height =  "300px"
+                |    LegendFormatter_0_20_0.default =  "top"
+                |    MaxLines_0_14_0.default =  "10"
+                |    MaxLines_0_14_0.maxLines =  "10"
+                |    NullValueFormatter_0_19_0.default =  "gaps"
+                |    RowNumbers_0_13_0.default =  "true"
+                |    RowNumbers_0_13_0.displayRowNumbers =  "true"
+                |    RowNumbers_1_13_0.default =  "true"
+                |    RowNumbers_1_13_0.displayRowNumbers =  "true"
+                |    Segmentation_0_15_0.default =  "full"
+                |    Segmentation_0_15_0.segmentation =  "full"
+                |    SoftWrap_0_12_0.enable =  "True"
+                |    SplitModeFormatter_0_18_0.default =  "false"
+                |    StackModeFormatter_0_17_0.default =  "default"
+                
+                From Report Builder:
+                |    ChartTypeFormatter_0_4_0.default =  "column"
+                |    DataOverlay_0_5_0.dataOverlayMode =  "none"
+                |    DataOverlay_0_5_0.default =  "none"
+                |    JSChart_0_4_1.height =  "300px"
+                |    LegendFormatter_0_10_0.default =  "right"
+                |    LineMarkerFormatter_0_7_0.default =  "false"
+                |    NullValueFormatter_0_9_0.default =  "gaps"
+                |    SplitModeFormatter_0_8_0.default =  "false"
+                |    StackModeFormatter_0_7_0.default =  "default"
+                
+                From Advanced Charting:
+                |    ChartTypeFormatter_0_7_0.default =  "line"
+                |    JSChart_0_7_1.height =  "300px"
+                |    LegendFormatter_0_13_0.default =  "right"
+                |    LineMarkerFormatter_0_10_0.default =  "false"
+                |    NullValueFormatter_0_12_0.default =  "gaps"
+                |    SplitModeFormatter_0_11_0.default =  "false"
+                |    StackModeFormatter_0_10_0.default =  "default"
+                 * 
+                 */
+                
+                if (flattenedModules['ButtonSwitcher']) {
+                    buttonSwitcher = flattenedModules['ButtonSwitcher']['selected'];
+                    if (buttonSwitcher === "splIcon-results-table") {
+                        props['display.general.type'] = 'statistics';
+                        statsTabSelected = true;
+                    } else if (buttonSwitcher === "splIcon-events-list") {
+                        props['display.general.type'] = 'events';
+                        eventsTabSelected = true;
+                    }
+                } else {
+                    props['display.general.type'] = 'visualizations';
+                    vizTabSelected = true;
+                }
+                
+                if (flattenedModules['AxisScaleFormatter']) {
+                    props['display.visualizations.charting.axisY.scale'] = flattenedModules['AxisScaleFormatter']['default'];
+                }
+                if (flattenedModules['FancyChartTypeFormatter']) {
+                    props['display.visualizations.type'] = 'charting';
+                    props['display.visualizations.charting.chart'] = flattenedModules['FancyChartTypeFormatter']['default'];
+                }
+                if (flattenedModules['ChartTypeFormatter']) {
+                    //unfancy wins
+                    props['display.visualizations.type'] = 'charting';
+                    props['display.visualizations.charting.chart'] = flattenedModules['ChartTypeFormatter']['default'];
+                }
+                if (flattenedModules['LegendFormatter']) {
+                    props['display.visualizations.charting.legend.placement'] = flattenedModules['LegendFormatter']['default'];
+                }
+                if (flattenedModules['LineMarkerFormatter']) {
+                    props['display.visualizations.charting.axisX.markers'] = splunkd_utils.normalizeBooleanTo01String(flattenedModules['LineMarkerFormatter']['default']);
+                }
+                if (flattenedModules['NullValueFormatter']) {
+                    props['display.visualizations.charting.chart.nullValueMode'] = flattenedModules['NullValueFormatter']['default'];
+                }
+                if (flattenedModules['StackModeFormatter']) {
+                    props['display.visualizations.charting.chart.stackMode'] = flattenedModules['StackModeFormatter']['default'];
+                }
+                if (flattenedModules['XAxisTitleFormatter']) {
+                    props['display.visualizations.charting.axisTitleX.text'] = flattenedModules['XAxisTitleFormatter']['default'];
+                }
+                if (flattenedModules['YAxisRangeMaximumFormatter']) {
+                    props['display.visualizations.charting.axisY.maximumNumber'] = flattenedModules['YAxisRangeMaximumFormatter']['default'];
+                }
+                if (flattenedModules['YAxisRangeMinimumFormatter']) {
+                    props['display.visualizations.charting.axisY.minimumNumber'] = flattenedModules['YAxisRangeMinimumFormatter']['default'];
+                }
+                if (flattenedModules['YAxisRangeMinimumFormatter']) {
+                    props['display.visualizations.charting.axisY.minimumNumber'] = flattenedModules['YAxisRangeMinimumFormatter']['default'];
+                }
+                if (flattenedModules['YAxisTitleFormatter']) {
+                    props['display.visualizations.charting.axisTitleY.text'] = flattenedModules['YAxisTitleFormatter']['default'];
+                }
+                if (flattenedModules['FlashChart']) {
+                    props['display.visualizations.chartHeight'] = (flattenedModules['FlashChart']['height']).replace('px', '');
+                }
+                if (flattenedModules['JSChart']) {
+                    //The viewstate will have either FlashChart OR JSChart
+                    props['display.visualizations.chartHeight'] = (flattenedModules['JSChart']['height']).replace('px', '');
+                }                
+                if (flattenedModules['FlashTimeline']) {
+                    if (splunkUtil.normalizeBoolean(flattenedModules['FlashTimeline']['minimized'])) {
+                        props['display.page.search.timeline.format'] = 'compact';
+                    } else {
+                        props['display.page.search.timeline.format'] = 'hidden';
+                    }
+                }
+                if (flattenedModules['Count']) {
+                    count = flattenedModules['Count']['default'] || flattenedModules['Count']['count'];
+                    
+                    if (statsTabSelected || vizTabSelected) {
+                        props['display.prefs.statistics.count'] = count;
+                    } else {
+                        props['display.prefs.events.count'] = count;
+                    }    
+                }
+                if (flattenedModules['DataOverlay']) {
+                    props['display.statistics.overlay'] = flattenedModules['DataOverlay']['default'] || flattenedModules['DataOverlay']['dataOverlayMode'];
+                }
+                if (flattenedModules['HiddenSoftWrap']) {
+                    softWrap = splunkd_utils.normalizeBooleanTo01String(flattenedModules['HiddenSoftWrap']['enable']);
+                    
+                    if (statsTabSelected || vizTabSelected) {
+                        props['display.statistics.wrap'] = softWrap;
+                    } else {
+                        props['display.events.list.wrap'] = softWrap;
+                        props['display.events.table.wrap'] = softWrap;                       
+                    }
+                }
+                if (flattenedModules['SoftWrap']) {
+                    //non hidden wins
+                    softWrap = splunkd_utils.normalizeBooleanTo01String(flattenedModules['SoftWrap']['enable']);
+                    
+                    if (statsTabSelected || vizTabSelected) {
+                        props['display.statistics.wrap'] = softWrap;
+                    } else {
+                        props['display.events.list.wrap'] = softWrap;
+                        props['display.events.table.wrap'] = softWrap;                        
+                    }
+                }
+                if (flattenedModules['MaxLines']) {
+                    props['display.events.maxLines'] = flattenedModules['MaxLines']['default'] || flattenedModules['MaxLines']['maxLines'];
+                }
+                if (flattenedModules['RowNumbers']) {
+                    rowNumbers = flattenedModules['RowNumbers']['default'] || flattenedModules['RowNumbers']['displayRowNumbers'];
+                    rowNumbers = splunkd_utils.normalizeBooleanTo01String(rowNumbers);
+                    
+                    if (statsTabSelected || vizTabSelected) {
+                        props['display.statistics.rowNumbers'] = rowNumbers;
+                    } else {
+                        props['display.events.rowNumbers'] = rowNumbers;
+                    }
+                }
+                if (flattenedModules['Segmentation']) {
+                    segmentation = flattenedModules['Segmentation']['default'] || flattenedModules['Segmentation']['segmentation'];
+                    
+                    if (statsTabSelected || vizTabSelected) {
+                        if (['row', 'cell', 'none'].indexOf(segmentation) > -1) {
+                            props['display.statistics.drilldown'] = segmentation;
+                        }
+                    } else {
+                        if (['inner', 'outer', 'full', 'none'].indexOf(segmentation) > -1) {
+                            props['display.events.list.drilldown'] = segmentation;
+                            props['display.events.raw.drilldown'] = segmentation;
+                        }
+                    }
+                }
+                if (flattenedModules['FieldPicker']) {
+                    //example: display.events.fields":"[\"host\",\"source\",\"sourcetype\"]"
+                    fields = flattenedModules['FieldPicker']['fields'].split(',');
+                    props['display.events.fields'] = '[\"' + fields.join('\",\"') + '\"]';
+                    props['display.page.search.showFields'] = splunkd_utils.normalizeBooleanTo01String(flattenedModules['FieldPicker']['sidebarDisplay']);
+                }
+                
+                return props;
+            }
+        });
+    }
+);
+define('models/Report',
+    [
+        'jquery',
+        'underscore',
+        'models/services/SavedSearch',
+        'models/services/data/ui/Viewstate',
+        'collections/Jobs',
+        'util/time_utils',
+        'util/splunkd_utils',
+        'util/general_utils',
+        'splunk.util',
+        'splunk.i18n',
+        'uri/route',
+        'util/math_utils'
+    ],
+    function($, _, SavedSearch, Viewstate, JobsCollection, time_utils, splunkd_utils, general_utils, splunkUtil, i18n, route, math_utils) {
+        var ReportModel =  SavedSearch.extend({
+            reportTree: {
+                'match': { 
+                    'display.general.type': {
+                        'visualizations' : {
+                            'match': {
+                                'display.visualizations.type': {
+                                    'singlevalue': {
+                                        'view': _('single').t(), icon: 'single-value', label: _('Single Value').t()
+                                    },
+                                    'charting': {
+                                        'match': {'display.visualizations.charting.chart': {
+                                                'line': { 'view': _('line').t(), icon: 'chart-line', label: _('Line').t() },
+                                                'area': { 'view': _('area').t(), icon: 'chart-area',label: _('Area').t() },
+                                                'column': { 'view': _('column').t(), icon: 'chart-column', label: _('Column').t() },
+                                                'bar': { 'view': _('bar').t(), icon: 'chart-bar', label: _('Bar').t() },
+                                                'pie': { 'view': _('pie').t(), icon: 'chart-pie', label: _('Pie').t()},
+                                                'scatter': { 'view': _('scatter').t(), icon: 'chart-scatter', label: _('Scatter').t() },
+                                                'radialGauge': { 'view': _('radialGauge').t(), icon: 'gauge-radial', label: _('Radial').t() },
+                                                'fillerGauge': { 'view': _('fillerGauge').t(), icon: 'gauge-filler', label: _('Filler').t() },
+                                                'markerGauge': { 'view': _('markerGauge').t(), icon: 'gauge-marker', label: _('Marker').t() }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        'statistics': { 
+                            'view': _('statistics').t() 
+                        },
+                        'events': { 
+                            'view': _('events').t()
+                        }
+                    }
+                }
+            },    
+            initialize: function() {
+                SavedSearch.prototype.initialize.apply(this, arguments);
+
+                //associated
+                this.jobs = new JobsCollection();
+                this.associated.jobs = this.jobs;
+            },
+            sync: function(method, model, options) {
+                if (method !== 'read') {
+                    return SavedSearch.prototype.sync.apply(this, arguments);
+                }
+                
+                options = options || {};
+                var deferredResponse = $.Deferred(),
+                    viewstateDeferred = $.Deferred(),
+                    savedSearchProxy = new SavedSearch({id: this.id}),
+                    bbXHR;
+
+                bbXHR = savedSearchProxy.fetch($.extend(true, {}, options, {
+                    success: function(model, savedSearchResponse) {
+                        this.setFromSplunkD(savedSearchProxy.toSplunkD());
+                        
+                        var vsid = this.entry.content.get("vsid"),
+                            displayview = this.entry.content.get("displayview"),
+                            hasBeenMigrated = splunkUtil.normalizeBoolean(this.entry.content.get("display.general.migratedFromViewState")),
+                            name, viewstate;
+                        
+                        if (vsid && displayview && !hasBeenMigrated) {
+                            name = /.*:/.test(vsid) ? vsid : (displayview + ":" + vsid);
+                            viewstate = new Viewstate();
+                            
+                            viewstate.fetch({
+                                url: splunkd_utils.fullpath(
+                                    viewstate.url + "/" + name,
+                                    {
+                                        app: options.data.app,
+                                        owner: options.data.owner                               
+                                    }
+                                 ),
+                                 success: function(model, response) {
+                                     var viewstateConversionAttrs = viewstate.convertToReportPoperties();
+                                     viewstateConversionAttrs["display.general.migratedFromViewState"] = "1";
+                                     
+                                     //layer in the viewstate properties
+                                     this.entry.content.set(viewstateConversionAttrs);
+                                     
+                                     if (options.success) {
+                                         options.success(this, savedSearchResponse, options);
+                                     }
+                                     viewstateDeferred.resolve();
+                                 }.bind(this),
+                                 error: function(model, response) {
+                                     //the viewstate could not be found. Party on, but make sure if they save we never lookup the viewstate again.
+                                     this.entry.content.set("display.general.migratedFromViewState", "1");
+                                     
+                                     if (options.success) {
+                                         options.success(this, savedSearchResponse, options);
+                                     }
+                                     viewstateDeferred.resolve();
+                                 }.bind(this)
+                            });
+                        } else {
+                            if (options.success) {
+                                options.success(this, savedSearchResponse, options);
+                            }
+                            viewstateDeferred.resolve();
+                        }                        
+                    }.bind(this),
+                    error: function(model, savedSearchResponse) {
+                        if (options.error) {
+                            options.error(this, savedSearchResponse, options);
+                        }                        
+                    }.bind(this)
+                }));
+                
+                $.when(viewstateDeferred).then(function() {
+                    bbXHR.done(function(){
+                        deferredResponse.resolve.apply(deferredResponse, arguments);
+                    }.bind(this));
+                }.bind(this));
+                
+                bbXHR.fail(function() {
+                    deferredResponse.reject.apply(deferredResponse, arguments);
+                }.bind(this));
+                
+                return deferredResponse.promise();                
+            },
+            fetchJobs: function(options) {
+                var label = this.entry.get('name');
+                if (!label) {
+                    throw "Report must have a name to associate it with Jobs";
+                }
+
+                options = options || {};
+                options.data = options.data || {};
+                options.data.app = this.entry.acl.get('app');
+                options.data.owner = this.entry.acl.get('owner');
+                options.data.label = label;
+
+                return this.jobs.fetchNonAutoSummaryJobs(options);
+            },
+            openInView: function () {
+                if (this.entry.content.get('request.ui_dispatch_view') === 'pivot' || 
+                    (this.entry.content.get('request.ui_dispatch_view') === "" && this.isPivotReport())) {
+                    return 'pivot';
+                } else {
+                    return 'search';
+                }
+            },
+            getVizType: function() {
+                var that = this,
+                    _vizTree = function(tree) { 
+                    if (tree && tree.view){
+                        return tree;
+                    } else if (tree && tree.match){
+                        var match;
+                        _(tree.match).each(function(v, k){
+                           match = v[that.entry.content.get(k)];
+                        }, that);
+                        if (match) return _vizTree(match);
+                    } 
+                };
+                return _vizTree(this.reportTree.match['display.general.type'].visualizations);
+            },
+            isAlert: function () {
+                var is_scheduled = this.entry.content.get('is_scheduled'),
+                    alert_type = this.entry.content.get('alert_type'),
+                    alert_track = this.entry.content.get('alert.track'),
+                    actions = this.entry.content.get('actions'),
+                    isRealTime = this.isRealTime();
+
+                return is_scheduled &&
+                        (alert_type !== 'always' ||
+                            alert_track ||
+                            (isRealTime && actions)
+                        );
+            },
+            isRealTime: function() {
+                var isEarliestRealtime = time_utils.isRealtime(this.entry.content.get('dispatch.earliest_time')),
+                    isLatestRealtime = time_utils.isRealtime(this.entry.content.get('dispatch.latest_time'));
+
+                return (isEarliestRealtime && isLatestRealtime);
+            },
+            // see documentation of isValidPivotSearch, this is not an exhaustive check, just a quick guess.
+            isPivotReport: function() {
+                return general_utils.isValidPivotSearch(this.entry.content.get('search'));
+            },
+            stripAlertAttributes: function(options) {
+                return this.entry.content.set({
+                        'alert.track': 0,
+                        alert_type: 'always',
+                        is_scheduled: 0
+                    }, options);
+            },
+            stripReportAttributesToSaveAsAlert: function(options) {
+                return this.entry.content.set({
+                    auto_summarize: false
+                },options);
+            },
+            stripPivotAttributes: function() {
+                this.entry.content.set({
+                    'display.page.pivot.dataModel': ''
+                });
+            },
+            setTimeRangeWarnings: function(reportPristine) {
+                var earliest = this.entry.content.get("dispatch.earliest_time"),
+                    latest = this.entry.content.get("dispatch.latest_time"),
+                    messages = [],
+                    pristineEarliest, pristineLatest;
+
+                if ((!time_utils.isEmpty(earliest) && time_utils.isAbsolute(earliest)) ||
+                        (!time_utils.isEmpty(latest) && time_utils.isAbsolute(latest))) {
+                    messages.push(
+                       splunkd_utils.createMessageObject(
+                            splunkd_utils.WARNING,
+                            _("Your report has an absolute time range.").t()
+                        )
+                    );
+                }
+
+                if (reportPristine) {
+                    if (reportPristine.isAlert()) {
+                        pristineEarliest = reportPristine.entry.content.get("dispatch.earliest_time");
+                        pristineLatest = reportPristine.entry.content.get("dispatch.latest_time");
+
+                        if ((earliest !== pristineEarliest) || (latest !== pristineLatest)) {
+                            this.entry.content.set({
+                                "dispatch.earliest_time": pristineEarliest,
+                                "dispatch.latest_time": pristineLatest
+                            });
+
+                            messages.push(
+                               splunkd_utils.createMessageObject(
+                                    splunkd_utils.WARNING,
+                                    _("Your changes to the time range of this alert will not be saved.").t()
+                                )
+                            );
+                        }
+                    } else if (!reportPristine.isRealTime() && (reportPristine.entry.content.get('is_scheduled')) && this.isRealTime()) {
+                        this.entry.content.set({
+                            "is_scheduled": false
+                        });
+
+                        messages.push(
+                           splunkd_utils.createMessageObject(
+                                splunkd_utils.WARNING,
+                                _("Saving a scheduled report as a real-time report will remove the schedule.").t()
+                            )
+                        );
+                    }
+                }
+
+                if (messages.length) {
+                    this.error.set({
+                        messages: messages
+                    });
+                }
+            },
+            setAccelerationWarning: function(canSummarize, reportPristine) {
+                var isCurrentModeVerbose = this.entry.content.get('display.page.search.mode') === splunkd_utils.VERBOSE,
+                    messages = [];
+                if (!canSummarize){
+                    messages.push(
+                        splunkd_utils.createMessageObject(
+                            splunkd_utils.WARNING,
+                            _("This report cannot be accelerated. Acceleration will be disabled.").t()
+                        )
+                    );
+                    this.entry.content.set('auto_summarize', false);
+                }
+                else if (isCurrentModeVerbose && (_.isUndefined(reportPristine) || reportPristine.entry.content.get('display.page.search.mode') === splunkd_utils.VERBOSE)) {
+                    messages.push(
+                        splunkd_utils.createMessageObject(
+                            splunkd_utils.WARNING,
+                            _("A report running in verbose mode cannot be accelerated. Your search mode will be saved as Smart Mode.").t()
+                        )
+                    );
+                    this.entry.content.set('display.page.search.mode', splunkd_utils.SMART);
+                }
+                else if (isCurrentModeVerbose && !_.isUndefined(reportPristine)) {
+                    messages.push(
+                        splunkd_utils.createMessageObject(
+                            splunkd_utils.WARNING,
+                            _("A report running in verbose mode cannot be accelerated. Your search mode will not be saved.").t()
+                        )
+                    );
+                    this.entry.content.set('display.page.search.mode', reportPristine.entry.content.get('display.page.search.mode'));
+                }
+                if (messages.length) {
+                    this.trigger('serverValidated', false, this, messages);
+                    this.error.set({
+                        messages: messages
+                    });
+                }
+            },
+            setPivotWarning: function() {
+                var messages = [];
+                if (this.isPivotReport()) {
+                    messages.push(
+                        splunkd_utils.createMessageObject(
+                            splunkd_utils.WARNING,
+                            _("Saving from Search will prevent this report from opening in Pivot.").t()
+                        )
+                    );
+                    this.stripPivotAttributes();
+                }
+                if (messages.length) {
+                    this.trigger('serverValidated', false, this, messages);
+                    this.error.set({
+                        messages: messages
+                    });
+                }
+            },
+            setDisplayType: function(isTransforming, options) {
+                var type = this.entry.content.get('display.general.type') || 'statistics';
+                    
+                if (type === 'events') {
+                    if(isTransforming){
+                        type = 'statistics';
+                    }
+                } else if ((type === 'statistics') || (type === 'visualizations')) {
+                    if(!isTransforming){
+                        type = 'events';
+                    }
+                }
+                
+                this.entry.content.set({'display.general.type': type}, options);
+            },
+            contentEqualsFromBlacklist: function(otherReport, blackList) {
+                var thisContent = general_utils.deleteFromObjectByRegexes(this.entry.content.toJSON(), blackList),
+                    otherContent = general_utils.deleteFromObjectByRegexes(otherReport.entry.content.toJSON(), blackList);
+                
+                return _.isEqual(thisContent, otherContent);
+            },
+            canDelete: function() {
+                return this.entry.links.get("remove") ? true : false;
+            },
+            canWrite: function(canScheduleSearch, canRTSearch) {
+                return this.entry.acl.get('can_write') &&
+                        !(this.entry.content.get('is_scheduled') && !canScheduleSearch) &&
+                        !(this.isRealTime() && !canRTSearch);
+            },
+            canClone: function(canScheduleSearch, canRTSearch) {
+                return !(this.entry.content.get('is_scheduled') && !canScheduleSearch) &&
+                        !(this.isRealTime() && !canRTSearch);
+            },
+            getAlertTriggerConditionString: function() {
+                var type = this.entry.content.get('alert_type'),
+                    earliestTime = this.entry.content.get('dispatch.earliest_time'),
+                    latestTime = this.entry.content.get('dispatch.latest_time'),
+                    isRealtime = (earliestTime && time_utils.isRealtime(earliestTime)) || (latestTime && time_utils.isRealtime(latestTime)),
+                    threshold = this.entry.content.get('alert_threshold'),
+                    timeParse = time_utils.parseTimeString(earliestTime),
+                    alertCondition = this.entry.content.get('alert_condition'),
+                    isAllTimeRT = earliestTime === 'rt' ||latestTime === 'rt';
+                switch(type) {
+                    case 'always':
+                        if (isRealtime) {
+                            return _('Per-Result.').t();
+                        } else {
+                            return _('Number of Results is > 0.').t();
+                        }
+                    case 'number of events':
+                    case 'number of hosts':
+                    case 'number of sources':
+                        if (isAllTimeRT) {
+                            return _('Unsupported.').t();
+                        }
+                        var typeText = {
+                            'number of events': _("Results").t(),
+                            'number of hosts': _("Hosts").t(),
+                            'number of sources': _("Sources").t()
+                        };
+                        switch(this.entry.content.get('alert_comparator')){
+                            case 'greater than':
+                                if (isRealtime) {
+                                    switch(timeParse.unit) {
+                                        case 'm':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is > %(threshold)s in %(timeAmount)s minute.', 'Number of %(typetext)s is > %(threshold)s in %(timeAmount)s minutes.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                        case 'h':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is > %(threshold)s in %(timeAmount)s hour.', 'Number of %(typetext)s is > %(threshold)s in %(timeAmount)s hours.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                        case 'd':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is > %(threshold)s in %(timeAmount)s day.', 'Number of %(typetext)s is > %(threshold)s in %(timeAmount)s days.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                    }
+                                } else {
+                                    return splunkUtil.sprintf(_('Number of %(typetext)s is > %(threshold)s.').t(), {typetext: typeText[type], threshold:threshold});
+                                }
+                                break;
+                            case 'less than':
+                                if (isRealtime) {
+                                    switch(timeParse.unit) {
+                                        case 'm':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is < %(threshold)s in %(timeAmount)s minute.', 'Number of %(typetext)s is < %(threshold)s in %(timeAmount)s minutes.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                        case 'h':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is < %(threshold)s in %(timeAmount)s hour.', 'Number of %(typetext)s is < %(threshold)s in %(timeAmount)s hours.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                        case 'd':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is < %(threshold)s in %(timeAmount)s day.', 'Number of %(typetext)s is < %(threshold)s in %(timeAmount)s days.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                    }
+                                } else {
+                                    return splunkUtil.sprintf(_('Number of %(typetext)s is < %(threshold)s.').t(), {typetext: typeText[type], threshold:threshold});
+                                }
+                                break;
+                            case 'equal to':
+                                if (isRealtime) {
+                                    switch(timeParse.unit) {
+                                        case 'm':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is = %(threshold)s in %(timeAmount)s minute.', 'Number of %(typetext)s is = %(threshold)s in %(timeAmount)s minutes.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                        case 'h':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is = %(threshold)s in %(timeAmount)s hour.', 'Number of %(typetext)s is = %(threshold)s in %(timeAmount)s hours.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                        case 'd':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is = %(threshold)s in %(timeAmount)s day.', 'Number of %(typetext)s is = %(threshold)s in %(timeAmount)s days.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                    }
+                                } else {
+                                    return splunkUtil.sprintf(_('Number of %(typetext)s is = %(threshold)s.').t(), {typetext: typeText[type], threshold:threshold});
+                                }
+                                break;
+                            case 'not equal to':
+                                if (isRealtime) {
+                                    switch(timeParse.unit) {
+                                        case 'm':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is &#8800; %(threshold)s in %(timeAmount)s minute.', 'Number of %(typetext)s is &#8800; %(threshold)s in %(timeAmount)s minutes.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                        case 'h':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is &#8800; %(threshold)s in %(timeAmount)s hour.', 'Number of %(typetext)s is &#8800; %(threshold)s in %(timeAmount)s hours.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                        case 'd':
+                                            return splunkUtil.sprintf(i18n.ungettext('Number of %(typetext)s is &#8800; %(threshold)s in %(timeAmount)s day.', 'Number of %(typetext)s is &#8800; %(threshold)s in %(timeAmount)s days.', timeParse.amount), {typetext: typeText[type], threshold: threshold, timeAmount: timeParse.amount});
+                                    }
+                                } else {
+                                    return splunkUtil.sprintf(_('Number of %(typetext)s is &#8800; %(threshold)s.').t(), {typetext: typeText[type], threshold:threshold});
+                                }
+                                break;
+                            case 'drops by':
+                                // drops by is only supported for non-realtime saved searches
+                                return splunkUtil.sprintf(_('Number of %(typetext)s drops by %(threshold)s.').t(), {typetext: typeText[type], threshold:threshold});
+                                break;
+                            case 'rises by':
+                                // rises by is only supported for non-realtime saved searches
+                                return splunkUtil.sprintf(_('Number of %(typetext)s rises by %(threshold)s.').t(), {typetext: typeText[type], threshold:threshold});
+                                break;
+                        }
+                        break;
+                    case 'custom':
+                        if (isAllTimeRT) {
+                            return _('Unsupported.').t();
+                        }
+                        if (isRealtime) {
+                            switch(timeParse.unit) {
+                                case 'm':
+                                    return splunkUtil.sprintf(i18n.ungettext('Custom. "%(alertCondition)s" in %(timeAmount)s minute.', 'Custom. "%(alertCondition)s" in %(timeAmount)s minutes.', timeParse.amount), {alertCondition: alertCondition, timeAmount: timeParse.amount});
+                                case 'h':
+                                    return splunkUtil.sprintf(i18n.ungettext('Custom. "%(alertCondition)s" in %(timeAmount)s hour.', 'Custom. "%(alertCondition)s" in %(timeAmount)s hours.', timeParse.amount), {alertCondition: alertCondition, timeAmount: timeParse.amount});
+                                case 'd':
+                                    return splunkUtil.sprintf(i18n.ungettext('Custom. "%(alertCondition)s" in %(timeAmount)s day.', 'Custom. "%(alertCondition)s" in %(timeAmount)s days.', timeParse.amount), {alertCondition: alertCondition, timeAmount: timeParse.amount});
+                            }
+                        } else {
+                            return splunkUtil.sprintf(_('Custom. "%s".').t(), alertCondition);
+                        }
+                        break;
+                }
+            },
+            getStringOfActions: function() {
+                var actionArray = [];
+
+                if (this.entry.content.get("action.email") || this.entry.content.get("action.script")) {
+                    var actions = this.entry.content.get("actions");
+
+                    if (actions.search('email') != -1) {
+                        actionArray.push(_('Send Email').t());
+                    }
+                    if (actions.search('script') != -1) {
+                        actionArray.push(_('Run a Script').t());
+                    }
+                }
+
+                if (this.entry.content.get('alert.track')) {
+                    actionArray.push(_('List in Triggered Alerts').t());
+                }
+
+                return actionArray.join(_(', ').t());
+            },
+            routeToViewReport: function(root, locale, app, sid) {
+                var data = {s: this.id};
+                
+                if (this.isAlert()) {
+                    return route.alert(root, locale, app, {data: data});
+                }
+                if (sid) {
+                    data.sid = sid;
+                }
+                return route.report(root, locale, app, {data: data});
+            },
+            getNearestMaxlines: function() {
+                var maxLines = parseInt(this.entry.content.get('display.events.maxLines'), 10);
+                if (isNaN(maxLines)) {
+                    maxLines = 5;
+                }
+                return "" + math_utils.nearestMatchAndIndexInArray(maxLines, [5, 10, 20, 50, 100, 200, 0]).value;
+            },
+            getSortingSearch: function() {
+                var search,
+                    content = this.entry.content,
+                    offset = content.get('display.prefs.events.offset'),
+                    count = content.get('display.prefs.events.count'),
+                    sortColumn = content.get('display.events.table.sortColumn');
+                    
+                if (sortColumn && !_.isUndefined(offset) && !_.isUndefined(count)) {
+                    search = ('| sort ' + (parseInt(offset, 10) + parseInt(count, 10)) + ((content.get('display.events.table.sortDirection') === 'desc') ? ' - ': ' ') + sortColumn);
+                }
+                return search;
+            }
+        },
+        {
+            DOCUMENT_TYPES : {
+                ALERT: 'alert',
+                PIVOT_REPORT: 'pivot-report',
+                REPORT: 'report'
+            }
+        });
+        return ReportModel;
+    }
+);
+
+define('models/UIWorkflowAction',
+    [
+        'underscore',
+        'models/Base'
+    ],
+    function(_, BaseModel) {
+        return BaseModel.extend({
+            initialize: function() {
+                BaseModel.prototype.initialize.apply(this, arguments);
+            },
+
+            sync: function(method, model, options) {
+                throw 'unsupported method:' + method;
+            }
+        });
     }
 );

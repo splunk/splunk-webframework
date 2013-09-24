@@ -6,11 +6,17 @@ switched to standalone
 """
 
 import logging, sys, os, signal, time, errno
-from socket import gethostname
-from django.core.management.base import BaseCommand
-from wsgiserver import mediahandler
-import django.contrib.admin
 import json
+from socket import gethostname
+
+import django.contrib.admin
+from django.core.management.base import BaseCommand
+from django.core.handlers.wsgi import WSGIHandler
+from django.conf import settings
+
+from wsgiserver import mediahandler
+
+error_logger = logging.getLogger('spl.django.error')
 
 CPWSGI_HELP = r"""
   Run this project in CherryPy's production quality http webserver.
@@ -158,57 +164,8 @@ def stop_server(pidfile):
                 raise OSError, "Process %s did not stop."
         os.remove(pidfile)
 
-def start_server(options):
-    """
-    Start CherryPy server
-
-    Want SSL support?
-    a. The new (3.1 or 3.2) way: Just set server.ssl_adapter to an SSLAdapter instance.
-    b. The old way (deprecated way) is to set these attributes:
-
-       server.ssl_certificate = <filename>
-       server.ssl_private_key = <filename>
-
-       But this is the only way from the management command line
-       in the future I may need to adapt this to use a server.ssl_adapter
-
-    """
-    
-    if options['daemonize'] and options['server_user'] and options['server_group']:
-        #ensure the that the daemon runs as specified user
-        change_uid_gid(options['server_user'], options['server_group'])
-    
-    from wsgiserver.server import CherryPyWSGIServer 
-    #from cherrypy.wsgiserver import CherryPyWSGIServer
-    from django.core.handlers.wsgi import WSGIHandler
-    app = WSGIHandler()
-    if options['adminserve']: # serve the admin media too
-        # AdminMediaHandler is middleware for local use
-        import django.core.servers.basehttp
-        app = django.core.servers.basehttp.AdminMediaHandler(app)
-        
-    server = CherryPyWSGIServer(
-        (options['host'], int(options['port'])),
-        app,
-        int(options['threads']), 
-        options['server_name']
-    )
-    if options['ssl_certificate'] and options['ssl_private_key']:
-        server.ssl_certificate = options['ssl_certificate']
-        server.ssl_private_key = options['ssl_private_key']  
-    try:
-        server.start()
-    except KeyboardInterrupt:
-        server.stop()
-
-from django.core.handlers.wsgi import WSGIHandler
-from django.conf import settings
-from django.utils.log import getLogger
-
-logger = getLogger('django.request')
-
-class DebuggedWSGIHandler(WSGIHandler):
-    def handle_uncaught_exception(self, request, resolver, exc_info):
+class LoggingWSGIHandler(WSGIHandler):
+    def handle_uncaught_exception(self, request, resolver, exc_info, *args, **kwargs):
         """
         Processing for any otherwise uncaught exceptions (those that will
         generate HTTP 500 responses). Can be overridden by subclasses who want
@@ -218,22 +175,18 @@ class DebuggedWSGIHandler(WSGIHandler):
         caused by anything, so assuming something like the database is always
         available would be an error.
         """
-        from django.conf import settings
 
-        if settings.DEBUG_PROPAGATE_EXCEPTIONS:
-            raise
-
-        logger.error('Internal Server Error: %s', request.path,
+        # We delegate all behavior to our super class. We only use this override
+        # to add our own logging.
+        error_logger.error('Internal Server Error: %s', request.path,
             exc_info=exc_info,
             extra={
                 'status_code': 500,
                 'request': request
             }
         )
-
         
-        from django.views import debug
-        return debug.technical_500_response(request, *exc_info) 
+        return super(LoggingWSGIHandler, self).handle_uncaught_exception(request, resolver, exc_info, *args, **kwargs)            
 
 
 def start_server_servestatic(*args, **options):
@@ -254,7 +207,7 @@ def start_server_servestatic(*args, **options):
     """
     
     options['mount'] = '/' + settings.MOUNT
-    splunkdj_port = settings.SPLUNKDJ_CONFIG.get('splunkdj_port', 8080)
+    splunkdj_port = settings.DJANGO_PORT
     options['port'] = int(options.get('port', splunkdj_port))
 
     print 'starting server with options: %s' % json.dumps(options, sort_keys=True, indent=2)
@@ -264,23 +217,19 @@ def start_server_servestatic(*args, **options):
         change_uid_gid(options['server_user'], options['server_group'])
     
     from wsgiserver.server import CherryPyWSGIServer, WSGIPathInfoDispatcher
-    #from cherrypy.wsgiserver import CherryPyWSGIServer, WSGIPathInfoDispatcher
 
-    app = DebuggedWSGIHandler()
+    app = LoggingWSGIHandler()
     
     if options['adminserve']: # serve the admin media too
         # AdminMediaHandler is middleware for local use
         import django.core.servers.basehttp
         app = django.core.servers.basehttp.AdminMediaHandler(app)
     # another way to serve the admin media three application
-    path = { options['mount']: app,
-             settings.STATIC_URL: mediahandler.MediaHandler(settings.STATIC_ROOT),
-             #settings.ADMIN_MEDIA_PREFIX: mediahandler.MediaHandler(
-             #    os.path.join( django.contrib.admin.__path__[0],
-             #                  'media' )
-             #    )
-             }
-    dispatcher =  WSGIPathInfoDispatcher( path )
+    path = { 
+        options['mount']: app,
+        settings.STATIC_URL: mediahandler.MediaHandler(settings.STATIC_ROOT),
+    }
+    dispatcher =  WSGIPathInfoDispatcher(path)
         
     server = CherryPyWSGIServer(
         (options['host'], int(options['port'])),

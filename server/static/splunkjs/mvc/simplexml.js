@@ -12,30 +12,31 @@ define('util/xml_utils',['jquery', 'underscore'], function($, _) {
     }
 
     function stripEmptyTextNodes(n) {
-        var i, child, maxd = 5;
-
         //IE <9 does not have TEXT_NODE
-        var TEXT_NODE = n.TEXT_NODE || 3;
-
-        while(maxd--) {
-            for(i = 0; i < n.childNodes.length; i++) {
-                child = n.childNodes[i];
-                if(child !== undefined) {
-                    if(child.nodeType === TEXT_NODE) {
-                        if(/^\s*$/.test(child.nodeValue)) {
-                            n.removeChild(child);
-                        } else {
-                            child.nodeValue = $.trim(child.nodeValue);
-                        }
-                    } else if(child.nodeType === n.ELEMENT_NODE || child.nodeType === n.DOCUMENT_NODE) {
-                        stripEmptyTextNodes(child);
+        var TEXT_NODE = n.TEXT_NODE || 3,
+            i, child, childNodes = n.childNodes;
+        for(i = childNodes.length - 1; i >= 0 ; i--) {
+            child = childNodes[i];
+            if(child !== undefined) {
+                if(child.nodeType === TEXT_NODE) {
+                    if(/^\s*$/.test(child.nodeValue)) {
+                        n.removeChild(child);
+                    } else {
+                        child.nodeValue = $.trim(child.nodeValue);
                     }
                 }
             }
         }
+        childNodes = n.childNodes;
+        for(i = childNodes.length - 1; i >= 0 ; i--) {
+            child = childNodes[i];
+            if(child.nodeType === n.ELEMENT_NODE || child.nodeType === n.DOCUMENT_NODE) {
+                stripEmptyTextNodes(child);
+            }
+        }
     }
 
-    var INDENT = '\t';
+    var INDENT = '  ';
 
     function indentTxt(level) {
         var txt = ['\n'], x = level;
@@ -121,12 +122,7 @@ define('models/Dashboard',
                 this._dash = dashboard;
                 BaseModel.prototype.constructor.call(this);
             },
-            validation: {
-                label: {
-                    required: true,
-                    msg: _('No Title specified').t()
-                }
-            },
+            //validation: {},
             apply: function(){
                 this._dash._applyMetadata(this.toJSON());
             },
@@ -159,7 +155,7 @@ define('models/Dashboard',
             },
             initializeAssociated: function() {
                 ViewModel.prototype.initializeAssociated.apply(this, arguments);
-                var meta = this.meta = new DashboardMetadata(this);
+                var meta = this.meta = this.meta || new DashboardMetadata(this);
                 this.entry.content.on('change:eai:data', function(){
                     meta.fetch();
                 }, this);
@@ -184,10 +180,14 @@ define('models/Dashboard',
                 this.entry.content.set('eai:data', raw);
                 this.entry.content.set('eai:type', 'views');
             },
+            setHTML: function(raw) {
+                this.entry.content.set('eai:data', raw);
+                this.entry.content.set('eai:type', 'html');
+            },
             _extractMetadata: function() {
                 var isXML = this.isXML(), $xml = isXML ? this.get$XML() : null;
                 return {
-                    label: (isXML && $xml.find(':eq(0) > label').text()) || this.entry.get('name'),
+                    label: this.entry.content.get('label') || this.entry.get('name'),
                     description: (isXML && $xml.find(':eq(0) > description').text()) || ''
                 };
             },
@@ -393,7 +393,7 @@ define('models/Dashboard',
                     dashboard = xml.firstChild;
                     if (dashboard.nodeName !== 'dashboard' && dashboard.nodeName !== 'form'){
                         return {
-                            'eai:data': "You must declare a dashbaord node."
+                            'eai:data': "You must declare a dashboard node."
                         };
                     }
                 }
@@ -404,10 +404,26 @@ define('models/Dashboard',
     }
 );
 
-define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Dashboard','models/Application','util/router_utils','models/classicurl','backbone','jquery','underscore','../../mvc','util/xml_utils','../utils','util/pdf_utils','util/console','uri/route','../sharedmodels','splunk.jquery.csrf','models/services/AppLocal','models/services/authentication/User','util/splunkd_utils'],function(require) {
-    var splunkConfig = require('splunk.config');
+define('collections/Reports',
+    [
+        "models/Report",
+        "collections/services/SavedSearches"
+    ],
+    function(ReportModel, SavedSearchCollection) {
+        return SavedSearchCollection.extend({
+            model: ReportModel,
+            initialize: function() {
+                SavedSearchCollection.prototype.initialize.apply(this, arguments);
+            }
+        },
+        {
+            ALERT_SEARCH_STRING: '(is_scheduled=1 AND (alert_type!=always OR alert.track=1 OR (dispatch.earliest_time="rt*" AND dispatch.latest_time="rt*" AND actions="*" )))'
+        });
+    }
+);
+
+define('splunkjs/mvc/simplexml/controller',['require','models/Dashboard','util/router_utils','models/classicurl','backbone','jquery','underscore','../../mvc','util/xml_utils','../utils','util/pdf_utils','util/console','uri/route','../sharedmodels','util/splunkd_utils','splunk.util','../protections','collections/Reports','util/ajax_no_cache'],function(require) {
     var BaseDashboardModel = require('models/Dashboard');
-    var AppModel = require('models/Application');
     var routerUtils = require('util/router_utils');
     var classicurl = require('models/classicurl');
     var Backbone = require('backbone');
@@ -420,12 +436,20 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
     var console = require('util/console');
     var route = require('uri/route');
     var sharedModels = require('../sharedmodels');
-    require('splunk.jquery.csrf');
-    var AppLocalModel = require('models/services/AppLocal');
-    var UserModel = require('models/services/authentication/User');
     var splunkd_utils = require('util/splunkd_utils');
+    var SplunkUtil = require('splunk.util');
+    var protections = require('../protections');
+    var Reports = require('collections/Reports'); 
+    require('util/ajax_no_cache');
+
+    protections.enableCSRFProtection($);
+    protections.enableUnauthorizationRedirection($, SplunkUtil.make_url('account/login'), '/account/logout');
 
     var DashboardModel = BaseDashboardModel.extend({
+        initialize: function(){
+            BaseDashboardModel.prototype.initialize.apply(this, arguments);
+            this.entry.content.on('change:eai:data', this.updateItemOrder, this);
+        },
         /**
          *
          * @param options {
@@ -458,8 +482,8 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
 
                 _(panels).chain().flatten().each(function(id) {
                     var element = mvc.Components.get(id);
-                    var settings = element.model.mapToXML(_.extend({ tokens: false }, options));
-                    var newNode = xmlUtils.$node('<' + settings.type + '/>').attr('id', id);
+                    var settings = element.model.mapToXML(_.extend({ tokens: false, flatten: true }, options));
+                    var newNode = xmlUtils.$node('<' + settings.type + '/>');
 
                     if(settings.attributes !== undefined) {
                         newNode.attr(settings.attributes);
@@ -548,7 +572,10 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
             xmlUtils.stripEmptyTextNodes(cur);
 
             var newNode = xmlUtils.$node('<' + settings.type + '/>');
-            newNode.attr('id', id);
+
+            if ($(cur).attr('id')) {
+                newNode.attr('id', $(cur).attr('id'));
+            }
 
             console.log('children', cur.childNodes);
             while(cur.childNodes.length) {
@@ -557,11 +584,11 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
 
             if(options && options.clearOptions) {
                 newNode.find('option').remove();
+                delete settings.options; 
             }
 
             this._applyTitle(newNode, settings);
             this._applySearch(newNode, settings);
-            this._applyFields(newNode, settings);
             this._applyOptions(newNode, settings);
             this._applyTags(newNode, settings);
 
@@ -574,40 +601,18 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
             return this.save();
         },
         deleteElement: function(id) {
-            var $xml = this.get$XML();
-            var cur = $xml.find('#' + id);
-            if(!cur.length) {
-                var itemIndex = _(this._itemOrder).chain().flatten().indexOf(id).value();
-                console.error('Node with ID=%o not found. Search for item with index=%o', id, itemIndex);
-                if(itemIndex === -1) {
-                    throw new Error("Unable to find dashboard element with ID " + id);
-                }
-                cur = $xml.find('row').children()[ itemIndex ];
-                if(!cur) {
-                    throw new Error("Unable to find dashboard element with ID " + id);
-                } else {
-                    cur = $(cur);
-                }
-            }
-            var that = this;
-            _.each(this._itemOrder, function(row, rowIndex) {
-                _.each(row, function(panel, panelIndex) {
-                    var ind = _(panel).indexOf(id);
-                    if(ind > -1) {
-                        delete that._itemOrder[rowIndex][panelIndex];
-                    }
+            // Create new item order without the element which is to be deleted
+            var newOrder = _(this._itemOrder).map(function(row) {
+                return _(row).map(function(panel) {
+                    var idx = _(panel).indexOf(id);
+                    return idx > -1 ? panel.slice(0, idx).concat(panel.slice(idx + 1)) : _.clone(panel);
                 });
             });
-            var parentRow = cur.parents('row');
-            cur.remove();
-            if(parentRow.children().length === 0) {
-                parentRow.remove();
-            }
-            this.set$XML($xml);
-            return this.save();
+
+            return this.setItemOrder(newOrder);
         },
         addElement: function(id, settings) {
-            var row = xmlUtils.$node('<row/>'), newNode = xmlUtils.$node('<' + settings.type + '/>').attr('id', id);
+            var row = xmlUtils.$node('<row/>'), newNode = xmlUtils.$node('<' + settings.type + '/>');
             this._itemOrder.push([
                 [settings.id]
             ]);
@@ -643,9 +648,8 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
                         }
                     }
                 }
-                var timeInput = _.find(fieldset.find('input[type="time"]'), function(el){
-                    var token = $(el).find('token');
-                    return token.length === 0 || !$.trim(token.text);
+                var timeInput = _(fieldset.find('input[type="time"]')).find(function(el){
+                    return !$(el).attr('token');
                 });
                 if(haveTimeRangePicker) {
                     var defNode;
@@ -743,19 +747,10 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
                 titleNode.text(settings.title);
             }
         },
-        _applyFields: function(newNode, settings) {
-            var fieldsNode = newNode.find('fields');
-            if(settings.fields) {
-                if(!fieldsNode.length) {
-                    fieldsNode = xmlUtils.$node('<fields/>').prependTo(newNode);
-                }
-                fieldsNode.text(settings.fields);
-            }
-        },
         _applySearch: function(newNode, settings) {
             if(settings.search) {
                 // Clear current search info
-                newNode.find('searchString,searchTemplate,searchName,pivotSearch,earliestTime,latestTime').remove();
+                newNode.find('searchString,searchTemplate,searchName,searchPostProcess,pivotSearch,earliestTime,latestTime').remove();
                 var titleNode = newNode.find('title');
                 switch(settings.search.type) {
                     case 'inline':
@@ -770,6 +765,14 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
                         }
                         if(settings.search.earliest_time) {
                             xmlUtils.$node('<earliestTime/>').text(settings.search.earliest_time).insertAfter(searchNode);
+                        }
+                        break;
+                    case 'postprocess':
+                        var postSearchNode = xmlUtils.$node('<searchPostProcess/>').text(settings.search.search);
+                        if(titleNode.length) {
+                            postSearchNode.insertAfter(titleNode);
+                        } else {
+                            postSearchNode.prependTo(newNode);
                         }
                         break;
                     case 'saved':
@@ -787,7 +790,14 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
                 }
             }
         },
+        _clearEmptyItems: function(itemOrder){
+            return _(itemOrder).chain().map(function(row){
+                return _(row).filter(function(panel){ return panel.length > 0; });
+            }).filter(function(row){ return row.length > 0; }).value();
+        },
         captureItemOrder: function(itemOrder) {
+            itemOrder = this._clearEmptyItems(itemOrder);
+
             this._itemOrder = itemOrder;
             this._itemOrderMap = _.object(_.flatten(itemOrder), this.get$XML().find('row').children());
 
@@ -795,6 +805,11 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
 
             if(console.DEBUG_ENABLED) {
                 console.log('Captured dashboard item order: %o', JSON.stringify(this._itemOrder));
+            }
+        },
+        updateItemOrder: function(){
+            if (this._itemOrder && this.isXML()) {
+                this.captureItemOrder(this._itemOrder);
             }
         },
         validateItemOrder: function() {
@@ -806,6 +821,8 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
             });
         },
         setItemOrder: function(itemOrder) {
+            itemOrder = this._clearEmptyItems(itemOrder);
+            var dfd;
             if(!this._itemOrder) {
                 this.captureItemOrder(itemOrder);
             } else if(!_.isEqual(itemOrder, this._itemOrder)) {
@@ -820,7 +837,7 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
                     }
                     _.chain(r).flatten().each(function(el) {
                         var item = itemMap[el];
-                        $(item).attr('id', el).find('script').remove();
+                        $(item).find('script').remove();
                         row.append(item);
                     });
                     if(!row.children().length) {
@@ -830,13 +847,16 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
                     }
                     $xml.find('dashboard,form').append(row);
                 });
-                this.set$XML(xmlUtils.formatXMLDocument($xml));
-                console.log('Saving new item order', itemOrder, $xml[0]);
-                this.save();
                 this._itemOrder = itemOrder;
+                this.set$XML($xml);
+                console.log('Saving new item order', itemOrder, $xml[0]);
+                dfd = this.save();
             } else {
                 console.log('no changes');
+                dfd = $.Deferred();
+                dfd.resolve();
             }
+            return dfd;
         },
         isEditable: function() {
             return this.isDashboard() || this.isForm();
@@ -851,20 +871,28 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
         routes: {
             ':locale/app/:app/:page?*qs': 'view',
             ':locale/app/:app/:page': 'view',
+            ':locale/app/:app/:page/?*qs': 'view',
+            ':locale/app/:app/:page/': 'view',
             ':locale/app/:app/:page/edit?*qs': 'edit',
             ':locale/app/:app/:page/edit': 'edit',
             '*root/:locale/app/:app/:page?*qs': 'rootedView',
             '*root/:locale/app/:app/:page': 'rootedView',
+            '*root/:locale/app/:app/:page/?*qs': 'rootedView',
+            '*root/:locale/app/:app/:page/': 'rootedView',
             '*root/:locale/app/:app/:page/edit?*qs': 'rootedEdit',
             '*root/:locale/app/:app/:page/edit': 'rootedEdit',
             ':locale/manager/:app/:page?*qs': 'view',
             ':locale/manager/:app/:page': 'view',
+            ':locale/manager/:app/:page/?*qs': 'view',
+            ':locale/manager/:app/:page/': 'view',
             '*root/:locale/manager/:app/:page?*qs': 'rootedView',
             '*root/:locale/manager/:app/:page': 'rootedView',
-            'dj/:app/:page/': 'appfx',
-            'dj/:app/:page/?*qs': 'appfx',
-            '*root/dj/:app/:page/': 'rootedAppfx',
-            '*root/dj/:app/:page/?*qs': 'rootedAppfx'
+            '*root/:locale/manager/:app/:page/?*qs': 'rootedView',
+            '*root/:locale/manager/:app/:page/': 'rootedView',
+            'dj/:app/:page/': 'splunkdj',
+            'dj/:app/:page/?*qs': 'splunkdj',
+            '*root/dj/:app/:page/': 'rootedSplunkdj',
+            '*root/dj/:app/:page/?*qs': 'rootedSplunkdj'
         },
         view: function() {
             console.log('ROUTE: view');
@@ -893,13 +921,12 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
             });
             classicurl.fetch();
         },
-        appfx: function(app, page) {
-            this.app.set('appfx', true);
+        splunkdj: function(app, page) {
             this.page('en-US', app, page);
         },
-        rootedAppfx: function(root) {
+        rootedSplunkdj: function(root) {
             this.app.set('root', root);
-            this.appfx.apply(this, _.rest(arguments));
+            this.splunkdj.apply(this, _.rest(arguments));
         },
         updateUrl: function() {
             var parts = [ this.app.get('root') || '', this.app.get('locale'), 'app', this.app.get('app'), this.app.get('page') ];
@@ -964,25 +991,28 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
         isEditMode: function() {
             return this.model.get('edit') === true;
         },
-        getClassicUrlModel: _.once(function() {
-            // TODO: Remove usage of mvc.Global. (SPL-67733)
-            utils.syncModels(classicurl, mvc.Global).auto('push');
-            
-            return classicurl;
-        }),
-        getPersistentStore: function(type) {
-            switch(type) {
-                case 'uri':
-                    return this.getClassicUrlModel();
-                default:
-                    throw 'Unsupported persistent store ' + type;
-            }
-        },
         onReady: function(callback) {
             $.when(this.readyDfd, this._onViewModelLoadDfd).then(callback);
         },
         ready: function() {
             this.readyDfd.resolve();
+        },
+        isReady: function(){
+            return this.readyDfd.state() === "resolved";
+        },
+        fetchCollection: function() {
+            this.reportsCollection = new Reports();
+            this.reportsCollection.REPORTS_LIMIT = 150; 
+            var appModel = this.model.app;
+            var fetchParams = {
+                data: {
+                    count: this.reportsCollection.REPORTS_LIMIT, 
+                    app: appModel.get('app'), 
+                    owner: appModel.get('owner'), 
+                    search: 'is_visible="1"'
+                }
+            };
+            this.reportsCollection.initialFetchDfd = this.reportsCollection.fetch(fetchParams);
         }
     });
 
@@ -990,9 +1020,9 @@ define('splunkjs/mvc/simplexml/controller',['require','splunk.config','models/Da
     if(console.DEBUG_ENABLED) {
         window.Dashboard = instance;
     }
-    instance.getClassicUrlModel();
     return instance;
 });
+
 define('models/services/authorization/Role',
     [
          'models/SplunkDBase'
@@ -1014,6 +1044,81 @@ define('collections/services/authorization/Roles',
     ],
     function(Model, BaseCollection) {
         return BaseCollection.extend({
+            FREE_PAYLOAD: {
+                "links": {
+                    "create": "/services/authorization/roles/_new"
+                },
+                "generator": {
+                },
+                "entry": [
+                    {
+                        "name": "admin",
+                        "links": {
+                            "alternate": "/services/authorization/roles/admin",
+                            "list": "/services/authorization/roles/admin",
+                            "edit": "/services/authorization/roles/admin",
+                            "remove": "/services/authorization/roles/admin"
+                        },
+                        "author": "system",
+                        "acl": {
+                            "app": "",
+                            "can_list": true,
+                            "can_write": true,
+                            "modifiable": false,
+                            "owner": "system",
+                            "perms": {
+                                "read": [
+                                    "*"
+                                ],
+                                "write": [
+                                    "*"
+                                ]
+                            },
+                            "removable": false,
+                            "sharing": "system"
+                        },
+                        "content": {
+                            "capabilities": [],
+                            "cumulativeRTSrchJobsQuota": 400,
+                            "cumulativeSrchJobsQuota": 200,
+                            "defaultApp": "",
+                            "eai:acl": null,
+                            "imported_capabilities": [],
+                            "imported_roles": [],
+                            "imported_rtSrchJobsQuota": 20,
+                            "imported_srchDiskQuota": 500,
+                            "imported_srchFilter": "",
+                            "imported_srchIndexesAllowed": [
+                                "*"
+                            ],
+                            "imported_srchIndexesDefault": [
+                                "main"
+                            ],
+                            "imported_srchJobsQuota": 10,
+                            "imported_srchTimeWin": -1,
+                            "rtSrchJobsQuota": 100,
+                            "srchDiskQuota": 10000,
+                            "srchFilter": "*",
+                            "srchIndexesAllowed": [
+                                "*",
+                                "_*"
+                            ],
+                            "srchIndexesDefault": [
+                                "main",
+                                "os"
+                            ],
+                            "srchJobsQuota": 50,
+                            "srchTimeWin": 0
+                        }
+                    }
+                ],
+                "paging": {
+                    "total": 1,
+                    "perPage": 30,
+                    "offset": 0
+                },
+                "messages": []
+            },
             initialize: function() {
                 BaseCollection.prototype.initialize.apply(this, arguments);
             },
@@ -1023,428 +1128,8 @@ define('collections/services/authorization/Roles',
     }
 );
 
-define('views/shared/documentcontrols/dialogs/permissions_dialog/ACL',[
-    'underscore',
-    'jquery',
-    'backbone',
-    'module',
-    'views/Base',
-    'views/shared/controls/SyntheticCheckboxControl'
-    ],
-    function(
-        _,
-        $,
-        Backbone,
-        module,
-        BaseView,
-        SyntheticCheckboxControl
-    ) {
-    return BaseView.extend({
-        moduleId: module.id,
-        className: 'push-margins',
-        initialize: function() {
-            BaseView.prototype.initialize.apply(this, arguments);
-
-            this.children.read = new BaseView();
-            this.children.write = new BaseView();
-
-            //listeners
-            this.model.perms.on('change:Everyone.read', function() {
-                this.toggleEveryone('read');
-            }, this);
-            this.model.perms.on('change:Everyone.write', function() {
-                this.toggleEveryone('write');
-            }, this);
-        },
-        appendRow: function(roleName, className) {
-            this.$('tbody').append(
-                '<tr class="'+ roleName + '">\
-                    <td class="role-name">' + roleName + '</td>\
-                    <td class="perms-read ' + roleName + '-checkbox"></td>\
-                    <td class="perms-write ' + roleName + '-checkbox"></td>\
-                </tr>'
-            );
-            this.children.readCheckbox = new SyntheticCheckboxControl({
-                modelAttribute: roleName +'.read',
-                model: this.model.perms,
-                checkboxClassName: className + " " + roleName + " read btn"
-            });
-            this.children.writeCheckbox = new SyntheticCheckboxControl({
-                modelAttribute: roleName + '.write',
-                model: this.model.perms,
-                checkboxClassName: className + " " + roleName + " write btn"
-            });
-
-            this.$('td.perms-read.'+ roleName + '-checkbox').append(this.children.readCheckbox.render().el);
-            this.$('td.perms-write.'+ roleName + '-checkbox').append(this.children.writeCheckbox.render().el);
-
-            this.children.read.children[roleName ] = this.children.readCheckbox;
-            this.children.write.children[roleName] = this.children.writeCheckbox;
-        },
-        toggleEveryone: function(col) {
-            var everyoneChecked = this.model.perms.get('Everyone.' + col),
-                view = this.children[col];
-            _.each(view.children, function(checkbox, role) {
-                if (role !== 'Everyone') {
-                    if (everyoneChecked) {
-                        checkbox.disable();
-                    } else {
-                        checkbox.enable();
-                    }
-                }
-            });
-        },
-        render: function() {
-            this.$el.html(this.compiledTemplate({
-                _: _
-            }));
-
-            this.appendRow(_("Everyone").t());
-
-            this.collection.each(function(roleModel) {
-                this.appendRow(roleModel.entry.get("name"), 'role');
-            }.bind(this));
-
-            this.toggleEveryone('read');
-            this.toggleEveryone('write');
-
-            return this;
-        },
-        template: '\
-            <table class="table table-striped table-condensed table-scroll table-border-row">\
-                <thead>\
-                    <tr>\
-                        <td></td>\
-                        <th><%- _("Read").t() %></th>\
-                        <th><%- _("Write").t() %></th>\
-                    </tr>\
-                </thead>\
-                <tbody>\
-                </tbody>\
-            </table>\
-        '
-    });
-});
-
-define('views/shared/documentcontrols/dialogs/permissions_dialog/Master',[
-    'jquery',
-    'underscore',
-    'backbone',
-    'module',
-    'models/ACLReadOnly',
-    'views/shared/Modal',
-    'views/shared/controls/ControlGroup',
-    'views/shared/documentcontrols/dialogs/permissions_dialog/ACL',
-    'views/shared/FlashMessages',
-    'util/splunkd_utils'
-    ],
-    function(
-        $,
-        _,
-        Backbone,
-        module,
-        ACLReadOnlyModel,
-        Modal,
-        ControlGroup,
-        ACL,
-        FlashMessage,
-        splunkd_utils
-    ) {
-    return Modal.extend({
-        moduleId: module.id,
-        /**
-        * @param {Object} options {
-        *       model: { document: <models.Report>, nameModel: <model> Model for name } OR <models.Report>
-        *       collection: <collections.services.authorization.Roles>,
-        *       nameLabel: <string> Label for name,
-        *       nameKey: <string> Key for name found in nameModel,  
-        * }
-        */
-        initialize: function(options) {
-            Modal.prototype.initialize.apply(this, arguments);
-
-            //If this.model is not a dictionary with keys 'document' and 'nameModel', then make it one  
-            if(!this.model.document){
-                this.model = {                   
-                    document: this.model,
-                    nameModel: this.model.entry
-                };
-            }
-
-            this.model.perms = new Backbone.Model();
-            this.model.inmem = new ACLReadOnlyModel($.extend(true, {}, this.model.document.entry.acl.toJSON())); 
-
-            var defaults = {
-                nameLabel: _('Name').t(), 
-                nameKey: 'name'
-            };
-
-            _.defaults(this.options, defaults);
-
-            this.translateToPermsModel();
-            this.children.flashMessage = new FlashMessage({
-                model: {
-                    inmem: this.model.inmem,
-                    report: this.model.document,
-                    reportAcl: this.model.document.acl
-                }
-            });
-
-            this.children.name = new ControlGroup({
-                controlType: 'Label',
-                controlOptions: {
-                    modelAttribute: this.options.nameKey,
-                    model: this.model.nameModel
-                },
-                label: this.options.nameLabel
-            });
-
-            this.children.owner = new ControlGroup({
-                controlType: 'Label',
-                controlOptions: {
-                    modelAttribute: 'owner',
-                    model: this.model.inmem
-                },
-                label: _('Owner').t()
-            });
-
-            this.children.app = new ControlGroup({
-                controlType: 'Label',
-                controlOptions: {
-                    modelAttribute: 'app',
-                    model: this.model.inmem
-                },
-                label: _('App').t()
-            });
-
-            this.children.display_for = new ControlGroup({
-                controlType: 'SyntheticRadio',
-                controlClass: 'controls-thirdblock',
-                controlOptions: {
-                    modelAttribute: 'sharing',
-                    model: this.model.inmem,
-                    items: [
-                        {
-                            label: _('Owner').t(),
-                            value: splunkd_utils.USER,
-                            className: 'user'
-                        },
-                        {
-                            label: _('App').t(),
-                            value: splunkd_utils.APP,
-                            className: 'app'
-                        },
-                        {
-                            label: _('All Apps').t(),
-                            value: splunkd_utils.GLOBAL,
-                            className: 'global'
-                        }
-                    ],
-                    save: false
-                },
-                label: _('Display For').t()
-            });
-
-            this.children.acl = new ACL({
-                model : {
-                    perms: this.model.perms
-                },
-                collection: this.collection
-            });
-
-            this.model.inmem.on('change:sharing', function() {
-                if (this.model.inmem.get("sharing") === splunkd_utils.USER) {
-                    this.children.acl.$el.hide();
-                } else {
-                    this.children.acl.$el.show();
-                }
-            }, this);
-        },
-        events: $.extend({}, Modal.prototype.events, {
-            'click .btn-primary': function(e) {
-                this.translateFromPermsModel();
-                var data = this.model.inmem.toDataPayload();
-                this.model.document.acl.save({}, {
-                    data: data,
-                    success: function(model, response){
-                        this.hide();
-                        this.model.document.fetch({
-                            url: splunkd_utils.fullpath(
-                                this.model.document.url + '/' + this.model.document.entry.get('name'),
-                                {
-                                    sharing: data.sharing,
-                                    app: this.model.inmem.get('app'),
-                                    owner: data.owner
-                                }
-                            ),
-                            success: function() {
-                                this.model.document.trigger('updateCollection');
-                            }.bind(this)
-                        });
-                    }.bind(this)
-                });
-
-                e.preventDefault();
-            }
-        }),
-        translateToPermsModel: function() {
-            var perms = this.model.inmem.get('perms') || {};
-
-            this.model.perms.set('Everyone.read', _.indexOf(perms.read, '*')!=-1);
-            this.model.perms.set('Everyone.write', _.indexOf(perms.write, '*')!=-1);
-            this.collection.each(function(roleModel){
-                var roleName = roleModel.entry.get("name");
-                this.model.perms.set(roleName + '.read', _.indexOf(perms.read, roleName)!=-1);
-                this.model.perms.set(roleName + '.write', _.indexOf(perms.write, roleName)!=-1);
-            }.bind(this));
-        },
-        translateFromPermsModel: function() {
-            var perms = {
-                read: [],
-                write: []
-            };
-
-            if (this.model.perms.get('Everyone.read')) {
-                perms.read.push('*');
-            }
-            if (this.model.perms.get('Everyone.write')) {
-                perms.write.push('*');
-            }
-
-            this.collection.each(function(roleModel){
-                var role = roleModel.entry.get("name");
-                if (this.model.perms.get(role +'.read')) {
-                    perms.read.push(role);
-                }
-                if (this.model.perms.get(role +'.write')) {
-                    perms.write.push(role);
-                }
-            }.bind(this));
-
-            this.model.inmem.set('perms', perms);
-
-        },
-        setView: function() {
-            if (!this.model.inmem.get("can_share_user")) {
-                this.children.display_for.$('.user').attr('disabled', true);
-            }
-            if (!this.model.inmem.get("can_share_app")) {
-                this.children.display_for.$('.app').attr('disabled', true);
-            }
-            if (!this.model.inmem.get("can_share_global")) {
-                this.children.display_for.$('.global').attr('disabled', true);
-            }
-            if(!this.model.inmem.get("modifiable")) {
-                this.children.display_for.$('.btn').attr('disabled', true);
-            }
-            if (this.model.inmem.get("sharing") ==='user'){
-                this.children.acl.$el.hide();
-            } else {
-                this.children.acl.$el.show();
-            }
-        },
-        render: function() {
-            this.$el.html(Modal.TEMPLATE);
-
-            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Permissions").t());
-            this.$(Modal.BODY_SELECTOR).addClass('modal-body-scrolling');
-
-            this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessage.render().el);
-
-            this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
-
-            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.name.render().el);
-            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.owner.render().el);
-            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.app.render().el);
-            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.display_for.render().el);
-            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.acl.render().el);
-
-            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
-            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
-
-            this.setView();
-
-            return this;
-        }
-    });
-});
-
-define('splunkjs/mvc/simplexml/dialog/dashboardtitle',[
-    'underscore',
-    'backbone',
-    'module',
-    'views/shared/Modal',
-    'views/shared/controls/ControlGroup',
-    'views/shared/FlashMessages'
-    ],
-    function(
-        _,
-        Backbone,
-        module,
-        Modal,
-        ControlGroup,
-        FlashMessage
-    ) {
-    return Modal.extend({
-        moduleId: module.id,
-        /**
-        * @param {Object} options {
-        *       model: <models.Report>
-        * }
-        */
-        initialize: function(options) {
-            Modal.prototype.initialize.apply(this, arguments);
-
-            this.children.flashMessage = new FlashMessage({ model: this.model });
-
-            this.children.titleField = new ControlGroup({
-                controlType: 'Text',
-                controlOptions: {
-                    modelAttribute: 'label',
-                    model: this.model
-                },
-                label: _("Title").t()
-            });
-
-            this.children.descriptionField = new ControlGroup({
-                controlType: 'Textarea',
-                controlOptions: {
-                    modelAttribute: 'description',
-                    model: this.model
-                },
-                label: _("Description").t()
-            });
-
-        },
-        events: $.extend({}, Modal.prototype.events, {
-            'click .btn-primary': function(e) {
-                this.hide();
-                e.preventDefault();
-            }
-        }),
-        render : function() {
-            this.$el.html(Modal.TEMPLATE);
-
-            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Title or Description").t());
-
-            this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessage.render().el);
-
-            this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
-
-            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.titleField.render().el);
-            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.descriptionField.render().el);
-
-            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
-            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
-
-            return this;
-        }
-    });
-});
-
-define('splunkjs/mvc/simplexml/mapper',['require','underscore','../mvc','../savedsearchmanager','backbone','util/console'],function(require){
+define('splunkjs/mvc/simplexml/mapper',['require','underscore','../mvc','backbone','util/console'],function(require){
     var _ = require('underscore'), mvc = require('../mvc'),
-            SavedSearch = require('../savedsearchmanager'),
             Backbone = require('backbone'),
             console = require('util/console');
 
@@ -1454,37 +1139,46 @@ define('splunkjs/mvc/simplexml/mapper',['require','underscore','../mvc','../save
         map: function() {
             // tbd in concrete implementation
         },
-        getSearch: function(id, options) {
-            var manager = mvc.Components.get(id),
-                result;
-            if(manager instanceof SavedSearch) {
+        getSearch: function(report, options) {
+            var result; 
+            if(report.entry.get('name')){
+                console.log('Mapping Saved Search'); 
                 result = {
                     type: 'saved',
-                    name: manager.get('searchname', options)
+                    name: report.entry.get('name', options)
                 };
-            } else {
-                var searchString = options.tokens !== false ? manager.query.get('search', options) : manager.query.resolve();
+            }else{
+                console.log('Mapping Inline Search'); 
                 result = {
-                    type: 'inline',
-                    search: searchString,
-                    earliest_time: manager.search.get('earliest_time'),
-                    latest_time: manager.search.get('latest_time')
+                    type: report.entry.content.get('display.general.search.type') || 'inline',
+                    search: report.entry.content.get('search', options), 
+                    earliest_time: report.entry.content.get('dispatch.earliest_time', options), 
+                    latest_time: report.entry.content.get('dispatch.latest_time', options)
                 };
+
+                // When sending flattened XML to pdfgen, swap out postProcess with a full inline search
+                if (options.flatten && result.type === 'postprocess') {
+                    result.type = 'inline';
+                    result.search = report.entry.content.get('fullSearch', options);
+                }
             }
-            return result;
+            return result; 
         },
         toXML: function(report, options) {
             options = options || { tokens: true };
             var result = {
                 type: this.tagName,
-                title: report.get('display.general.title', options),
-                search: this.getSearch(report.get('display.general.manager', options), options),
-                options: {}
+                title: report.entry.content.get('display.general.title', options),
+                search: this.getSearch(report, options),
+                options: {},
+                tags: {}
             };
-            this.map(report, result, options);
+            this.map(report.entry.content, result, options);
             if (result.options.fields){
-                result.fields = result.options.fields;
-                delete result.options['fields'];
+                if(!result.tags.fields) {
+                    result.tags.fields = result.options.fields;
+                }
+                result.options['fields'] = null;
             }
             return result;
         }
@@ -1524,7 +1218,7 @@ define('models/DashboardReport',['require','jquery','underscore','models/Report'
         saveXML: function(options) {
             var id = this.entry.content.get('display.general.id');
             console.log('[%o] Saving Panel Element XML...', id);
-            return Dashboard.model.view.updateElement(id, this.mapToXML(), options);
+            return Dashboard.model.view.updateElement(id, this.mapToXML(), options); 
         },
         mapToXML: function(options) {
             var type = this.entry.content.get('display.general.type'), sub = ['display', type, 'type'].join('.');
@@ -1534,13 +1228,10 @@ define('models/DashboardReport',['require','jquery','underscore','models/Report'
             console.log('Looking up mapper for type ', type);
             var mapper = Mapper.get(type);
             console.log('Found mapper', mapper);
-            return mapper.toXML(this.entry.content, options);
+            return mapper.toXML(this, options);
         },
         deleteXML: function() {
-            var deleted = Dashboard.model.view.deleteElement(this.entry.content.get('display.general.id'));
-            if (deleted){
-                this.trigger("removedPanel");
-            }
+            return Dashboard.model.view.deleteElement(this.entry.content.get('display.general.id'));
         },
         defaults: {
             'display.visualizations.charting.axisY.scale': 'linear',
@@ -1559,7 +1250,9 @@ define('models/DashboardReport',['require','jquery','underscore','models/Report'
             'display.visualizations.charting.chart.nullValueMode': 'zero',
             'display.visualizations.charting.chart.rangeValues': '["0","30","70","100"]',
             'display.visualizations.charting.chart.style': 'shiny',
-            'display.visualizations.charting.gaugeColors': '["84E900", "FFE800", "BF3030"]'
+            'display.visualizations.charting.gaugeColors': [0x84E900,0xFFE800,0xBF3030],
+            'display.prefs.events.count': '10',
+            'display.prefs.statistics.count': '10'
         },
         validation: {
             'display.visualizations.charting.axisX.minimumNumber': [
@@ -1629,6 +1322,18 @@ define('models/DashboardReport',['require','jquery','underscore','models/Report'
             'display.visualizations.charting.chart.rangeValues': {
                 fn: 'validateRangeValues',
                 required: false
+            },
+            'display.prefs.events.count': {
+                pattern: 'number',
+                min: 1,
+                msg: _('Rows Per Page must be a positive number.').t(),
+                required: false
+            },
+            'display.prefs.statistics.count': {
+                pattern: 'number',
+                min: 1,
+                msg: _('Rows Per Page must be a positive number.').t(),
+                required: false
             }
         },
 
@@ -1687,13 +1392,17 @@ define('models/DashboardReport',['require','jquery','underscore','models/Report'
         gaugeColorsToArray: function() {
             return this.attrToArray('display.visualizations.charting.gaugeColors');
         }
+    },{
+        Entry: Report.Entry.extend({},{
+            Content: TokenAwareModel.extend({ applyTokensByDefault: true })
+        })
     });
 
-    DashboardReport.Entry.Content = TokenAwareModel.extend({ applyTokensByDefault: true });
 
     return DashboardReport;
 
 });
+
 define('util/moment/compactFromNow',['util/moment'], function(moment) {
     var round = Math.round;
     function formatCompactRelativeTime(milliseconds, withoutSuffix, lang) {
@@ -1776,8 +1485,17 @@ define('splunkjs/mvc/refreshtimeindicatorview',['require','exports','module','./
         moduleId: module.id,
         
         className: 'splunk-timeindicator',
+        configure: function() {
+            // Silently rewrite the deprecated 'manager' setting if present
+            if (this.options.manager) {
+                this.options.managerid = this.options.manager;
+            }
+            
+            BaseSplunkView.prototype.configure.apply(this, arguments);
+        },
         initialize: function() {
-            this.bindToComponent(this.options.manager, this.onManagerChange, this);
+            this.configure();
+            this.bindToComponentSetting('managerid', this.onManagerChange, this);
             this.timer = _.uniqueId('timer_');
         },
         onManagerChange: function(managers, manager) {
@@ -1847,7 +1565,7 @@ define('splunkjs/mvc/refreshtimeindicatorview',['require','exports','module','./
     return RefreshTimeIndicatorView;
 });
 
-define('splunkjs/mvc/resultslinkview',['require','exports','module','jquery','underscore','splunk.util','splunk.window','models/Job','uri/route','views/shared/jobstatus/buttons/ExportResultsDialog','./basesplunkview','./mvc','./utils','./sharedmodels'],function(require, exports, module) {
+define('splunkjs/mvc/resultslinkview',['require','exports','module','jquery','underscore','splunk.util','splunk.window','models/Job','uri/route','views/shared/jobstatus/buttons/ExportResultsDialog','./basesplunkview','./mvc','./savedsearchmanager','./utils','./sharedmodels','splunk.util','./postprocessmanager'],function(require, exports, module) {
 
     var $ = require("jquery");
     var _ = require("underscore");
@@ -1858,8 +1576,11 @@ define('splunkjs/mvc/resultslinkview',['require','exports','module','jquery','un
     var ExportResultsDialog = require("views/shared/jobstatus/buttons/ExportResultsDialog");
     var BaseSplunkView = require("./basesplunkview");
     var mvc = require("./mvc");
+    var SavedSearchManager = require("./savedsearchmanager");
     var Utils = require("./utils");
     var sharedModels = require('./sharedmodels');
+    var util = require('splunk.util');
+    var PostProcessSearchManager = require('./postprocessmanager');
 
     /**
      * "View results" link for dashboard panels
@@ -1874,10 +1595,20 @@ define('splunkjs/mvc/resultslinkview',['require','exports','module','jquery','un
      *  - link.exportResults.visible: whether the exportResults button is visible (defaults to link.visible)
      *  - link.inspectSearch.visible: whether the inspectSearch button is visible (defaults to link.visible)
      */
-    return BaseSplunkView.extend({
-        moduleId: module.id, 
+    var ResultsLinkView = BaseSplunkView.extend({
+        moduleId: module.id,
+        configure: function() {
+            // Silently rewrite the deprecated 'manager' setting if present
+            if (this.options.manager) {
+                this.options.managerid = this.options.manager;
+            }
+            
+            BaseSplunkView.prototype.configure.apply(this, arguments);
+        },
         initialize: function() {
-            this.bindToComponent(this.options.manager, this.onManagerChange, this);
+            this.configure();
+            
+            this.bindToComponentSetting('managerid', this.onManagerChange, this);
 
             this.searchJobModel = new SearchJobModel();
             this.applicationModel = sharedModels.get("app");
@@ -1896,16 +1627,18 @@ define('splunkjs/mvc/resultslinkview',['require','exports','module','jquery','un
             }
 
             this.manager = manager;
-            this.manager.on("search:start", this.onSearchStart, this);
+            this.listenTo(manager, "search:start", this.onSearchStart);
+            this.listenTo(manager, "search:done", this.onSearchDone);
 
             if (this.manager.job) {
                 this.onSearchStart(this.manager.job);
             }
+            
+            this.manager.replayLastSearchEvent(this);
         },
 
         onSearchStart: function(jobInfo) {
             this.searchJobModel.set("id", jobInfo.sid);
-            this.searchJobModel.fetch();
 
             if (this.$pivotButton) {
                 this.$pivotButton.off("click").on("click", this.openPivot.bind(this)).show(); 
@@ -1914,10 +1647,40 @@ define('splunkjs/mvc/resultslinkview',['require','exports','module','jquery','un
                 this.$searchButton.off("click").on("click", this.openSearch.bind(this)).show();
             }
             if (this.$exportButton) {
-                this.$exportButton.off("click").on("click", this.exportResults.bind(this)).show();
+                if (this.manager instanceof PostProcessSearchManager) {
+                    // Disable Export for post process
+                    this.$exportButton.tooltip("destroy");
+                    this.$exportButton.attr("title", _("Export - You cannot export results for post-process jobs.").t());
+                    this.$exportButton.tooltip({ animation: false, container: "body" });
+                    this.$exportButton.addClass("disabled");
+                    this.$exportButton.off("click").on("click", function(e) { e.preventDefault(); }).show();
+                } else {
+                    this.$exportButton.addClass("disabled");
+                    this.$exportButton.off("click").on("click", function(e) { e.preventDefault(); }).show();
+                }
             }
             if (this.$inspectButton) {
                 this.$inspectButton.off("click").on("click", this.inspectSearch.bind(this)).show();
+            }
+        },
+
+        onSearchDone: function(properties) {
+            this.searchJobModel.setFromSplunkD({ entry: [this.manager.job.state()] }); 
+            if (this.$exportButton) {
+                    if (this.manager instanceof PostProcessSearchManager) {
+                        // Disable Export for post process
+                        this.$exportButton.tooltip("destroy");
+                        this.$exportButton.attr("title", _("Export - You cannot export results for post-process jobs.").t());
+                        this.$exportButton.tooltip({ animation: false, container: "body" });
+                        this.$exportButton.addClass("disabled");
+                        this.$exportButton.off("click").on("click", function(e) { e.preventDefault(); }).show();
+                    } else {
+                        this.$exportButton.tooltip("destroy");
+                        this.$exportButton.attr("title", _("Export").t());
+                        this.$exportButton.tooltip({ animation: false, container: "body" });
+                        this.$exportButton.removeClass("disabled");
+                        this.$exportButton.off("click").on("click", this.exportResults.bind(this)).show();
+                    }
             }
         },
 
@@ -1936,19 +1699,34 @@ define('splunkjs/mvc/resultslinkview',['require','exports','module','jquery','un
                 params = {
                     q: options["link.openSearch.search"]
                 };
-                earliest = options["link.openSearch.searchEarliestTime"] || manager.search.get("earliest_time");
+                earliest = options["link.openSearch.searchEarliestTime"];
+                if (!earliest && manager.job.properties().earliestTime){
+                    earliest = util.getEpochTimeFromISO(manager.job.properties().earliestTime);
+                }
+                else {
+                    earliest = manager.search.get("earliest_time");
+                }
                 if (earliest != null) {
                     params.earliest = earliest;
                 }
-                latest = options["link.openSearch.searchLatestTime"] || manager.search.get("latest_time");
+                latest = options["link.openSearch.searchLatestTime"];
+                if (!latest && manager.job.properties().latestTime){
+                    latest = util.getEpochTimeFromISO(manager.job.properties().latestTime);
+                }
+                else {
+                    latest = manager.search.get("latest_time");
+                }
                 if (latest != null) {
                     params.latest = latest;
                 }
             } else if (!options["link.openSearch.viewTarget"]) {
                 params = {
                     sid: this.searchJobModel.get("id"),
-                    q: manager.query.get("search")
+                    q: manager.query.resolve()
                 };
+                if (manager instanceof SavedSearchManager){
+                    params['s'] = manager.get('searchname');
+                }
                 earliest = manager.search.get("earliest_time");
                 if (earliest != null) {
                     params.earliest = earliest;
@@ -1977,8 +1755,10 @@ define('splunkjs/mvc/resultslinkview',['require','exports','module','jquery','un
             var exportDialog = new ExportResultsDialog({
                 model: {
                     searchJob: this.searchJobModel,
-                    application: this.applicationModel
-                }
+                    application: this.applicationModel, 
+                    report: this.model
+                }, 
+                usePanelType: true
             });
 
             exportDialog.render().appendTo($("body"));
@@ -2089,7 +1869,7 @@ define('splunkjs/mvc/resultslinkview',['require','exports','module','jquery','un
             <a href="#search" class="search-button btn-pill" title="<%- options[\'link.openSearch.text\'] || _(\'Open in Search\').t() %>">\
                 <i class="icon-search"></i>\
                 <span class="hide-text"><%- options[\'link.openSearch.text\'] || _("Open in Search").t() %></span>\
-            </a><a href="#export" class="export-button btn-pill" title="<%- _(\'Export\').t() %>">\
+            </a><a href="#export" class="export-button btn-pill" title="<%- _(\'Export - You can only export results for completed jobs.\').t() %>">\
                 <i class="icon-export"></i>\
                 <span class="hide-text"><%- _("Export").t() %></span>\
             </a><a href="#inspect" class="inspect-button btn-pill" title="<%- _(\'Inspect\').t() %>">\
@@ -2111,7 +1891,8 @@ define('splunkjs/mvc/resultslinkview',['require','exports','module','jquery','un
             </a>\
         '
     });
-
+    
+    return ResultsLinkView;
 });
 
 /**
@@ -2147,11 +1928,11 @@ define('splunkjs/mvc/resultslinkview',['require','exports','module','jquery','un
                 items: [
                     {
                         label: _("Yes").t(),
-                        value: '1'
+                        value: 'all'
                     },
                     {
                         label: _("No").t(),
-                        value: '0'
+                        value: 'none'
                     }
                 ],
                 save: false,
@@ -2191,6 +1972,7 @@ define('views/shared/vizcontrols/custom_controls/DrilldownRadioGroup',[
     });
 
 });
+
 define('views/shared/vizcontrols/custom_controls/StackModeControlGroup',[
             'underscore',
             'module',
@@ -2231,6 +2013,7 @@ define('views/shared/vizcontrols/custom_controls/StackModeControlGroup',[
             this.options.controlOptions = {
                 modelAttribute: 'display.visualizations.charting.chart.stackMode',
                 model: this.model,
+                className: 'btn-group',
                 items: items
             };
             ControlGroup.prototype.initialize.call(this, this.options);
@@ -2262,6 +2045,7 @@ define('views/shared/vizcontrols/custom_controls/NullValueModeControlGroup',[
             this.options.controlOptions = {
                 modelAttribute: 'display.visualizations.charting.chart.nullValueMode',
                 model: this.model,
+                className: 'btn-group',
                 items: [
                     {
                         value: 'gaps',
@@ -2419,6 +2203,52 @@ define('views/shared/vizcontrols/custom_controls/SingleValueUnderLabelControlGro
 
 });
 
+/**
+ * @author sfishel
+ *
+ * A custom sub-class of SyntheticRadio for toggling drilldown for a chart
+ *
+ * Manages the fact that enabling/disabling drilldown actually affects two charting attributes
+ */
+
+ define('views/shared/vizcontrols/custom_controls/MultiSeriesRadio',[
+            'underscore',
+            'jquery',
+            'module',
+            'views/shared/controls/ControlGroup',
+            'splunk.util'
+        ],
+        function(
+            _,
+            $,
+            module,
+            ControlGroup,
+            splunkUtils
+        ) {
+
+    return ControlGroup.extend({
+        moduleId: module.id,
+        initialize: function() {
+            this.options.label = _("Multi-series Mode").t();
+            this.options.controlType = 'SyntheticRadio';
+            this.options.controlClass = 'controls-halfblock';
+            this.options.controlOptions = {
+                modelAttribute: 'display.visualizations.charting.layout.splitSeries',
+                model: this.model,
+                items: [
+                    { label: _('Yes').t(), value: '1' },
+                    { label: _('No').t(), value: '0' }
+                ],
+                save: false,
+                elastic: true
+            };
+            ControlGroup.prototype.initialize.call(this, this.options);
+        }
+
+    });
+
+});
+
 define('views/shared/vizcontrols/components/Statistics',
     [
         'underscore',
@@ -2430,29 +2260,32 @@ define('views/shared/vizcontrols/components/Statistics',
     function(_, module, Base, ControlGroup, SyntheticSelectControl) {
         return Base.extend({
             moduleId: module.id,
+            // className: 'form-justified',
             initialize: function() {
                 Base.prototype.initialize.apply(this, arguments);
                 //child views
                 this.children.drillDown = new ControlGroup({
                     label: _("Drilldown").t(),
                     controlType:'SyntheticRadio',
+                    controlClass: 'controls-thirdblock',
                     controlOptions: {
-                        className: "btn-group btn-group-3",
+                        className: "btn-group",
                         items: [
                             {value:"row", label:_("Row").t()},
                             {value:"cell", label:_("Cell").t()},
-                            {value:"off", label:_("Off").t()}
+                            {value:"none", label:_("None").t()}
                         ],
                         model: this.model,
                         modelAttribute: 'display.statistics.drilldown'
                     }
                 });
-                
+
                 this.children.rowNumbers = new ControlGroup({
                     label: _("Row Numbers").t(),
                     controlType:'SyntheticRadio',
+                    controlClass: 'controls-halfblock',
                     controlOptions: {
-                        className: "btn-group btn-group-2",
+                        className: "btn-group",
                         items: [
                             {value:"1", label:_("Yes").t()},
                             {value:"0", label:_("No").t()}
@@ -2465,8 +2298,9 @@ define('views/shared/vizcontrols/components/Statistics',
                 this.children.wrapResults = new ControlGroup({
                     label: _("Wrap Results").t(),
                     controlType:'SyntheticRadio',
+                    controlClass: 'controls-halfblock',
                     controlOptions: {
-                        className: "btn-group btn-group-2",
+                        className: "btn-group",
                         items: [
                             {value:"1", label:_("Yes").t()},
                             {value:"0", label:_("No").t()}
@@ -2479,6 +2313,7 @@ define('views/shared/vizcontrols/components/Statistics',
                 this.children.dataOverlay = new ControlGroup({
                     label: _("Data Overlay").t(),
                     controlType:'SyntheticSelect',
+                    controlClass: 'controls-block',
                     controlOptions: {
                         model: this.model,
                         menuWidth: "narrow",
@@ -2491,6 +2326,18 @@ define('views/shared/vizcontrols/components/Statistics',
                         toggleClassName: "btn"
                     }
                 });
+                if (this.model.get('dashboard')){
+                    this.children.count = new ControlGroup({
+                        label: _("Rows Per Page").t(),
+                        controlType:'Text',
+                        controlClass: 'controls-block',
+                        controlOptions: {
+                            model: this.model,
+                            menuWidth: "narrow",
+                            modelAttribute: 'display.prefs.statistics.count'
+                        }
+                    });
+                }
             },
             render: function() {
                 this.$el.html("");
@@ -2498,6 +2345,10 @@ define('views/shared/vizcontrols/components/Statistics',
                 this.$el.append(this.children.rowNumbers.render().el);
                 this.$el.append(this.children.drillDown.render().el);
                 this.$el.append(this.children.dataOverlay.render().el);
+                if (this.children.count){
+                    this.$el.append(this.children.count.render().el);
+                }
+
                 return this;
             }
         });
@@ -2526,8 +2377,9 @@ define('views/shared/vizcontrols/components/Events',
                     this.children.eventType = new ControlGroup({
                         label: _("Display").t(),
                         controlType:'SyntheticRadio',
+                        controlClass: 'controls-thirdblock',
                         controlOptions: {
-                            className: "btn-group btn-group-2",
+                            className: "btn-group",
                             items: [
                                 { label: _("Raw").t(),  value: 'raw'  },
                                 { label: _("List").t(), value: 'list' },
@@ -2541,8 +2393,9 @@ define('views/shared/vizcontrols/components/Events',
                 this.children.rowNumbers = new ControlGroup({
                     label: _("Row Numbers").t(),
                     controlType:'SyntheticRadio',
+                    controlClass: 'controls-halfblock',
                     controlOptions: {
-                        className: "btn-group btn-group-2",
+                        className: "btn-group",
                         items: [
                             {value:'1', label:_("Yes").t()},
                             {value:'0', label:_("No").t()}
@@ -2554,8 +2407,9 @@ define('views/shared/vizcontrols/components/Events',
                 this.children.wrapResultsList = new ControlGroup({
                     label: _("Wrap Results").t(),
                     controlType:'SyntheticRadio',
+                    controlClass: 'controls-halfblock',
                     controlOptions: {
-                        className: "btn-group btn-group-2",
+                        className: "btn-group",
                         items: [
                             {value:'1', label:_("Yes").t()},
                             {value:'0', label:_("No").t()}
@@ -2567,8 +2421,9 @@ define('views/shared/vizcontrols/components/Events',
                 this.children.wrapResultsTable = new ControlGroup({
                     label: _("Wrap Results").t(),
                     controlType:'SyntheticRadio',
+                    controlClass: 'controls-halfblock',
                     controlOptions: {
-                        className: "btn-group btn-group-2",
+                        className: "btn-group",
                         items: [
                             {value:'1', label:_("Yes").t()},
                             {value:'0', label:_("No").t()}
@@ -2581,6 +2436,7 @@ define('views/shared/vizcontrols/components/Events',
                 this.children.maxlines = new ControlGroup({
                     label: _("Max Lines").t(),
                     controlType:'SyntheticSelect',
+                    controlClass: 'controls-block',
                     controlOptions: {
                         model: this.model,
                         menuWidth: "narrow",
@@ -2594,15 +2450,19 @@ define('views/shared/vizcontrols/components/Events',
                             {value: '0', label: _("All lines").t()}
                         ],
                         modelAttribute: 'display.events.maxLines',
-                        toggleClassName: "btn"
+                        toggleClassName: "btn",
+                        nearestValue: true
                     }
                 });
                 this.children.drilldownRaw = new ControlGroup({
                     label: _("Drilldown").t(),
-                    controlType:'SyntheticRadio',
+                    controlType:'SyntheticSelect',
+                    controlClass: 'controls-block',
                     controlOptions: {
-                        className: "btn-group btn-group-3",
+                        menuWidth: 'narrow',
+                        toggleClassName: 'btn',
                         items: [
+                            {value:"none", label:_("None").t()},
                             {value:"inner", label:_("Inner").t()},
                             {value:"outer", label:_("Outer").t()},
                             {value:"full", label:_("Full").t()}
@@ -2613,10 +2473,13 @@ define('views/shared/vizcontrols/components/Events',
                 });
                 this.children.drilldownList = new ControlGroup({
                     label: _("Drilldown").t(),
-                    controlType:'SyntheticRadio',
+                    controlType:'SyntheticSelect',
+                    controlClass: 'controls-block',
                     controlOptions: {
-                        className: "btn-group btn-group-3",
+                        menuWidth: 'narrow',
+                        toggleClassName: 'btn',
                         items: [
+                            {value:"none", label:_("None").t()},
                             {value:"inner", label:_("Inner").t()},
                             {value:"outer", label:_("Outer").t()},
                             {value:"full", label:_("Full").t()}
@@ -2628,8 +2491,9 @@ define('views/shared/vizcontrols/components/Events',
                 this.children.drilldownTable = new ControlGroup({
                     label: _("Drilldown").t(),
                     controlType:'SyntheticRadio',
+                    controlClass: 'controls-halfblock',
                     controlOptions: {
-                        className: "btn-group btn-group-2",
+                        className: "btn-group",
                         items: [
                             {value:'1', label:_("On").t()},
                             {value:'0', label:_("Off").t()}
@@ -2638,6 +2502,18 @@ define('views/shared/vizcontrols/components/Events',
                         modelAttribute: 'display.events.table.drilldown'
                     }
                 });
+                if (this.model.get('dashboard')){
+                    this.children.count = new ControlGroup({
+                        label: _("Rows Per Page").t(),
+                        controlType:'Text',
+                        controlClass: 'controls-block',
+                        controlOptions: {
+                            model: this.model,
+                            menuWidth: "narrow",
+                            modelAttribute: 'display.prefs.events.count'
+                        }
+                    });
+                }
                 this.model.on('change:display.events.type', this.visibility, this);
                 this.model.on('change:display.events.list.drilldown change:display.events.raw.drilldown', this.mediateDrilldown, this);
                 this.model.on('change:display.events.list.wrap change:display.events.table.wrap', this.mediateWrap, this);
@@ -2693,6 +2569,9 @@ define('views/shared/vizcontrols/components/Events',
                 this.$el.append(this.children.drilldownList.render().el);
                 this.$el.append(this.children.drilldownRaw.render().el);
                 this.$el.append(this.children.drilldownTable.render().el);
+                if (this.children.count){
+                    this.$el.append(this.children.count.render().el);
+                }
                 this.visibility();
                 return this;
             }
@@ -2714,6 +2593,7 @@ define('views/shared/vizcontrols/components/General',
         'views/shared/vizcontrols/custom_controls/SingleValueBeforeLabelControlGroup',
         'views/shared/vizcontrols/custom_controls/SingleValueAfterLabelControlGroup',
         'views/shared/vizcontrols/custom_controls/SingleValueUnderLabelControlGroup',
+        'views/shared/vizcontrols/custom_controls/MultiSeriesRadio',
         'views/shared/vizcontrols/components/Statistics',
         'views/shared/vizcontrols/components/Events'
 
@@ -2731,23 +2611,24 @@ define('views/shared/vizcontrols/components/General',
         SingleValueBeforeLabelControlGroup,
         SingleValueAfterLabelControlGroup,
         SingleValueUnderLabelControlGroup,
+        MultiSeriesRadio,
         Statistics, 
         Events
     ){
         return Base.extend({
             moduleId: module.id,
-            className: 'form-horizontal',
+            className: 'form form-horizontal',
             vizToGeneralComponents: {
-                line: ['nullValue', 'drilldown'],
-                area: ['stack', 'nullValue', 'drilldown'],
-                column: ['stack', 'drilldown'],
-                bar: ['stack', 'drilldown'],
+                line: ['nullValue', 'multiseries', 'drilldown'],
+                area: ['stack', 'nullValue', 'multiseries', 'drilldown'],
+                column: ['stack', 'multiseries', 'drilldown'],
+                bar: ['stack','multiseries', 'drilldown'],
                 pie: ['drilldown'],
                 scatter: ['drilldown'], 
                 radialGauge: ['style'],
                 fillerGauge: ['style'],
                 markerGauge: ['style'],
-                single: ['drilldown', 'before', 'after', 'under'],
+                single: ['before', 'after', 'under'],
                 events: ['eventGroup'],
                 statistics: ['statisticsGroup'] 
             },
@@ -2755,19 +2636,42 @@ define('views/shared/vizcontrols/components/General',
                 Base.prototype.initialize.apply(this, arguments);
                 var controls = this.vizToGeneralComponents[this.model.get('viz_type')];
                 if(_.indexOf(controls, 'stack')>-1)
-                    this.children.stackMode = new StackModeControlGroup({ model: this.model });
+                    this.children.stackMode = new StackModeControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-thirdblock'
+                    });
                 if(_.indexOf(controls, 'nullValue')>-1)
-                    this.children.nullValueMode = new NullValueModeControlGroup({ model: this.model });
+                    this.children.nullValueMode = new NullValueModeControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-thirdblock'
+                    });
+                if(_.indexOf(controls, 'multiseries')>-1)
+                    this.children.multiSeries = new MultiSeriesRadio({ model: this.model });
                 if(_.indexOf(controls, 'drilldown')>-1)
-                    this.children.drilldown = new DrilldownRadioGroup({ model: this.model });
+                    this.children.drilldown = new DrilldownRadioGroup({
+                        model: this.model,
+                        controlClass: 'controls-halfblock'
+                    });
                 if(_.indexOf(controls, 'style')>-1)
-                    this.children.gaugeStyle = new GaugeStyleControlGroup({ model: this.model });
+                    this.children.gaugeStyle = new GaugeStyleControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-halfblock'
+                    });
                 if(_.indexOf(controls, 'before')>-1)
-                    this.children.beforeLabel = new SingleValueBeforeLabelControlGroup({ model: this.model });
+                    this.children.beforeLabel = new SingleValueBeforeLabelControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-block'
+                    });
                 if(_.indexOf(controls, 'after')>-1)
-                    this.children.afterLabel = new SingleValueAfterLabelControlGroup({ model: this.model });
+                    this.children.afterLabel = new SingleValueAfterLabelControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-block'
+                    });
                 if(_.indexOf(controls, 'under')>-1)
-                    this.children.underLabel = new  SingleValueUnderLabelControlGroup({ model: this.model });
+                    this.children.underLabel = new  SingleValueUnderLabelControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-block'
+                    });
                 if(_.indexOf(controls, 'eventGroup')>-1)
                     this.children.events = new Events({ model: this.model });
                 if(_.indexOf(controls, 'statisticsGroup')>-1)
@@ -2776,6 +2680,7 @@ define('views/shared/vizcontrols/components/General',
             render: function() {
                 this.children.stackMode && this.$el.append(this.children.stackMode.render().el);
                 this.children.nullValueMode && this.$el.append(this.children.nullValueMode.render().el);
+                this.children.multiSeries && this.$el.append(this.children.multiSeries.render().el);
                 this.children.drilldown && this.$el.append(this.children.drilldown.render().el);
                 this.children.gaugeStyle && this.$el.append(this.children.gaugeStyle.render().el);
                 this.children.beforeLabel && this.$el.append(this.children.beforeLabel.render().el);
@@ -2800,12 +2705,14 @@ define('views/shared/vizcontrols/components/General',
 define('views/shared/vizcontrols/custom_controls/AxisTitleControlGroup',[
             'underscore',
             'module',
+            'models/Base',
             'views/shared/controls/ControlGroup',
             'views/shared/controls/Control'
         ],
         function(
             _,
             module,
+            BaseModel,
             ControlGroup,
             Control
         ) {
@@ -2818,7 +2725,6 @@ define('views/shared/vizcontrols/custom_controls/AxisTitleControlGroup',[
          * @constructor
          * @param options {Object} {
          *     model {Model} the model to operate on
-         *     report <models.pivot.PivotReport> the current pivot report
          *     xAxis {Boolean} whether to operate on the x-axis as opposed to the y-axis, defaults to false
          * }
          */
@@ -2828,19 +2734,30 @@ define('views/shared/vizcontrols/custom_controls/AxisTitleControlGroup',[
                                                                 'display.visualizations.charting.axisTitleY.visibility';
             this.axisTitleTextAttr = this.options.xAxis ? 'display.visualizations.charting.axisTitleX.text' :
                                                           'display.visualizations.charting.axisTitleY.text';
+
+            // we are simulating the experience of being able to set three possible title states: default, custom, or none
+            // these do not map directly to visualization attributes, so we use an in-memory model to mediate
+            this.titleStateModel = new BaseModel();
+            this.setInitialTitleState();
+
+            // store an in-memory copy of the most recent axis title text, since we might have to clear it to get the 'default' behavior
+            this.axisTitleText = this.model.get(this.axisTitleTextAttr);
+
             this.options.label = _('Title').t();
+            this.options.controlClass = 'controls-block';
             this.options.controls = [
                 {
                     type: 'SyntheticSelect',
                     options: {
                         className: Control.prototype.className + ' input-prepend',
-                        model: this.model,
-                        modelAttribute: this.axisTitleVisibilityAttr,
+                        model: this.titleStateModel,
+                        modelAttribute: 'state',
                         toggleClassName: 'btn',
                         menuWidth: 'narrow',
                         items: [
-                            { value: 'visible', label: _('show').t() },
-                            { value: 'collapsed', label: _('hide').t() }
+                            { value: 'default', label: _('Default').t() },
+                            { value: 'custom', label: _('Custom').t() },
+                            { value: 'none', label: _('None').t() }
                         ]
                     }
                 },
@@ -2850,7 +2767,6 @@ define('views/shared/vizcontrols/custom_controls/AxisTitleControlGroup',[
                         className: Control.prototype.className + ' input-prepend',
                         model: this.model,
                         modelAttribute: this.axisTitleTextAttr,
-                        placeholder: _('optional').t(),
                         inputClassName: this.options.inputClassName
                     }
                 }
@@ -2860,29 +2776,70 @@ define('views/shared/vizcontrols/custom_controls/AxisTitleControlGroup',[
             this.showHideControl = this.childList[0];
             this.labelControl = this.childList[1];
 
-            this.model.on('change:' + this.axisTitleVisibilityAttr, this.handleTitleVisibility, this);
+            this.titleStateModel.on('change:state', this.handleTitleState, this);
+            this.model.on('change:' + this.axisTitleTextAttr, function() {
+                // ignore this change event if the title state is in default mode
+                // since the title text will have been artificially set to ''
+                if(this.titleStateModel.get('state') !== 'default') {
+                    this.axisTitleText = this.model.get(this.axisTitleTextAttr);
+                }
+            }, this);
+        },
+
+        setInitialTitleState: function() {
+            if(this.model.get(this.axisTitleVisibilityAttr) === 'collapsed') {
+                this.titleStateModel.set({ state: 'none' });
+            }
+            else if(this.model.get(this.axisTitleTextAttr)) {
+                this.titleStateModel.set({ state: 'custom' });
+            }
+            else {
+                this.titleStateModel.set({ state: 'default' });
+            }
         },
 
         render: function() {
             ControlGroup.prototype.render.apply(this, arguments);
-            this.handleTitleVisibility();
+            this.handleTitleState();
             return this;
         },
 
-        handleTitleVisibility: function() {
-            if(this.model.get(this.axisTitleVisibilityAttr) === 'collapsed') {
-                this.labelControl.detach();
-                this.showHideControl.$el.removeClass('input-prepend');
+        handleTitleState: function() {
+            var state = this.titleStateModel.get('state'),
+                setObject = {};
+
+            if(state === 'none') {
+                setObject[this.axisTitleVisibilityAttr] = 'collapsed';
+                this.hideTitleTextInput();
+            }
+            else if(state === 'custom') {
+                setObject[this.axisTitleVisibilityAttr] = 'visible';
+                setObject[this.axisTitleTextAttr] = this.axisTitleText;
+                this.showTitleTextInput();
             }
             else {
-                this.labelControl.insertAfter(this.showHideControl.$el);
-                this.showHideControl.$el.addClass('input-prepend');
+                // state == 'default'
+                setObject[this.axisTitleVisibilityAttr] = 'visible';
+                setObject[this.axisTitleTextAttr] = '';
+                this.hideTitleTextInput();
             }
+            this.model.set(setObject);
+        },
+
+        showTitleTextInput: function() {
+            this.labelControl.insertAfter(this.showHideControl.$el);
+            this.showHideControl.$el.addClass('input-prepend');
+        },
+
+        hideTitleTextInput: function() {
+            this.labelControl.detach();
+            this.showHideControl.$el.removeClass('input-prepend');
         }
 
     });
 
 });
+
 define('views/shared/vizcontrols/custom_controls/AxisScaleControlGroup',[
             'underscore',
             'module',
@@ -2905,6 +2862,7 @@ define('views/shared/vizcontrols/custom_controls/AxisScaleControlGroup',[
                 modelAttribute: this.options.xAxis ? 'display.visualizations.charting.axisX.scale'
                                                    : 'display.visualizations.charting.axisY.scale',
                 model: this.model,
+                className: 'btn-group',
                 items: [
                     {
                         label: _("Linear").t(),
@@ -3037,7 +2995,7 @@ define('views/shared/vizcontrols/custom_controls/LegendPlacementControlGroup',[
         moduleId: module.id,
 
         initialize: function() {
-            this.options.label = _("Legend Position").t();
+            this.options.label = _("Position").t();
             this.options.controlType = 'SyntheticSelect';
             this.options.controlOptions = {
                 modelAttribute: 'display.visualizations.charting.legend.placement',
@@ -3091,11 +3049,12 @@ define('views/shared/vizcontrols/custom_controls/LegendTruncationControlGroup',[
         moduleId: module.id,
 
         initialize: function() {
-            this.options.label = _("Legend Truncation").t();
+            this.options.label = _("Truncation").t();
             this.options.controlType = 'SyntheticRadio';
             this.options.controlOptions = {
                 modelAttribute: 'display.visualizations.charting.legend.labelStyle.overflowMode',
                 model: this.model,
+                className: 'btn-group',
                 items: [
                     {
                         label: _("A...").t(),
@@ -3124,40 +3083,80 @@ define('views/shared/vizcontrols/custom_controls/LegendTruncationControlGroup',[
 define('views/shared/vizcontrols/custom_controls/GaugeAutoRangesControlGroup',[
             'underscore',
             'module',
-            'views/shared/controls/ControlGroup'
+            'models/Base',
+            'views/shared/controls/ControlGroup',
+            'views/shared/controls/SyntheticRadioControl'
         ],
         function(
             _,
             module,
-            ControlGroup
+            BaseModel,
+            ControlGroup,
+            SyntheticRadioControl
         ) {
+
+    var AutoRangesControl = SyntheticRadioControl.extend({
+
+        initialize: function() {
+            this.vizModel = this.options.vizModel;
+            this.model.set({ autoMode: this.vizModel.gaugeIsInAutoMode() ? '1' : '0' });
+            this.options.modelAttribute = 'autoMode';
+            this.options.items = [
+                {
+                    label: _("Automatic").t(),
+                    value: '1',
+                    tooltip: _("Uses base search to set color ranges.").t()
+                },
+                {
+                    label: _("Manual").t(),
+                    value: '0',
+                    tooltip: _("Manually set color ranges. Overrides search settings.").t()
+                }
+            ];
+            this._ranges = '["0", "30", "70", "100"]';
+            this._colors = '[0x84E900, 0xFFE800, 0xBF3030]';
+            this.model.on('change:autoMode', this.handleModeChange, this);
+            SyntheticRadioControl.prototype.initialize.call(this, this.options);
+        },
+
+        handleModeChange: function() {
+            var goingToAutoMode = this.model.get('autoMode') === '1';
+            // if going to auto mode, store the original values of the ranges and colors, then unset them
+            if(goingToAutoMode) {
+                this._ranges = this.vizModel.get('display.visualizations.charting.chart.rangeValues');
+                this._colors = this.vizModel.get('display.visualizations.charting.gaugeColors');
+                this.vizModel.set({
+                    'display.visualizations.charting.chart.rangeValues': '',
+                    'display.visualizations.charting.gaugeColors': ''
+                });
+            }
+            // otherwise resurrect the old values
+            else {
+                this.vizModel.set({
+                    'display.visualizations.charting.chart.rangeValues': this._ranges,
+                    'display.visualizations.charting.gaugeColors': this._colors
+                });
+            }
+        }
+
+    });
 
     return ControlGroup.extend({
 
         moduleId: module.id,
 
         initialize: function() {
-            this.options.controlType = 'SyntheticRadio';
-            this.options.controlOptions = {
-                modelAttribute: 'display.visualizations.charting.gaugeAutoRanges',
-                model: this.model,
-                items: [
-                    {
-                        label: _("Automatic").t(),
-                        value: '1'
-                    },
-                    {
-                        label: _("Manual").t(),
-                        value: '0'
-                    }
-                ]
-            };
+            var rangesControl = new AutoRangesControl({ model: this.model, vizModel: this.options.vizModel });
+            this.options.controlClass = 'controls-halfblock';
+            // this.options.label = _("Colors").t();
+            this.options.controls = [rangesControl];
             ControlGroup.prototype.initialize.call(this, this.options);
         }
 
     });
 
 });
+
 define('views/shared/vizcontrols/components/XAxis',
     [
         'underscore',
@@ -3203,6 +3202,7 @@ define('views/shared/vizcontrols/components/XAxis',
     ){
         return Base.extend({
             moduleId: module.id,
+            className: 'form form-horizontal',
             vizToGeneralComponents: {
                 line: ['title'],
                 area: ['title'],
@@ -3223,7 +3223,6 @@ define('views/shared/vizcontrols/components/XAxis',
 
                 if(_.indexOf(controls, 'title')>-1){ 
                     this.children.title = new AxisTitleControlGroup({
-                        className: 'form-horizontal',
                         model: this.model,
                         xAxis: true
                     });
@@ -3262,7 +3261,7 @@ define('views/shared/vizcontrols/components/YAxis',
     ){
         return Base.extend({
             moduleId: module.id,
-            className: 'form-horizontal',
+            className: 'form form-horizontal',
             vizToYAxisComponents: {
                 line: ['title', 'scale', 'interval', 'min', 'max'],
                 bar: ['title', 'scale', 'interval', 'min', 'max'],
@@ -3282,19 +3281,32 @@ define('views/shared/vizcontrols/components/YAxis',
                 var controls = this.vizToYAxisComponents[this.model.get('viz_type')];
                 if(_.indexOf(controls, 'title')>-1){
                     this.children.title = new AxisTitleControlGroup({
-                        className: 'y-axis-title form-horizontal',
+                        className: 'y-axis-title control-group',
                         model: this.model,
                         xAxis: false
                     });
                 }
                 if(_.indexOf(controls, 'scale')>-1)
-                    this.children.scale = new AxisScaleControlGroup({ model: this.model, className: 'scale' });
+                    this.children.scale = new AxisScaleControlGroup({
+                        model: this.model,
+                        className: 'scale control-group',
+                        controlClass: 'controls-halfblock'
+                    });
                 if(_.indexOf(controls, 'interval')>-1)
-                    this.children.interval = new  AxisIntervalControlGroup({ model: this.model });
+                    this.children.interval = new  AxisIntervalControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-block'
+                    });
                 if(_.indexOf(controls, 'min')>-1)
-                    this.children.min = new AxisMinValueControlGroup({ model: this.model });
+                    this.children.min = new AxisMinValueControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-block'
+                    });
                 if(_.indexOf(controls, 'max')>-1)
-                    this.children.max = new AxisMaxValueControlGroup({ model: this.model });
+                    this.children.max = new AxisMaxValueControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-block'
+                    });
 
                 if(this.model.get('display.visualizations.charting.axisY.scale')=='log') {
                     this.children.interval.$el.hide();
@@ -3369,7 +3381,7 @@ define('views/shared/vizcontrols/components/Legend',
     ){
         return Base.extend({
             moduleId: module.id,
-            className: 'form-horizontal',
+            className: 'form form-horizontal',
             vizToLegendComponents: {
                 line:    ['placement', 'truncation'],
                 bar:     ['placement', 'truncation'],
@@ -3389,9 +3401,15 @@ define('views/shared/vizcontrols/components/Legend',
                 var controls = this.vizToLegendComponents[this.model.get('viz_type')];
                 
                 if(_.indexOf(controls, 'placement')>-1)
-                    this.children.placement = new LegendPlacementControlGroup({ model: this.model });
+                    this.children.placement = new LegendPlacementControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-block'
+                    });
                 if(_.indexOf(controls, 'truncation')>-1)
-                    this.children.truncation = new LegendTruncationControlGroup({ model: this.model });
+                    this.children.truncation = new LegendTruncationControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-thirdblock'
+                    });
             },
             render: function() {
                 this.children.placement && this.$el.append(this.children.placement.render().el);
@@ -3419,16 +3437,18 @@ define('views/shared/vizcontrols/components/color/ColorPicker',
             },
             events: {
                 'click .swatch': function(e) {
-                    var $target = $(e.currentTarget);
-                    this.clone.set({ 'color': $target.data().color });
-                    this.$('.swatch-hex input').val(this.clone.get('color'));
-                    this.$('.big-swatch').css('background-color', '#'+this.clone.get('color'));
+                    var hashPrefixedColor = $(e.currentTarget).data().color,
+                        hexColor = '0x'+hashPrefixedColor.substring(1);
+                        
+                    this.clone.set({ 'color': hexColor });
+                    this.$('.swatch-hex input').val(hashPrefixedColor.substring(1));
+                    this.$('.big-swatch').css('background-color', hashPrefixedColor);
                     e.preventDefault();
                 },
                 'click .color-picker-apply': function(e) {
                     this.model.set({
                         'color': this.clone.get('color'),
-                        'shadedcolor': this.options.shadeColor('#'+this.clone.get('color'), -40)
+                        'shadedcolor': this.options.shadeColor(this.clone.get('color').substring(2), -40)
                     });
                     this.model.trigger('color-picker-apply', this.options.index);
                     this.hide();
@@ -3439,8 +3459,10 @@ define('views/shared/vizcontrols/components/color/ColorPicker',
                     e.stopPropagation();
                 },
                 'keyup .hex-input': function(e) {
-                    this.clone.set('color', $(e.currentTarget).val());
-                    this.$('.big-swatch').css('background-color', '#'+this.clone.get('color'));
+                    var colorStr = $(e.currentTarget).val();
+                    
+                    this.clone.set('color', '0x'+colorStr);
+                    this.$('.big-swatch').css('background-color', '#'+colorStr);
                     e.preventDefault();
                 }
             },
@@ -3456,25 +3478,25 @@ define('views/shared/vizcontrols/components/color/ColorPicker',
             template: '\
                 <div class="swatches">\
                     <ul class="swatch-holder unstyled">\
-                        <li class="swatch" data-color="7e9f44" style="background-color: #7e9f44"></li>\
-                        <li class="swatch" data-color="ebe42d" style="background-color: #ebe42d"></li>\
-                        <li class="swatch" data-color="d13b3b" style="background-color: #d13b3b"></li>\
-                        <li class="swatch" data-color="6cb8ca" style="background-color: #6cb8ca"></li>\
-                        <li class="swatch" data-color="f7912c" style="background-color: #f7912c"></li>\
-                        <li class="swatch" data-color="956e96" style="background-color: #956e96"></li>\
-                        <li class="swatch" data-color="c2da8a" style="background-color: #c2da8a"></li>\
-                        <li class="swatch" data-color="fac61d" style="background-color: #fac61d"></li>\
-                        <li class="swatch" data-color="ebb7d0" style="background-color: #ebb7d0"></li>\
-                        <li class="swatch" data-color="324969" style="background-color: #324969"></li>\
-                        <li class="swatch" data-color="d85e3d" style="background-color: #d85e3d"></li>\
-                        <li class="swatch" data-color="a04558" style="background-color: #a04558"></li>\
+                        <li class="swatch" data-color="#7e9f44" style="background-color: #7e9f44"></li>\
+                        <li class="swatch" data-color="#ebe42d" style="background-color: #ebe42d"></li>\
+                        <li class="swatch" data-color="#d13b3b" style="background-color: #d13b3b"></li>\
+                        <li class="swatch" data-color="#6cb8ca" style="background-color: #6cb8ca"></li>\
+                        <li class="swatch" data-color="#f7912c" style="background-color: #f7912c"></li>\
+                        <li class="swatch" data-color="#956e96" style="background-color: #956e96"></li>\
+                        <li class="swatch" data-color="#c2da8a" style="background-color: #c2da8a"></li>\
+                        <li class="swatch" data-color="#fac61d" style="background-color: #fac61d"></li>\
+                        <li class="swatch" data-color="#ebb7d0" style="background-color: #ebb7d0"></li>\
+                        <li class="swatch" data-color="#324969" style="background-color: #324969"></li>\
+                        <li class="swatch" data-color="#d85e3d" style="background-color: #d85e3d"></li>\
+                        <li class="swatch" data-color="#a04558" style="background-color: #a04558"></li>\
                     </ul>\
                 </div>\
-                <div class="big-swatch" data-color="<%- model.get("color") %>" style="background-color: #<%- model.get("color")%>;"></div>\
+                <div class="big-swatch" data-color="<%- model.get("color").substring(2) %>" style="background-color: #<%- model.get("color").substring(2) %>;"></div>\
                 <div class="swatch-hex">\
                     <div class="input-prepend views-shared-controls-textcontrol">\
                         <span class="add-on">#</span>\
-                        <input type="text" class="hex-input" value="<%-model.get("color")%>">\
+                        <input type="text" class="hex-input" value="<%-model.get("color").substring(2) %>">\
                     </div>\
                 </div>\
             ',
@@ -3502,10 +3524,10 @@ define('views/shared/vizcontrols/components/color/Ranges',
             className: 'tab-pane clearfix',
             moduleId: module.id,
             palette: [
-                '7e9f44', 'ebe42d', 'd13b3b',
-                '6cb8ca', 'f7912c', '956e96',
-                'c2da8a', 'fac61d', 'ebb7d0',
-                '324969', 'd85e3d', 'a04558'
+                '0x7e9f44', '0xebe42d', '0xd13b3b',
+                '0x6cb8ca', '0xf7912c', '0x956e96',
+                '0xc2da8a', '0xfac61d', '0xebb7d0',
+                '0x324969', '0xd85e3d', '0xa04558'
             ],
             initialize: function() {
                 Base.prototype.initialize.apply(this, arguments);
@@ -3518,21 +3540,26 @@ define('views/shared/vizcontrols/components/color/Ranges',
                 this.collection.rows.on('change', this.syncModel, this);
             },
             initRowsFromModel: function() {
-                var ranges = this.model.rangesValuesToArray(),
-                    colors = this.model.gaugeColorsToArray();
+                var modelRanges = this.model.rangesValuesToArray(),
+                    ranges = modelRanges.length > 0 ? modelRanges : ['0', '30', '70', '100'],
+                    modelColors = this.model.deserializeGaugeColorArray(),
+                    colors = modelColors.length > 0 ? modelColors : ['0x84E900', '0xFFE800', '0xBF3030'];
+
                 _(ranges).each(function(range, i) {
                     this.collection.rows.push({
                         value: range,
                         nextValue: ranges[i+1],
                         color: !(i==0) ? colors[i-1]: void(0),
-                        shadedcolor: !(i==0) ? this.shadeColor('#'+colors[i-1], -40): void(0)
+                        shadedcolor: !(i==0) ? this.shadeColor(colors[i-1], -40): void(0)
                     });
                 },this);
             },
             syncModel: function() {
                 this.model.set({
                     'display.visualizations.charting.chart.rangeValues': JSON.stringify(this.collection.rows.pluck('value')),
-                    'display.visualizations.charting.gaugeColors': JSON.stringify(_(this.collection.rows.pluck('color')).filter(function(color){ return !_.isUndefined(color); }))
+                    'display.visualizations.charting.gaugeColors': '['+_(this.collection.rows.pluck('color')).filter(function(color){
+                        return !_.isUndefined(color);
+                    }).join(',') + ']'
                 });
             },
             events: {
@@ -3542,16 +3569,19 @@ define('views/shared/vizcontrols/components/color/Ranges',
                         value: this.options.prepopulateNewRanges ? parseInt(this.collection.rows.last().get('value'), 10) * 2 : '',
                         nextValue: '',
                         color: color,
-                        shadedcolor: this.shadeColor('#'+color, -40)
+                        shadedcolor: this.shadeColor(color, -40)
                     });
                     e.stopPropagation();
                 },
-                'keyup .range-value': function(e) {
+                'keyup .range-value': _.debounce(function(e) {
                     var $target = $(e.currentTarget),
                         index = $target.data().index;
                     this.collection.rows.at(index).set('value', $target.val());
+                    var $next = this.$el.find('[data-prev="'+index+'"]');
+                    if($next)
+                        $next.text($target.val() + ' to');
                     e.preventDefault();
-                },
+                },300),
                 'click .color-square': function(e) {
                     var $target = $(e.currentTarget),
                         color = $target.css('background-color');
@@ -3571,16 +3601,14 @@ define('views/shared/vizcontrols/components/color/Ranges',
                 }
             },
             shadeColor: function(color, shade) {
-                var colorInt = parseInt(color.substring(1),16);
+                var colorInt = parseInt(color, 16);
                 var R = (colorInt & 0xFF0000) >> 16;
                 var G = (colorInt & 0x00FF00) >> 8;
                 var B = (colorInt & 0x0000FF) >> 0;
-                R = R + Math.floor((shade/255)*R);
-                G = G + Math.floor((shade/255)*G);
-                B = B + Math.floor((shade/255)*B);
-                var newColorInt = (R<<16) + (G<<8) + (B);
-                var newColorStr = newColorInt.toString(16);
-                return newColorStr;
+                R += Math.floor((shade/255)*R);
+                G += Math.floor((shade/255)*G);
+                B += Math.floor((shade/255)*B);
+                return ((R<<16)+(G<<8)+B).toString(16);
             },
             render: function() {
                 this.syncModel();
@@ -3592,46 +3620,46 @@ define('views/shared/vizcontrols/components/color/Ranges',
             },
 
             template: '\
-                <div class="color-rows">\
-                    <form class="form-horizontal from-color-group">\
+                <div class="color-rows form-horizontal">\
+                    <div class="from-color-group">\
                         <div class="control-group">\
                             <label class="lower-range-label control-label"><%- _("from").t() %></label>\
                             <div class="controls">\
                                 <input class="first-row-lower range-value" value="<%- collection.at(0).get("value") %>" data-index=0 type="text">\
                             </div>\
                         </div>\
-                    </form>\
-                    <form class="form-horizontal">\
+                    </div>\
+                    <div class="to-color-group">\
                         <div class="control-group">\
                             <label class="control-label upper-range-label to-label"><%- _("to").t() %></label>\
                             <div class="controls right-input">\
                                 <div class="input-append">\
                                     <input  class="first-row-upper range-value" value="<%- collection.at(1).get("value") %>" data-index=1 type="text">\
                                     <div class="add-on color-picker-add-on">\
-                                        <div class="color-square" style="border-color: #<%- collection.at(1).get("shadedcolor")%>; background-color: #<%- collection.at(1).get("color") %>;"></div>\
+                                        <div class="color-square" style="border-color: #<%- collection.at(1).get("shadedcolor")%>; background-color: #<%- collection.at(1).get("color").substring(2) %>;"></div>\
                                     </div>\
                                 </div>\
                             </div>\
                         </div>\
-                    </form>\
+                    </div>\
                     <% collection.each(function(model, i) { %>\
                         <% if(!(i==0 || i==1)) {%>\
-                            <form class="form-horizontal">\
+                            <div class="extra-color-group">\
                                 <div class="control-group">\
-                                    <label class="upper-range-label control-label"><%- _("to").t() %></label>\
+                                    <label class="upper-range-label control-label" data-prev="<%- i-1 %>"><%- collection.at(i-1).get("value")%>&nbsp;<span class="label-to"><%- _("to").t() %></span></label>\
                                     <div class="controls input-append">\
                                         <input  class="range-value" value="<%- model.get("value") %>" data-index=<%-i%> type="text">\
                                         <div class="add-on color-picker-add-on">\
-                                            <div class="color-square" style="border-color: #<%- model.get("shadedcolor")%>; background-color: #<%- model.get("color") %>;"></div>\
+                                            <div class="color-square" style="border-color: #<%- model.get("shadedcolor")%>; background-color: #<%- model.get("color").substring(2) %>;"></div>\
                                         </div>\
                                         <a class="remove-range btn-link"><i class="icon-x-circle"></i></a>\
                                     </div>\
                                 </div>\
-                            </form>\
+                            </div>\
                         <% } %>\
                     <% }); %>\
                 </div>\
-                <a class="add-color-range btn pull-right"> + <%- _("Add Range").t() %></a>\
+                <a href="#" class="add-color-range btn pull-right"> + <%- _("Add Range").t() %></a>\
             '
     });
 });
@@ -3642,6 +3670,7 @@ define('views/shared/vizcontrols/components/color/Master',
         'jquery',
         'module',
         'splunk.util',
+        'models/Base',
         'views/Base',
         'views/shared/controls/ControlGroup',
         'views/shared/vizcontrols/custom_controls/GaugeAutoRangesControlGroup',
@@ -3652,14 +3681,16 @@ define('views/shared/vizcontrols/components/color/Master',
         $,
         module,
         util,
-        Base,
+        BaseModel,
+        BaseView,
         ControlGroup,
         GaugeAutoRangesControlGroup,
         Ranges
     ){
-        return Base.extend({
+        return BaseView.extend({
             moduleId: module.id,
-            className: 'form-horizontal',
+            className: ' form form-horizontal',
+            controlClass: 'controls-halfblock',
             vizToColorRangeComponents: {
                 line: [],
                 area: [],
@@ -3675,25 +3706,35 @@ define('views/shared/vizcontrols/components/color/Master',
                 statistics: []
             },
             initialize: function(options) {
-                Base.prototype.initialize.apply(this, arguments);
+                BaseView.prototype.initialize.apply(this, arguments);
                 var controls = this.vizToColorRangeComponents[this.model.get('viz_type')];
-                if(_.indexOf(controls, 'range')>-1)
-                    this.children.toggle = new GaugeAutoRangesControlGroup({ model: this.model });
+                if(_.indexOf(controls, 'range')>-1) {
+                    // use a in-memory model to mediate the boolean auto/manual mode for gauge behavior since it is not a real viz attribute
+                    this.autoModeModel = new BaseModel();
+                    this.children.toggle = new GaugeAutoRangesControlGroup({ model: this.autoModeModel, vizModel: this.model });
+                    this.autoModeModel.on('change:autoMode', this.updateRangesVisibility, this);
+                }
 
                 this.children.colorRanges = new Ranges({
                     model: this.model
                 });
-
-                this.model.on('change:display.visualizations.charting.gaugeAutoRanges', function() {
-                    this.children.colorRanges.$el.toggle();
-                },this);
             },
             render: function() {
                 this.children.toggle && this.$el.append(this.children.toggle.render().el);
                 this.$el.append(this.children.colorRanges.render().el);
-                if(util.normalizeBoolean(this.model.get('display.visualizations.charting.gaugeAutoRanges')))
-                    this.children.colorRanges.$el.hide();
+                this.updateRangesVisibility();
                 return this;
+            },
+            remove: function() {
+                this.autoModeModel.off(null, null, this);
+            },
+            updateRangesVisibility: function() {
+                if(this.autoModeModel.get('autoMode') === '1') {
+                    this.children.colorRanges.$el.hide();
+                }
+                else {
+                    this.children.colorRanges.$el.show();
+                }
             }
         });
     }
@@ -3705,18 +3746,20 @@ define('views/shared/vizcontrols/components/Master',
         'jquery',
         'module',
         'views/Base',
+        'views/shared/FlashMessages',
         'views/shared/vizcontrols/components/General',
         'views/shared/vizcontrols/components/XAxis',
         'views/shared/vizcontrols/components/YAxis',
         'views/shared/vizcontrols/components/Legend',
         'views/shared/vizcontrols/components/color/Master'
     ],
-    function(_, $, module, Base, General, XAxis, YAxis, Legend, Ranges){
+    function(_, $, module, Base, FlashMessages, General, XAxis, YAxis, Legend, Ranges){
         return Base.extend({
             moduleId: module.id,
             className: 'tabbable tabs-left',
             initialize: function(options) {
                 Base.prototype.initialize.apply(this, arguments);
+                this.children.flashMessages = new FlashMessages({ model: this.model });
                 this.type = this.model.get('viz_type');
                 if(_.indexOf(this.model.components[this.type], 'gen')>-1)
                     this.children.general = new General({ model: this.model });
@@ -3749,6 +3792,7 @@ define('views/shared/vizcontrols/components/Master',
                     _: _,
                     tabs: this.model.components[this.type]
                 }));
+                this.$('.tab-content').prepend(this.children.flashMessages.render().el);
                 _(this.children).each(function(child) { 
                     this.$('.tab-content').append(child.render().el);
                     child.$el.hide();
@@ -3795,11 +3839,10 @@ define('views/shared/vizcontrols/Format',
         'underscore',
         'jquery',
         'module',
-        'views/shared/FlashMessages',
         'views/shared/PopTart',
         'views/shared/vizcontrols/components/Master'
     ],
-    function(_, $, module, FlashMessages, PopTart, Component){
+    function(_, $, module, PopTart, Component){
         return PopTart.extend({
             moduleId: module.id,
             /**
@@ -3818,13 +3861,11 @@ define('views/shared/vizcontrols/Format',
 
             initialize: function(options) {
                 PopTart.prototype.initialize.apply(this, arguments);
-                this.children.flashMessages = new FlashMessages({
-                    model: this.model.visualization
-                });
                 this.children.visualizationControls && this.children.visualizationControls.remove();
                 this.children.visualizationControls = new Component({
                     model: this.model.visualization
                 });
+                $(window).on('keydown.' + this.cid, this.windowKeydown.bind(this));
             },
             events: {
                 'click .viz-editor-apply': function(e) {
@@ -3843,10 +3884,26 @@ define('views/shared/vizcontrols/Format',
                     e.preventDefault();
                 }
             },
+            windowKeydown: function (e) {
+                var escapeKeyCode = 27,
+                    enterKeyCode = 13;
+                
+                if (e.keyCode == escapeKeyCode)  {
+                    $('.viz-editor-cancel').click(); 
+                }
+                
+                if (e.keyCode == enterKeyCode)  {
+                    $('.viz-editor-apply').click(); 
+                }
+            },
+            remove: function() {
+                $(window).off('keydown.' + this.cid);
+                PopTart.prototype.remove.apply(this, arguments);
+                return this;
+            },
             render: function() {
                 this.$el.html(PopTart.prototype.template);
                 this.$el.append(this.template);
-                this.$('.popdown-dialog-body').prepend(this.children.flashMessages.render().el);
                 this.$('.popdown-dialog-body').append(this.children.visualizationControls.render().el);
                 // ghetto hack to override default padding on poptart ;_;
                 this.$('.popdown-dialog-body').removeClass('popdown-dialog-padded');
@@ -3864,9 +3921,10 @@ define('models/Visualization',
     [
         'jquery',
         'underscore',
-        'models/Base'
+        'models/Base',
+        'splunk.util'
     ],
-    function($, _, BaseModel) {
+    function($, _, BaseModel, splunk_util) {
         return BaseModel.extend({
             initialize: function() {
                 BaseModel.prototype.initialize.apply(this, arguments);
@@ -3903,13 +3961,14 @@ define('models/Visualization',
                 'display.visualizations.charting.chart.sliceCollapsingThreshold': 0.01,
                 'display.visualizations.charting.chart.rangeValues': '["0","30","70","100"]',
                 'display.visualizations.charting.chart.style': 'shiny',
-                'display.visualizations.charting.gaugeColors': '["84E900", "FFE800", "BF3030"]'
+                'display.visualizations.charting.gaugeColors': [0x84E900,0xFFE800,0xBF3030],
+                'display.prefs.events.count': '10',
+                'display.prefs.statistics.count': '10'
             },
             validation: {
                 'display.visualizations.charting.axisX.minimumNumber': [
                     {
-                        pattern: 'number',
-                        msg: _('X-Axis Min Value must be a number.').t(),
+                        fn: 'validateNumberOrAuto',
                         required: false
                     },
                     {
@@ -3919,8 +3978,7 @@ define('models/Visualization',
                 ],
                 'display.visualizations.charting.axisX.maximumNumber': [
                     {
-                        pattern: 'number',
-                        msg: _('X-Axis Max Value must be a number.').t(),
+                        fn: 'validateNumberOrAuto',
                         required: false
                     },
                     {
@@ -3930,8 +3988,7 @@ define('models/Visualization',
                 ],
                 'display.visualizations.charting.axisY.minimumNumber': [
                     {
-                        pattern: 'number',
-                        msg: _('Y-Axis Min Value must be a number.').t(),
+                        fn: 'validateNumberOrAuto',
                         required: false
                     },
                     {
@@ -3941,8 +3998,7 @@ define('models/Visualization',
                 ],
                 'display.visualizations.charting.axisY.maximumNumber': [
                     {
-                        pattern: 'number',
-                        msg: _('Y-Axis Max Value must be a number.').t(),
+                        fn: 'validateNumberOrAuto',
                         required: false
                     },
                     {
@@ -3950,18 +4006,18 @@ define('models/Visualization',
                         required: false
                     }
                 ],
-                'display.visualizations.charting.axisLabelsX.majorUnit': {
-                    pattern: 'number',
-                    min: Number.MIN_VALUE,
-                    msg: _('X-Axis Interval must be a positive number.').t(),
-                    required: false
-                },
-                'display.visualizations.charting.axisLabelsY.majorUnit': {
-                    pattern: 'number',
-                    min: Number.MIN_VALUE,
-                    msg: _('Y-Axis Interval must be a positive number.').t(),
-                    required: false
-                },
+                'display.visualizations.charting.axisLabelsX.majorUnit': [
+                    {
+                        fn: 'validateNumberOrAuto',
+                        required: false
+                    }
+                ],
+                'display.visualizations.charting.axisLabelsY.majorUnit': [ 
+                    {
+                        fn: 'validateNumberOrAuto',
+                        required: false
+                    }
+                ],
                 'display.visualizations.charting.axisY.scale': {
                     fn: 'validateYScaleAndStacking',
                     required: false
@@ -3973,17 +4029,32 @@ define('models/Visualization',
                 'display.visualizations.charting.chart.sliceCollapsingThreshold': {
                     pattern: 'number',
                     min: 0,
-                    msg: _('Minimum Size must be a non-negative number.').t()
+                    msg: _('Minimum Size must be a non-negative number.').t(),
+                    required: false
                 },
                 'display.visualizations.charting.chart.rangeValues': {
                     fn: 'validateRangeValues',
                     required: false
+                },
+                'display.prefs.events.count': {
+                    pattern: 'digits',
+                    min: 1,
+                    msg: _('Rows Per Page must be a positive number.').t(),
+                    required: true
+                },
+                'display.prefs.statistics.count': {
+                    pattern: 'digits',
+                    min: 1,
+                    msg: _('Rows Per Page must be a positive number.').t(),
+                    required: true
                 }
             },
 
             validateXAxisExtremes: function(value, attr, computedState) {
-                var min = parseFloat(computedState['display.visualizations.charting.axisX.minimumNumber']),
-                    max = parseFloat(computedState['display.visualizations.charting.axisX.maximumNumber']);
+                var min = attr === 'display.visualizations.charting.axisX.minimumNumber' ? parseFloat(value) :
+                                        parseFloat(computedState['display.visualizations.charting.axisX.minimumNumber']),
+                    max = attr === 'display.visualizations.charting.axisX.maximumNumber' ? parseFloat(value) :
+                                        parseFloat(computedState['display.visualizations.charting.axisX.maximumNumber']);
 
                 if(!_.isNaN(min) && !_.isNaN(max) && max <= min) {
                     return _('The X-Axis Min Value must be less than the Max Value.').t();
@@ -3991,8 +4062,10 @@ define('models/Visualization',
             },
 
             validateYAxisExtremes: function(value, attr, computedState) {
-                var min = parseFloat(computedState['display.visualizations.charting.axisY.minimumNumber']),
-                    max = parseFloat(computedState['display.visualizations.charting.axisY.maximumNumber']);
+                var min = attr === 'display.visualizations.charting.axisY.minimumNumber' ? parseFloat(value) :
+                                        parseFloat(computedState['display.visualizations.charting.axisY.minimumNumber']),
+                    max = attr === 'display.visualizations.charting.axisY.maximumNumber' ? parseFloat(value) :
+                                        parseFloat(computedState['display.visualizations.charting.axisY.maximumNumber']);
 
                 if(!_.isNaN(min) && !_.isNaN(max) && max <= min) {
                     return _('The Y-Axis Min Value must be less than the Max Value.').t();
@@ -4000,8 +4073,10 @@ define('models/Visualization',
             },
 
             validateYScaleAndStacking: function(value, attr, computedState) {
-                var yAxisScale = computedState['display.visualizations.charting.axisY.scale'],
-                    stackMode = computedState['display.visualizations.charting.chart.stackMode'];
+                var yAxisScale = attr === 'display.visualizations.charting.axisY.scale' ? value :
+                                                computedState['display.visualizations.charting.axisY.scale'],
+                    stackMode = attr === 'display.visualizations.charting.chart.stackMode' ? value :
+                                                computedState['display.visualizations.charting.chart.stackMode'];
 
                 if(yAxisScale === 'log' && stackMode !== 'default') {
                     return _('Log scale and stacking cannot be enabled at the same time.').t();
@@ -4021,6 +4096,49 @@ define('models/Visualization',
                     return _('Color ranges must be entered from lowest to highest.').t();
                 }
             },
+            
+            validateNumberOrAuto: function(value, attr, computedState) {
+                var num = parseFloat(value),
+                    title;
+                switch(attr){
+                case 'display.visualizations.charting.axisLabelsX.majorUnit':
+                    title = 'X-Axis Interval';
+                    break;
+                case 'display.visualizations.charting.axisLabelsY.majorUnit':
+                    title = 'Y-Axis Interval';
+                    break;
+                case 'display.visualizations.charting.axisX.minimumNumber':
+                    title = 'X-Axis Min Value';
+                    break;
+                case 'display.visualizations.charting.axisY.minimumNumber':
+                    title = 'Y-Axis Min Value';
+                    break;
+                case 'display.visualizations.charting.axisX.maximumNumber':
+                    title = 'X-Axis Max Value';
+                    break;
+                case 'display.visualizations.charting.axisY.maximumNumber':
+                    title = 'Y-Axis Max Value';
+                    break;
+                default:
+                    title = attr;
+                    break;
+                }
+                if(attr === 'display.visualizations.charting.axisLabelsX.majorUnit' || attr === 'display.visualizations.charting.axisLabelsY.majorUnit'){
+                    if(value && (_.isNaN(num) || num <= 0) && !value.match(/^(auto)$/)){
+                        return splunk_util.sprintf(
+                            _('%s must be a positive number or "auto".').t(),
+                            title
+                        );
+                    }
+                } else {
+                    if(value && _.isNaN(num) && !value.match(/^(auto)$/)){
+                        return splunk_util.sprintf(
+                            _('%s must be a number or "auto".').t(),
+                            title
+                        );
+                    }
+                }
+            },
 
             attrToArray: function(attr) {
                 var value = this.get(attr);
@@ -4034,8 +4152,17 @@ define('models/Visualization',
                 return this.attrToArray('display.visualizations.charting.chart.rangeValues');
             },
 
-            gaugeColorsToArray: function() {
-                return this.attrToArray('display.visualizations.charting.gaugeColors');
+            deserializeGaugeColorArray: function() {
+                var arrayStr =  this.get('display.visualizations.charting.gaugeColors');
+                if(arrayStr.charAt(0) !== '[' || arrayStr.charAt(arrayStr.length - 1) !== ']') {
+                    return false; //need to find a different way to bail 
+                }
+                return splunk_util.stringToFieldList(arrayStr.substring(1, arrayStr.length - 1));
+            },
+
+            // use auto mode only if ranges and colors are both not defined
+            gaugeIsInAutoMode: function() {
+                return !this.get('display.visualizations.charting.chart.rangeValues') && !this.get('display.visualizations.charting.gaugeColors');
             }
         },
         {
@@ -4053,9 +4180,10 @@ define('views/shared/vizcontrols/Master',
         'views/Base',
         'views/shared/controls/SyntheticSelectControl',
         'views/shared/vizcontrols/Format',
+        'models/services/search/IntentionsParser',
         'models/Visualization'
     ],
-    function(_, Backbone, module, BaseView, SyntheticSelectControl, Format, VisualizationModel) {
+    function(_, Backbone, module, BaseView, SyntheticSelectControl, Format, IntentionsParser, VisualizationModel) {
         return BaseView.extend({
             moduleId: module.id,
             /**
@@ -4072,52 +4200,52 @@ define('views/shared/vizcontrols/Master',
             },
             vizToAttrs: {
                 line: {
-                    'display.visualizations.charting.chart': 'line', 
-                    'display.visualizations.type': 'charting', 
+                    'display.visualizations.charting.chart': 'line',
+                    'display.visualizations.type': 'charting',
                     'display.general.type': 'visualizations'
                 },
                 area: {
-                    'display.visualizations.charting.chart': 'area', 
-                    'display.visualizations.type': 'charting', 
+                    'display.visualizations.charting.chart': 'area',
+                    'display.visualizations.type': 'charting',
                     'display.general.type': 'visualizations'
                 },
                 column: {
-                    'display.visualizations.charting.chart': 'column', 
-                    'display.visualizations.type': 'charting', 
+                    'display.visualizations.charting.chart': 'column',
+                    'display.visualizations.type': 'charting',
                     'display.general.type': 'visualizations'
                 },
                 bar: {
-                    'display.visualizations.charting.chart': 'bar', 
-                    'display.visualizations.type': 'charting', 
+                    'display.visualizations.charting.chart': 'bar',
+                    'display.visualizations.type': 'charting',
                     'display.general.type': 'visualizations'
                 },
                 pie: {
-                    'display.visualizations.charting.chart': 'pie', 
-                    'display.visualizations.type': 'charting', 
+                    'display.visualizations.charting.chart': 'pie',
+                    'display.visualizations.type': 'charting',
                     'display.general.type': 'visualizations'
                 },
                 scatter: {
-                    'display.visualizations.charting.chart': 'scatter', 
-                    'display.visualizations.type': 'charting', 
+                    'display.visualizations.charting.chart': 'scatter',
+                    'display.visualizations.type': 'charting',
                     'display.general.type': 'visualizations'
                 },
                 radialGauge: {
-                    'display.visualizations.charting.chart': 'radialGauge', 
-                    'display.visualizations.type': 'charting', 
+                    'display.visualizations.charting.chart': 'radialGauge',
+                    'display.visualizations.type': 'charting',
                     'display.general.type': 'visualizations'
                 },
                 fillerGauge: {
-                    'display.visualizations.charting.chart': 'fillerGauge', 
-                    'display.visualizations.type': 'charting', 
+                    'display.visualizations.charting.chart': 'fillerGauge',
+                    'display.visualizations.type': 'charting',
                     'display.general.type': 'visualizations'
                 },
                 markerGauge: {
-                    'display.visualizations.charting.chart': 'markerGauge', 
-                    'display.visualizations.type': 'charting', 
+                    'display.visualizations.charting.chart': 'markerGauge',
+                    'display.visualizations.type': 'charting',
                     'display.general.type': 'visualizations'
                 },
                 single: {
-                    'display.visualizations.type': 'singleValue', 
+                    'display.visualizations.type': 'singlevalue',
                     'display.general.type': 'visualizations'
                 },
                 events: {
@@ -4128,42 +4256,42 @@ define('views/shared/vizcontrols/Master',
                 }
             },
             visualizationGroupings: {
-                "events": { 
+                "events": {
                     label: 'g1',
                     items: [
-                        { value: 'events', label: _("Events").t(), icon: 'list' }
+                        { value: 'events', label: _("Events").t(), icon: 'list', description: _(" ").t() }
                     ]
                 },
-                 "statistics": { 
+                 "statistics": {
                     label: 'g2',
                     items: [
-                        {value: 'statistics', label: _("Table").t(), icon: 'table' }
+                        {value: 'statistics', label: _("Statistics Table").t(), icon: 'table', description: _(" ").t() }
                     ]
                 },
                 "visualizations": {
                     label: 'g3',
                     items: [
-                        { value: 'line', label: _("Line").t(), icon: 'chart-line' },
-                        { value: 'area', label: _("Area").t(), icon: 'chart-area' },
-                        { value: 'column', label: _("Column").t(), icon: 'chart-column' },
-                        { value: 'bar', label: _("Bar").t(), icon: 'chart-bar' },
-                        { value: 'pie', label: _("Pie").t(), icon: 'chart-pie' },
-                        { value: 'scatter', label: _("Scatter").t(), icon: 'chart-scatter' },
-                        { value: 'single', label: _("Single Value").t(), icon: 'single-value' },
-                        { value: 'radialGauge', label: _("Radial").t(), icon: 'gauge-radial' },
-                        { value: 'fillerGauge', label: _("Filler").t(), icon: 'gauge-filler' },
-                        { value: 'markerGauge', label: _("Marker").t(), icon: 'gauge-marker' }
+                        { value: 'line', label: _("Line").t(), icon: 'chart-line', description: _(" ").t() },
+                        { value: 'area', label: _("Area").t(), icon: 'chart-area', description: _(" ").t() },
+                        { value: 'column', label: _("Column").t(), icon: 'chart-column', description: _(" ").t() },
+                        { value: 'bar', label: _("Bar").t(), icon: 'chart-bar', description: _(" ").t() },
+                        { value: 'pie', label: _("Pie").t(), icon: 'chart-pie', description: _(" ").t() },
+                        { value: 'scatter', label: _("Scatter").t(), icon: 'chart-scatter', description: _(" ").t() },
+                        { value: 'single', label: _("Single Value").t(), icon: 'single-value', description: _(" ").t() },
+                        { value: 'radialGauge', label: _("Radial Gauge").t(), icon: 'gauge-radial', description: _(" ").t() },
+                        { value: 'fillerGauge', label: _("Filler Gauge").t(), icon: 'gauge-filler', description: _(" ").t() },
+                        { value: 'markerGauge', label: _("Marker Gauge").t(), icon: 'gauge-marker', description: _(" ").t() }
                     ]
                 }
             },
             reportTree: {
-                'match': { 
+                'match': {
                     'display.general.type': {
                         'visualizations' : {
                             'match': {
                                 'display.visualizations.type': {
-                                    'singleValue': { 
-                                        'view': 'single' 
+                                    'singlevalue': {
+                                        'view': 'single'
                                     },
                                     'charting': {
                                         'match': {'display.visualizations.charting.chart': {
@@ -4182,22 +4310,37 @@ define('views/shared/vizcontrols/Master',
                                 }
                             }
                         },
-                        'statistics': { 
-                            'view': 'statistics' 
+                        'statistics': {
+                            'view': 'statistics'
                         },
-                        'events': { 
+                        'events': {
                             'view': 'events'
                         }
                     }
                 }
-            },    
+            },
+            commandToChartType: { 
+                "timechart" : ["line", "area", "column"],
+                //"chart" : ["column", "line", "area", "bar", "pie", "scatter", "radialGauge", "fillerGauge", "markerGauge"],
+                "top" : ["column", "bar", "pie"],
+                "rare" : ["column", "bar", "pie"]
+            },
             initialize: function() {
                 BaseView.prototype.initialize.apply(this, arguments);
-
+                
+                var defaults = {
+                        bindToChangeOfSearch: true
+                };
+                this.options = $.extend(true, defaults, this.options);
+                
+                this.model.intentionsParser = new IntentionsParser();
+                this.model.intentionsParser.on('change', this.render, this); 
+                
                 this.model.visualization = new VisualizationModel();
+                this.model.visualization.set({dashboard: this.options.dashboard});
                 this.setVisualizationFromReport();
                 this.setSyntheticSelectGroups();
-                
+
                 this.model.report.entry.content.on('change:display.general.type', function(model, value, options) {
                     if(_.indexOf(this.options.vizTypes, value)>-1){
                         this.setVisualizationFromReport();
@@ -4206,13 +4349,72 @@ define('views/shared/vizcontrols/Master',
                     }
                 },this);
 
-                this.model.visualization.on('change:viz_type', function() { 
-                    this.model.report.entry.content.set(this.vizToAttrs[this.model.visualization.get('viz_type')]);
-                    this.model.visualization.set(this.vizToAttrs[this.model.visualization.get('viz_type')]);
+                this.model.visualization.on('change:viz_type', function() {
+                    var viz = this.model.visualization.get('viz_type');
+                    this.model.report.entry.content.set('viz_type', viz);
+                    this.model.report.entry.content.set(this.vizToAttrs[viz]);
+                    this.model.visualization.set(this.vizToAttrs[viz]);
                     if(this.options.saveOnApply) {
                         this.model.report.save();
                     }
                 },this);
+
+                this.model.report.entry.content.on('change:search change:id', this.updateVizTypeVisability, this);
+               
+                if(this.options.bindToChangeOfSearch) { 
+                    this.model.report.entry.content.on('change:search', this.intentionsFetch, this); //simplexml
+                }
+                
+                this.intentionsFetch();
+            },
+            intentionsFetch: function() {
+                this.model.intentionsParser.fetch({
+                    data: {
+                        q: this.model.report.entry.content.get('search'),
+                        app: this.model.application.get('app'),
+                        owner: this.model.application.get('owner'),
+                        parse_only: true
+                    }
+                });
+            },
+            updateVizTypeVisability: function() {
+                if (!this.children.visualizationType || !this.model.visualization.get('dashboard')){
+                    return;
+                }
+
+                if (this.model.report.isPivotReport() && !this.model.report.isNew()){
+                    this.children.visualizationType.disable();
+                    this.children.visualizationType.tooltip({animation:false, title:_('Edit visualization with the pivot tool.').t(), container: 'body'});
+                } else {
+                    this.children.visualizationType.enable();
+                    this.children.visualizationType.tooltip('disable');
+                }
+            },
+            setRecommendations: function() {
+                if(this.model.intentionsParser.has('reportsSearch')) {
+                    var reportsSearch = this.model.intentionsParser.get('reportsSearch'),
+                        recommended = false;
+
+                    if(reportsSearch) {
+                        var reportingCommand = reportsSearch.replace(/\s{2,}/g, ':::').split(':::')[0];
+                        if(reportingCommand) {
+                            this.recommenedTypes = this.commandToChartType[reportingCommand];
+                            if(this.recommenedTypes && !!this.recommenedTypes.length) {
+                                _.chain(this.visualizationGroupings.visualizations.items).filter(function(item) {
+                                    return this.recommenedTypes.indexOf(item.value) > -1;
+                                },this)
+                                .each(function(item) {
+                                   this.children.visualizationType.$el.find("li a[data-value='"+item.value+"'] > span.link-description").text(_("Recommended").t());
+                                   recommended = true;
+                                },this)
+                                .value();
+                            }
+                        }
+                        recommended && this.children.visualizationType.$el.find("li a[data-value='statistics'] > span.link-description").text(_("Recommended").t());
+                    } else {
+                        this.children.visualizationType.$el.find("li a[data-value='events'] > span.link-description").text(_("Recommended").t());
+                    }
+                }
             },
             setVisualizationFromReport: function() {
                 this.model.report.entry.content.unset('viz_type');
@@ -4229,18 +4431,19 @@ define('views/shared/vizcontrols/Master',
                     _(this.options.vizTypes).each(function(value, idx) {
                         vizDropdown.push(this.visualizationGroupings[value]);
                     },this);
-                } 
+                }
 
                 if(vizDropdown.length){
                     this.children.visualizationType = new SyntheticSelectControl({
-                        model: this.model.visualization, 
+                        model: this.model.visualization,
                         groupedItems: vizDropdown,
                         className: "btn-combo pull-left",
                         toggleClassName: 'btn-pill',
                         modelAttribute: 'viz_type',
+                        menuClassName: 'viz-dropdown',
                         popdownOptions: {
                             attachDialogTo: 'body'
-                    }
+                        }
                     });
                 }
             },
@@ -4253,27 +4456,32 @@ define('views/shared/vizcontrols/Master',
                        match = v[this.model.report.entry.content.get(k)];
                     }, this);
                     if (match) return this.setVizType(match);
-                } 
+                }
             },
             events: {
                 'click .format': function(e) {
                     var $target = $(e.currentTarget);
+                    this.setVisualizationFromReport(); 
                     this.children.format = new Format({
                         model: {
                             report: this.model.report,
                             visualization: this.model.visualization
                         },
                         onHiddenRemove: true,
-                        saveOnApply: this.options.saveOnApply
+                        saveOnApply: this.options.saveOnApply,
+                        ignoreClasses: ['color-picker-container']
                     });
                     $('body').append(this.children.format.render().el);
                     this.children.format.show($target);
                     e.preventDefault();
-                }    
+                }
             },
             render: function() {
                 this.$el.empty();
+                this.setSyntheticSelectGroups();
                 this.children.visualizationType && this.$el.append(this.children.visualizationType.render().el);
+                this.setRecommendations();
+                this.updateVizTypeVisability();
                 this.$el.append(this.template);
                 return this;
             },
@@ -4287,470 +4495,6 @@ define('views/shared/vizcontrols/Master',
         });
     }
 );
-
-/**
- * @author jszeto
- * @date 12/17/12
- */
-define('views/ValidatingView',[
-    'jquery',
-    'backbone',
-    'underscore',
-    'views/Base',
-    'util/general_utils'
-],
-    function(
-        $,
-        Backbone,
-        _,
-        BaseView,
-        general_utils
-        ){
-        return BaseView.extend(
-        {
-
-            /**
-             * A dictionary mapping the model attributes to the name of ControlGroup children views. The key is the
-             * model attribute name. The value is the name of the ControlGroup in the view's children dictionary.
-             * ex. {
-             *         firstName: "FirstNameView",
-             *         lastName: "LastNameView",
-             *         zipCode: "ZipCodeView"
-             *     }
-             */
-            modelToControlGroupMap: {},
-
-            /**
-             *  Override parent class dispose to also call tearDownValidation()
-             */
-            dispose: function() {
-                var returnValue = BaseView.prototype.dispose.call(this, arguments);
-                this.tearDownValidation();
-                return returnValue;
-            },
-
-            /**
-             * Call this function if your View has data input controls that need to perform validation. Instantiate the
-             * view's model prior to calling this function.
-             *
-             * @param model - a model or collection The view listens for their "validated" event
-             * @param flashMessagesHelper - {FlashMessagesHelper} - reference to the FlashMessagesHelper which listens to
-             * "validated" events from a set of Views and applies those errors to a FlashMessages collection
-             */
-            setupValidation: function(modelOrCollection, flashMessagesHelper) {
-                if (_.isUndefined(modelOrCollection))
-                    throw "The model or collection you passed into views/Base.setupValidation is undefined";
-                // Handle case of collection by iterating over it
-                if (modelOrCollection instanceof Backbone.Model)
-                    this._setupModelValidationListener(modelOrCollection);
-                else if (modelOrCollection instanceof Backbone.Collection) {
-                    modelOrCollection.each(function(model){
-                        this._setupModelValidationListener(model);
-                    });
-                    modelOrCollection.on('add', function(model) {this._setupModelValidationListener(model);}, this);
-                    modelOrCollection.on('remove', function(model) {model.off("validated", this._modelValidatedHandler, this);}, this);
-                }
-                // Register with the FlashMessagesHelper
-                this.__flashMessagesHelper__ = flashMessagesHelper;
-                this.__flashMessagesHelper__.register(this);
-            },
-
-            /**
-             * Call this when destroying the View
-             */
-            tearDownValidation: function() {
-                if (this.__flashMessagesHelper__)
-                    this.__flashMessagesHelper__.unregister(this);
-            },
-
-            // Helper function to setup the validated listener on a given model. For internal use only.
-            _setupModelValidationListener: function(model) {
-                model.on("validated",this._modelValidatedHandler, this);
-            },
-
-            /**
-             * Handle when a model has performed validation. This function decorates the error messages with labels from
-             * the view's ControlGroups if the modelToControlGroupMap property is defined. It then sets the error states
-             * of the ControlGroups based on the errors. The function also notifies the FlashMessagesHelper of the latest
-             * validation result.
-             *
-             * @param isValid - true if the entire model passed validation
-             * @param model - the model that was validated
-             * @param invalidAttrs - an object of invalid model attributes and their error messages. The key is the attribute
-             * name while the value is the error message.
-             */
-            _modelValidatedHandler: function(isValid, model, invalidAttrs) {
-
-                var flashMessages = [];
-
-                if (this.modelToControlGroupMap) {
-                    // Get a dictionary where the keys are the controlGroups and the values are undefined.
-                    var controlGroupToErrorMap = general_utils.invert(this.modelToControlGroupMap);
-                    controlGroupToErrorMap =  _.reduce(_.keys(controlGroupToErrorMap || {}), function(memo, key) {
-                        memo[key] = void 0;
-                        return memo;
-                    }, {});
-
-                    _(invalidAttrs).each(function (error, invalidAttr) {
-                        invalidAttrs[invalidAttr] = {message:error, label:""};
-                    });
-
-                    // Iterate over the invalidAttrs and map their error message to the controlGroupToErrorMap
-                    _(invalidAttrs).each(function(error, invalidAttr) {
-                        // Get the controlGroup associated with this model attribute
-                        var controlGroupName = this.modelToControlGroupMap[invalidAttr];
-                        var message = error.message;
-                        var decoratedMessage;
-                        var controlGroupLabel = "";
-
-                        if (!_.isUndefined(controlGroupName)) {
-
-                            // Replace the {label} placeholder with the control group's label.
-                            if (this.children[controlGroupName].options.label)
-                                controlGroupLabel = this.children[controlGroupName].options.label;
-                            decoratedMessage = message.replace(/\{(label)\}/g, controlGroupLabel || invalidAttr);
-
-                            controlGroupToErrorMap[controlGroupName] = decoratedMessage;
-                        } else {
-                            // If we can't find the attribute in the map, then just use the model attribute for the label
-                            decoratedMessage = message.replace(/\{(label)\}/g, invalidAttr);
-                        }
-
-                        error.message = decoratedMessage;
-                        error.label = controlGroupLabel;
-
-                    }, this);
-
-                    // Iterate over the View's controlGroups and set the error state
-                    _(controlGroupToErrorMap).each(function(error, controlGroup) {
-                        if (!_.isUndefined(error)) {
-                            this.children[controlGroup].error(true, error);
-                        }
-                        else {
-                            this.children[controlGroup].error(false, "");
-                        }
-                    }, this);
-                }
-                else {
-                    _(invalidAttrs).each(function(error, invalidAttr) {
-                        error.message = error.message.replace(/\{(label)\}/g, invalidAttr);
-                    });
-                }
-
-                this.trigger("validated", isValid, model, invalidAttrs, this);
-            }
-
-    });
-});
-
-/**
- * @author jszeto
- * @date 10/18/12
- *
- * The DialogBase class serves as the base class for all dialog classes. It provides a template that is divided into
- * three sections, the header, body and footer. It currently uses the Bootstrap modal class for appearance and
- * functionality.
- *
- * The default behaviors are as follows:
- *
- * The header displays a title and a close button. Set the title using the settings.titleLabel attribute.
- * The body doesn't have any content. Subclasses should populate the body by overriding renderBody().
- * The footer shows a primary button and a cancel button. Set the labels of these buttons using the
- * settings.primaryButtonLabel and settings.cancelButtonLabel attributes.
- *
- * If you don't want the built-in appearance for the header, body or footer, then subclasses can override the
- * renderXHtml() functions.
- */
-
-define('views/shared/dialogs/DialogBase',
-    [
-        'jquery',
-        'underscore',
-        'backbone',
-        'views/ValidatingView',
-        'module',
-        'bootstrap.modal'
-    ],
-    function(
-        $,
-        _,
-        Backbone,
-        ValidatingView,
-        module
-        // bootstrap modal
-        )
-    {
-        var ENTER_KEY = 13,
-            TEXT_INPUT_SELECTOR = 'input[type="text"], input[type="password"], textarea';
-
-        return ValidatingView.extend({
-            moduleId: module.id,
-            className: "modal",
-            attributes: {tabIndex: -1},
-            /**
-             * A model holding the settings for the Dialog.
-             *
-             * {String} primaryButtonLabel - label for the primary button. If not defined, primary button isn't shown
-             * {String} cancelButtonLabel - label for the cancel button. If not defined, cancel button isn't shown
-             * {String} titleLabel - label for the dialog title
-             */
-            settings: undefined,
-            /**
-             * CSS class to apply to the modal-body
-             */
-            bodyClassName: "",
-            // Subclasses must call super.initialize()
-            initialize: function(options) {
-                ValidatingView.prototype.initialize.call(this, options);
-
-                options = options || {};
-                // Initialize the modal
-                // TODO [JCS] Look at other dialogs and add ability to not close on outside click
-                this.$el.modal({show:false, keyboard:true});
-
-
-                this.bodyClassName = options.bodyClassName;
-                // TODO [JCS] Override remove to remove event listeners on settings
-                // Setup the settings
-                this.settings = new Backbone.Model();
-                this.settings.set("footerTemplate",this._footerTemplate);
-                this.settings.set("headerTemplate",this._headerTemplate);
-
-                // Re-render if any of the labels have changed
-
-                this.settings.on('change:primaryButtonLabel change:cancelButtonLabel change:titleLabel',
-                                  this.debouncedRender, this);
-
-                // Hook up click event listeners. We avoid using the events array since subclasses might clobber it
-                this.$el.on("click.dialog",".btn-dialog-primary", _.bind(function(event) {
-                    event.preventDefault();
-                    this.primaryButtonClicked();
-                }, this));
-                this.$el.on("click.dialog",".btn-dialog-cancel", _.bind(function(event) {
-                    event.preventDefault();
-                    this.cancelButtonClicked();
-                }, this));
-                this.$el.on("click.dialog",".btn-dialog-close", _.bind(function(event) {
-                    event.preventDefault();
-                    this.closeButtonClicked();
-                }, this));
-                this.$el.on("keypress", _.bind(function(event) {
-                    if(event.which === ENTER_KEY) {
-                        this.submitKeyPressed(event);
-                    }
-                }, this));
-                this.$el.on("shown", _.bind(function(e) {
-                    if (e.target !== e.currentTarget) return;
-                    this.dialogShown();
-                }, this));
-                this.$el.on("hide", _.bind(function(e) {
-                    if (e.target !== e.currentTarget) return;
-                    this.cleanup();
-                }, this));
-            },
-            render: function() {
-                this.$(".modal-header").detach();
-                this.$(".modal-body").detach();
-                this.$(".modal-footer").detach();
-
-                var html = this.compiledTemplate({
-                    bodyClassName:this.bodyClassName});
-
-                this.$el.html(html);
-
-                this.renderHeader(this.$(".modal-header"));
-                this.renderBody(this.$(".modal-body"));
-                this.renderFooter(this.$(".modal-footer"));
-
-                return this;
-            },
-            hide: function() {
-                this.$el.modal('hide');
-            },
-            show: function() {
-                this.$el.modal('show');
-            },
-            /**
-             * Called when the primary button has been clicked.
-             */
-            primaryButtonClicked: function() {
-                this.trigger("click:primaryButton", this);
-            },
-            /**
-             * Called when the cancel button has been clicked.
-             */
-            cancelButtonClicked: function() {
-                this.trigger("click:cancelButton", this);
-            },
-            /**
-             * Called when the close button has been clicked.
-             */
-            closeButtonClicked: function() {
-                this.trigger("click:closeButton", this);
-            },
-            /**
-             * Called when the "submit key" is pressed.  Currently the submit key is hard-coded to the enter key,
-             * but this may become configurable in the future.
-             *
-             * @param event
-             */
-            submitKeyPressed: function(event) {
-                var $target = $(event.target);
-                // if the currently focused element is any kind of text input,
-                // make sure to blur it so that any change listeners are notified
-                if($target.is(TEXT_INPUT_SELECTOR)) {
-                    $target.blur();
-                }
-                // manually trigger the primary button click handler
-                this.primaryButtonClicked();
-            },
-            /**
-             * Called when the dialog has been shown. Subclasses can override with their own handlers
-             */
-            dialogShown: function() {
-                this.trigger("show");
-                // Apply focus to the first text input in the dialog. [JCS] Doesn't work without doing a debounce. Not sure why.
-                _.debounce(function() {
-                    this.$('input:text:enabled:visible:first').focus();
-                }.bind(this), 0)();
-                return;
-            },
-            /**
-             * Called when the dialog has been closed. Subclasses can override with their own cleanup logic
-             */
-            cleanup: function() {
-                this.trigger("hide");
-                return;
-            },
-            /**
-             * Render the dialog body. Subclasses should override this function
-             *
-             * @param $el The jQuery DOM object of the body
-             */
-            renderBody : function($el) {
-                // No op
-            },
-            /**
-             * Render the header.
-             *
-             * @param $el The jQuery DOM object of the header
-             */
-            renderHeader : function($el) {
-                // To perform jQuery manipulation, wrap the header template in a div.
-                // Insert the titleLabel into the title placeholder
-                $el.html(this.settings.get("headerTemplate"));
-                $el.find(".text-dialog-title").html(this.settings.get("titleLabel"));
-            },
-            /**
-             * Renders the dialog footer. The default implementation takes the settings.footerTemplate
-             * and searches for primary and cancel buttons. If a label is defined for it, then it will show the button
-             * and set its label. Otherwise, it will hide the button.
-             *
-             * Subclasses can override this to customize the footer html.
-             *
-             * @param $el The jQuery DOM object of the footer
-             */
-            renderFooter : function($el) {
-                // To perform jQuery manipulation, wrap the header template in a div.
-                $el.html(this.settings.get("footerTemplate"));
-
-                // If the primary button label is undefined, then don't show the button
-                var primaryButton = $el.find(".btn-dialog-primary.label_from_data");
-                if (this.settings.has("primaryButtonLabel"))
-                {
-                    primaryButton.html(this.settings.get("primaryButtonLabel"));
-                    primaryButton.show();
-                }
-                else
-                {
-                    primaryButton.html('');
-                    primaryButton.hide();
-                }
-
-                // If the cancel button label is undefined, then don't show the button
-                var cancelButton = $el.find(".btn-dialog-cancel.label_from_data");
-                if (this.settings.has("cancelButtonLabel"))
-                {
-                    cancelButton.html(this.settings.get("cancelButtonLabel"));
-                    cancelButton.show();
-                }
-                else
-                {
-                    cancelButton.html('');
-                    cancelButton.hide();
-                }
-            },
-            template: '\
-                <div class="modal-header"></div>\
-                <div class="modal-body <%- bodyClassName %>"></div>\
-                <div class="modal-footer"></div>\
-            ',
-            _footerTemplate: '\
-                <a href="#" class="btn btn-dialog-cancel label_from_data pull-left" data-dismiss="modal"></a>\
-                <a href="#" class="btn btn-primary btn-dialog-primary label_from_data pull-right"></a>\
-            ',
-            _headerTemplate: '\
-                <button type="button" class="close btn-dialog-close" data-dismiss="modal">x</button>\
-                <h3 class="text-dialog-title"></h3>\
-            '
-        });
-    }
-);
-
-/**
- * @author jszeto
- * @date 10/22/12
- */
-
-define('views/shared/dialogs/TextDialog',
-    [
-        'jquery',
-        'underscore',
-        'views/shared/dialogs/DialogBase',
-        'module'
-    ],
-    function(
-        $,
-        _,
-        DialogBase,
-        module
-    )
-    {
-
-        return DialogBase.extend({
-            moduleId: module.id,
-            className: "modal",
-            _text: "",
-            initialize: function(options) {
-                DialogBase.prototype.initialize.call(this, options);
-                // Set default values for the button labels
-                this.settings.set("primaryButtonLabel",_("Ok").t());
-                this.settings.set("cancelButtonLabel",_("Cancel").t());
-            },
-            primaryButtonClicked: function() {
-                DialogBase.prototype.primaryButtonClicked.call(this);
-                this.hide();
-            },
-            setText : function(value) {
-                this._text = value;
-                this.debouncedRender();
-            },
-            /**
-             * Render the dialog body. Subclasses should override this function
-             *
-             * @param $el The jQuery DOM object of the body
-             */
-            renderBody : function($el) {
-                $el.html(this.bodyTemplate);
-                $el.find(".text-dialog-placeholder").html(this._text);
-            },
-            bodyTemplate: '\
-                <span class="text-dialog-placeholder"></span>\
-            '
-        });
-    }
-);
-
 
 define('views/shared/reportcontrols/details/History',
     [
@@ -5089,6 +4833,186 @@ define('views/shared/reportcontrols/details/Schedule',
     }
 );
 
+/**
+ *   views/shared/delegates/ModalTimerangePicker
+ *
+ *   Desc:
+ *     Work in progress, a delegate view to handle timerange pickers located in modals. 
+ *       It provides the animation from the content view to the timerangepicker view and back. 
+ *
+ *   @param {Object} (Optional) options An optional object literal having one settings.
+ *
+ *    Usage:
+ *       var p = new ModalTimerangePicker({options})
+ *
+ *    Options:
+ *        el: The dialog and toggle container. Recommend that this is the offset container for the dialog.
+ *        $visArea: jQuery object that is the visible area.
+ *        $slideArea: jQuery object that slides left and right.
+ *        $contentWrapper: jQuery object that holds the original content with the activator.
+ *        $timeRangePickerWrapper: jQuery object that holds the timerange picker.
+ *        $modalParent: jQuery object of the modal.
+ *        $timeRangePicker: jQuery object of the timerange picker.
+ *        activateSelector: jQuery selector that when clicked causes the animation to the timerangepicker.
+ *        backButtonSelector: jQuery selector that when clicked causes the animation from the timerangepicker
+ *                               back to the content view without changing the timerange.
+ *        SLIDE_ANIMATION_DURATION: (Optional) time to perform animation. Default 500.
+ *
+ *    Methods:
+ *        showTimeRangePicker: animates to the timerangepicker from content view.
+ *        closeTimeRangePicker: animates from the timerangepicker to content view.
+ *                               Should be called when applied is triggered on the timerange model.
+ *        onBeforePaneAnimation: sets up for animation (directly calling show should be avoided and should not be necessary).
+ *        onAfterPaneAnimation: clean up after animation (directly calling show should be avoided and should not be necessary).
+ */
+
+
+define('views/shared/delegates/ModalTimerangePicker',[
+    'jquery',
+    'underscore',
+    'views/shared/delegates/Base',
+    'views/shared/delegates/PopdownDialog',
+    'views/shared/Modal'
+],function(
+    $,
+    _,
+    DelegateBase,
+    PopdownDialog,
+    Modal
+){
+    return DelegateBase.extend({
+        initialize: function(){
+            var defaults = {
+               SLIDE_ANIMATION_DURATION: 500
+            };
+
+            _.defaults(this.options, defaults);
+
+            this.$visArea = this.options.$visArea;
+            this.$slideArea = this.options.$slideArea;
+            this.$contentWrapper = this.options.$contentWrapper;
+            this.$timeRangePickerWrapper = this.options.$timeRangePickerWrapper;
+            this.$modalParent = this.options.$modalParent;
+            this.$timeRangePicker = this.options.$timeRangePicker;
+
+            this.title = this.$(Modal.HEADER_TITLE_SELECTOR).html();
+
+            this.events = {};
+            this.events["click " + this.options.backButtonSelector] = "closeTimeRangePicker";
+            this.events["click " + this.options.activateSelector] = "showTimeRangePicker";
+            this.delegateEvents(this.events);
+
+            this.$timeRangePicker.hide();
+
+        },
+        showTimeRangePicker: function () {
+
+            var $from = this.$contentWrapper,
+                $to = this.$timeRangePickerWrapper,
+                anamateDistance = $from.width();
+
+            this.onBeforePaneAnimation($from, $to);
+
+            var toWidth = $to.width(),
+                toHeight = $to.height();
+
+            this.$modalParent.animate({
+                width: toWidth,
+                marginLeft: -(2 * anamateDistance/3)
+            }, {
+                duration: this.options.SLIDE_ANIMATION_DURATION
+            });
+            this.$visArea.animate({
+                height: toHeight
+            }, {
+                duration: this.options.SLIDE_ANIMATION_DURATION,
+                complete: function() {
+                    this.onAfterPaneAnimation($from, $to);
+                }.bind(this)
+            }, this);
+
+            this.$slideArea.animate({
+                marginLeft: -anamateDistance
+            }, {
+                duration: this.options.SLIDE_ANIMATION_DURATION
+            });
+
+            this.$el.animate({
+                width: toWidth
+            }, {
+                duration: this.options.SLIDE_ANIMATION_DURATION
+            });
+
+            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Select Time Range").t());
+            this.$('.btn.back').show();
+            this.$('.btn-primary').hide();
+            this.$('.btn.cancel').hide();
+        },
+        closeTimeRangePicker: function () {
+            var $from = this.$timeRangePickerWrapper,
+                $to = this.$contentWrapper,
+                anamateDistance = $to.width();
+
+            this.onBeforePaneAnimation($from, $to);
+
+            this.$modalParent.animate({
+                width: anamateDistance,
+                marginLeft: -(anamateDistance/2)
+            }, {
+                duration: this.options.SLIDE_ANIMATION_DURATION
+            });
+
+            this.$visArea.animate({
+                height: $to.height()
+            }, {
+                duration: this.options.SLIDE_ANIMATION_DURATION,
+                complete: function() {
+                    this.onAfterPaneAnimation($from, $to);
+                }.bind(this)
+            }, this);
+
+            this.$slideArea.animate({
+                marginLeft: 0
+            }, {
+                duration: this.options.SLIDE_ANIMATION_DURATION
+            });
+
+            this.$el.animate({
+                width: anamateDistance
+            }, {
+                duration: this.options.SLIDE_ANIMATION_DURATION
+            });
+
+            this.$(Modal.HEADER_TITLE_SELECTOR).html(this.title);
+            this.$('.btn.back').hide();
+            this.$('.btn-primary').show();
+            this.$('.btn.cancel').show();
+        },
+
+        // sets up heights of the 'from' and 'to' elements for a smooth animation
+        // during the animation, the slide area uses overflow=hidden to control visibility of the 'from' pane
+        onBeforePaneAnimation: function($from, $to) {
+            this.$visArea.css('overflow', 'hidden');
+            this.$visArea.css({ height: $from.height() + 'px'});
+            if($to === this.$timeRangePickerWrapper) {
+                this.$timeRangePicker.show();
+            }
+            $to.css({ height: '', visibility: '' });
+        },
+        // undo the height manipulations that were applied to make a smooth animation
+        // after the animation, the 'from' is hidden via display=none and the slide area has visible overflow
+        // (this prevents vertical clipping of popup menus)
+        onAfterPaneAnimation: function($from, $to) {
+            if($from === this.$timeRangePickerWrapper) {
+                this.$timeRangePicker.hide();
+            }
+            this.$visArea.css('overflow', '');
+            this.$visArea.css({ height: ''});
+            $from.css({ height: '2px', visibility : 'hidden'});
+        }
+    });
+});
+
 define('views/shared/ScheduleSentence',
     [
         'jquery',
@@ -5127,9 +5051,13 @@ define('views/shared/ScheduleSentence',
 
                 _.defaults(this.options, defaults);
 
-                var hourly = _.map(_.range(0, 46, 15), function(num) { return { label: num, value: num.toString()}; }),
+                var makeItems = function(num) {
+                        var stringNum = num.toString(); 
+                        return { label: stringNum, value: stringNum};
+                    },
+                    hourly = _.map(_.range(0, 46, 15), makeItems),
                     daily = _.map(_.range(24), function(num) { return { label: num + ':00', value: num.toString()}; }),
-                    montly = _.map(_.range(1,32), function(num) { return { label: num, value: num.toString()}; });
+                    montly = _.map(_.range(1,32), makeItems);
 
                 this.children.timeRange = new ControlGroup({
                     className: 'control-group',
@@ -5296,13 +5224,13 @@ define('views/shared/ScheduleSentence',
                 this.children.scheduleOptions.$el.find('.schedule_hourly').after('<span class="hour_post_label">' + _(" minutes past the hour").t() + '</span>');
 
                 this.children.scheduleOptions.$el.find('.schedule_weekly').before('<span class="weekly_pre_label">' + _("On ").t() + '</span>');
-                this.children.scheduleOptions.$el.find('.schedule_weekly .btn').width('80px');
+                this.children.scheduleOptions.$el.find('.schedule_weekly .btn').width('75px');
 
                 this.children.scheduleOptions.$el.find('.schedule_monthly').before('<span class="monthly_pre_label">' + _("On day ").t() + '</span>');
                 this.children.scheduleOptions.$el.find('.schedule_monthly .btn').width('55px');
 
                 this.children.scheduleOptions.$el.find('.schedule_daily').before('<span class="daily_pre_label">' + _(" at ").t() + '</span>');
-                this.children.scheduleOptions.$el.find('.schedule_daily .btn').width('60px');
+                this.children.scheduleOptions.$el.find('.schedule_daily .btn').width('50px');
 
                 this.$el.append('<div class="custom_time"></div>');
                 this.$el.find('.custom_time').append(this.children.cronSchedule.render().el);
@@ -5379,7 +5307,11 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/step1/Schedule',
                     model: {
                         cron: this.model.cron
                     },
-                    lineOneLabel: _('Schedule').t()
+                    lineOneLabel: _('Schedule').t(),
+                    popdownOptions: {
+                        attachDialogTo: '.modal:visible',
+                        scrollContainer: '.modal:visible .modal-body:visible'
+                    }
                 });
 
                 //event listeners
@@ -5419,7 +5351,7 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/step1/Schedule',
                 this.$el.append(this.children.scheduleSentence.render().el);
 
                 this.$el.append('<div class="timerange" style="display: block;"><label class="control-label">' + _('Time Range').t() + '</label></div>');
-                this.$('div.timerange').append('<a href="#" class="btn timerange-control"><span class="time-label"></span><span class="icon-triangle-right-small"></span></a>');
+                this.$('div.timerange').append('<div class="controls"><a href="#" class="btn timerange-control"><span class="time-label"></span><span class="icon-triangle-right-small"></span></a></div>');
                 this.setLabel();
                 this.isScheduledToggle();
                 return this;
@@ -5434,6 +5366,7 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/step1/Master',
             'module',
             'views/Base',
             'views/shared/Modal',
+            'views/shared/delegates/ModalTimerangePicker',
             'views/shared/reportcontrols/dialogs/schedule_dialog/step1/Schedule',
             'views/shared/timerangepicker/dialog/Master',
             'views/shared/FlashMessages'
@@ -5443,15 +5376,12 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/step1/Master',
             module,
             Base,
             Modal,
+            TimeRangeDelegate,
             ScheduleView,
             TimeRangePickerDialog,
             FlashMessage
         ) {
         return Base.extend({
-
-            SLIDE_ANIMATION_DISTANCE: 450,
-            SLIDE_ANIMATION_DURATION: 500,
-
             moduleId: module.id,
             /**
             * @param {Object} options {
@@ -5502,7 +5432,7 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/step1/Master',
                 });
 
                 this.model.timeRange.on('applied', function() {
-                    this.closeTimeRangePicker();
+                    this.timeRangeDelegate.closeTimeRangePicker();
                 }, this);
 
                 this.model.inmem.on('togglePrimaryButton', this.togglePrimaryButton, this);
@@ -5512,20 +5442,13 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/step1/Master',
                     if(this.model.inmem.get('scheduled_and_enabled')) {
                         this.model.inmem.trigger('next');
                     } else {
+                        this.model.inmem.entry.content.set('is_scheduled', 0);
                         this.model.inmem.save({}, {
                             success: function(model, response){
                                 this.model.inmem.trigger('saveSuccessNotScheduled');
                             }.bind(this)
                         });
                     }
-                    e.preventDefault();
-                },
-                'click a.btn.back' : function(e) {
-                    this.closeTimeRangePicker();
-                    e.preventDefault();
-                },
-                'click a.timerange-control': function(e) {
-                    this.showTimeRangePicker();
                     e.preventDefault();
                 }
             },
@@ -5536,107 +5459,6 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/step1/Master',
                     this.$('.modal-btn-primary').html(_("Save").t());
                 }
             },
-            showTimeRangePicker: function () {
-
-                var $from = this.$scheduleWrapper,
-                    $to = this.$timeRangePickerWrapper;
-
-                this.onBeforePaneAnimation($from, $to);
-
-                this.$visArea.animate({
-                    height: this.$timeRangePickerWrapper.height()
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION,
-                    complete: function() {
-                        this.onAfterPaneAnimation($from, $to);
-                    }.bind(this)
-                }, this);
-
-               this.$slideArea.animate({
-                    marginLeft: -this.SLIDE_ANIMATION_DISTANCE
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION
-                });
-
-               this.$el.animate({
-                    width: this.$timeRangePickerWrapper.width()
-               }, {
-                    duration: this.SLIDE_ANIMATION_DURATION
-               });
-
-                this.$modalParent.animate({
-                    width: this.$timeRangePickerWrapper.width(),
-                    marginLeft: -(2*this.SLIDE_ANIMATION_DISTANCE/3)
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION
-                });
-
-                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Select Time Range").t());
-                this.$('.btn.back').show();
-                this.$('.btn-primary').hide();
-                this.$('.btn.cancel').hide();
-            },
-            closeTimeRangePicker: function () {
-                var $from = this.$timeRangePickerWrapper,
-                    $to = this.$scheduleWrapper;
-
-                this.onBeforePaneAnimation($from, $to);
-
-                this.$visArea.animate({
-                    height: this.$scheduleWrapper.height()
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION,
-                    complete: function() {
-                        this.onAfterPaneAnimation($from, $to);
-                    }.bind(this)
-                }, this);
-
-               this.$slideArea.animate({
-                    marginLeft: 0
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION
-                });
-
-               this.$el.animate({
-                    width: this.$scheduleWrapper.width()
-               }, {
-                    duration: this.SLIDE_ANIMATION_DURATION
-               });
-
-               this.$modalParent.animate({
-                    width: this.$scheduleWrapper.width(),
-                    marginLeft: -(this.SLIDE_ANIMATION_DISTANCE/2)
-               }, {
-                    duration: this.SLIDE_ANIMATION_DURATION
-               });
-
-                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Schedule").t());
-                this.$('.btn.back').hide();
-                this.$('.btn-primary').show();
-                this.$('.btn.cancel').show();
-            },
-
-            // sets up heights of the 'from' and 'to' elements for a smooth animation
-            // during the animation, the slide area uses overflow=hidden to control visibility of the 'from' pane
-            onBeforePaneAnimation: function($from, $to) {
-                this.$visArea.css('overflow', 'hidden');
-                this.$visArea.css({ height: $from.height() + 'px'});
-                if($to === this.$timeRangePickerWrapper) {
-                    this.children.timeRangePickerView.$el.show();
-                }
-                $to.css({ height: '', visibility: '' });
-            },
-            // undo the height manipulations that were applied to make a smooth animation
-            // after the animation, the 'from' is hidden via display=none and the slide area has visible overflow
-            // (this prevents vertical clipping of popup menus)
-            onAfterPaneAnimation: function($from, $to) {
-                if($from === this.$timeRangePickerWrapper) {
-                    this.children.timeRangePickerView.$el.hide();
-                }
-                this.$visArea.css('overflow', '');
-                this.$visArea.css({ height: ''});
-                $from.css({ height: '2px', visibility : 'hidden'});
-            },
             render: function() {
                 this.$el.html(Modal.TEMPLATE);
                 this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Schedule").t());
@@ -5646,7 +5468,7 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/step1/Master',
                 this.$(Modal.FOOTER_SELECTOR).before(
                     '<div class="vis-area">' +
                         '<div class="slide-area">' +
-                            '<div class="schedule-wrapper">' +
+                            '<div class="content-wrapper schedule-wrapper">' +
                                 '<div class="' + Modal.BODY_CLASS + '" >' +
                                 '</div>' +
                             '</div>' +
@@ -5666,7 +5488,18 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/step1/Master',
                 this.$(Modal.BODY_SELECTOR).append(this.children.scheduleView.render().el);
 
                 this.$timeRangePickerWrapper.append(this.children.timeRangePickerView.render().el);
-                this.children.timeRangePickerView.$el.hide();
+
+                this.timeRangeDelegate = new TimeRangeDelegate({
+                    el: this.el,
+                    $visArea: this.$visArea,
+                    $slideArea: this.$slideArea,
+                    $contentWrapper: this.$scheduleWrapper,
+                    $timeRangePickerWrapper: this.$timeRangePickerWrapper,
+                    $modalParent: this.$modalParent,
+                    $timeRangePicker: this.children.timeRangePickerView.$el,
+                    activateSelector: 'a.timerange-control',
+                    backButtonSelector: 'a.btn.back'
+                });
 
                 this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
                 this.$(Modal.FOOTER_SELECTOR).append('<a href="#" class="btn btn-primary modal-btn-primary">' + _('Save').t() + '</a>');
@@ -5719,10 +5552,7 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Step2',
                     configEmailHelpLink = route.docHelp(
                         this.model.application.get("root"),
                         this.model.application.get("locale"),
-                        'learnmore.alert.email',
-                        this.model.application.get("app"),
-                        this.model.appLocal.entry.content.get('version'),
-                        this.model.appLocal.appAllowsDisable()
+                        'learnmore.alert.email'
                     );
                 } else {
                     console.warn("The schedule dialog step 2 view needs the AppLocal and Application model passed to it");
@@ -5735,7 +5565,7 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Step2',
                         model: this.model.inmem.entry.content
                     },
                     label: _('Send Email').t(),
-                    help: splunkUtil.sprintf(_('To send emails you must configure the settings in System Settings > Alert Email Settings. %s').t(), ' <a href="' + configEmailHelpLink + '" target="_blank">' + _("Learn More").t() + '</a>')
+                    help: splunkUtil.sprintf(_('Email must be configured in System&nbsp;Settings > Alert&nbsp;Email&nbsp;Settings. %s').t(), ' <a href="' + configEmailHelpLink + '" target="_blank">' + _("Learn More").t() + ' <i class="icon-external"></i></a>')
                 });
 
                 this.children.emailSubject = new ControlGroup({
@@ -5755,7 +5585,7 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Step2',
                         model: this.model.inmem.entry.content
                     },
                     label: _('Email Addresses').t(),
-                    help: _('Semi-colon separated list. Email alert settings must be configured in Manger.').t()
+                    help: _('Comma separated list.').t()
                 });
 
                 this.children.emailResultsFormat = new ControlGroup({
@@ -5765,7 +5595,7 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Step2',
                         model: this.model.inmem,
                         items: [
                             { label: _('None').t(), value: 'none' },
-                            { label: _('Text').t(), value: 'html' },
+                            { label: _('Inline').t(), value: 'inline' },
                             { label: _('CSV').t(), value: 'csv' },
                             { label: _('PDF').t(), value: 'pdf' }
                         ],
@@ -5845,7 +5675,22 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Step2',
 
                 this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL_JUSTIFIED);
 
-                this.$(Modal.BODY_FORM_SELECTOR).prepend('<p class="control-heading">' + _('Enable Actions').t() + '</p>');
+                if (this.model.user.isFree()) {
+                    var freeHelpLink = route.docHelp(
+                        this.model.application.get('root'),
+                        this.model.application.get('locale'),
+                        'learnmore.license.features');
+                    this.children.sendEmailBox.disable();
+                    this.children.runScriptBox.disable();
+                    this.$(Modal.BODY_FORM_SELECTOR).append(this.compiledTemplate({
+                        _: _,
+                        splunkUtil: splunkUtil,
+                        link: ' <a href="' + freeHelpLink + '" target="_blank">' + _("Learn More").t() + ' <i class="icon-external"></i></a>'
+                    }));
+                }
+
+                this.$(Modal.BODY_FORM_SELECTOR).append('<p class="control-heading">' + _('Enable Actions').t() + '</p>');
+
                 this.$(Modal.BODY_FORM_SELECTOR).append(this.children.sendEmailBox.render().el);
                 this.$(Modal.BODY_FORM_SELECTOR).append(this.children.emailSubject.render().el);
                 this.$(Modal.BODY_FORM_SELECTOR).append(this.children.emailAddresses.render().el);
@@ -5858,7 +5703,13 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Step2',
 
                 this.toggleEmail();
                 this.toggleScript();
-            }
+            },
+            template: '\
+                <div class="alert alert-info">\
+                    <i class="icon-alert"></i>\
+                    <%= splunkUtil.sprintf(_("Scheduling Actions is an Enterprise-level feature. It is not available with Splunk Free. %s").t(), link) %>\
+                </div>\
+            '
         });
     }
 );
@@ -5968,7 +5819,7 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Master',[
                 }, this);
 
                 this.model.inmem.on('saveSuccessNotScheduled', function() {
-                    this.model.report.entry.content.set('is_scheduled', false);
+                    this.model.report.entry.content.set('is_scheduled', 0);
                     this.hide();
                 }, this);
 
@@ -5989,27 +5840,31 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Master',[
                 //send email results format
                 var resultsFormat = 'none';
                 if (this.model.inmem.entry.content.get('action.email.sendresults')) {
-                    resultsFormat = this.model.inmem.entry.content.get('action.email.format');
+                    if (this.model.inmem.entry.content.get('action.email.inline')) {
+                        resultsFormat = 'inline';
+                    } else {
+                        resultsFormat = this.model.inmem.entry.content.get('action.email.format');
+                    }
                 }
                 this.model.inmem.set('ui_include_results', resultsFormat);
             },
             trasposeFromUI: function() {
                 var resultsFormat = this.model.inmem.get('ui_include_results');
                 if (resultsFormat === 'none') {
-                    this.model.inmem.entry.content.set('action.email.sendresults', false);
+                    this.model.inmem.entry.content.set('action.email.sendresults', 0);
                 } else {
                     this.model.inmem.entry.content.set({
-                        'action.email.sendresults': true,
-                        'action.email.format': resultsFormat,
-                        'action.email.sendpdf': (resultsFormat === 'pdf'),
-                        'action.email.inline': (resultsFormat === 'html')
+                        'action.email.sendresults': 1,
+                        'action.email.format': resultsFormat === 'inline' ? '' : resultsFormat,
+                        'action.email.sendpdf': (resultsFormat === 'pdf') ? 1 : 0,
+                        'action.email.inline': (resultsFormat === 'inline') ? 1 : 0
                     });
                 }
 
                 if (this.model.inmem.get('scheduled_and_enabled')) {
                     this.model.inmem.entry.content.set({
-                        'is_scheduled': true,
-                        'disabled': false
+                        'is_scheduled': 1,
+                        'disabled': 0
                     });
                 }
             },
@@ -6166,7 +6021,8 @@ define('views/shared/reportcontrols/dialogs/AccelerationDialog',[
             this.model = {
                 searchJob: this.model.searchJob,
                 report: this.model.report,
-                inmem: this.model.report.clone()
+                inmem: this.model.report.clone(),
+                application: this.model.application
             };
 
             if(!this.model.searchJob) {
@@ -6174,7 +6030,9 @@ define('views/shared/reportcontrols/dialogs/AccelerationDialog',[
                 this.intentionsParserDeferred = this.model.intentionsParser.fetch({
                     data:{
                         q:this.model.report.entry.content.get('search'),
-                        timeline: false
+                        timeline: false,
+                        app: this.model.application.get('app'),
+                        owner: this.model.application.get('owner')
                     }
                 });
             }
@@ -6240,7 +6098,9 @@ define('views/shared/reportcontrols/dialogs/AccelerationDialog',[
                         scrollContainer: '.modal:visible .modal-body:visible'
                     }
                 },
-                label: _('Summary Range').t()
+                label: _('Summary Range').t(),
+                tooltip: _("Sets the range of time (relative to now) for which data is accelerated. " +
+                    "Example: 1 Month accelerates the last 30 days of data in your reports.").t()
             });
 
             this.model.inmem.entry.content.on('change:auto_summarize', function() {
@@ -6285,7 +6145,9 @@ define('views/shared/reportcontrols/dialogs/AccelerationDialog',[
             this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
 
             $.when(this.intentionsParserDeferred).then(function(){
-                if ((this.model.searchJob && this.model.searchJob.canSummarize()) || (this.model.intentionsParser && this.model.intentionsParser.get('canSummarize'))) {
+                var canSummarize = (this.model.searchJob && this.model.searchJob.canSummarize()) || (this.model.intentionsParser && this.model.intentionsParser.get('canSummarize'));
+                if (canSummarize) {
+                    this.model.inmem.setAccelerationWarning(canSummarize);
                     this.$(Modal.BODY_FORM_SELECTOR).append(this.children.name.render().el);
                     this.$(Modal.BODY_FORM_SELECTOR).append(this.children.acceleration.render().el);
                     this.$(Modal.BODY_FORM_SELECTOR).append(this.children.summary_range.render().el);
@@ -6299,7 +6161,7 @@ define('views/shared/reportcontrols/dialogs/AccelerationDialog',[
                     this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
                     this.$(Modal.FOOTER_SELECTOR).append('<a href="#" class="save btn btn-primary modal-btn-primary pull-right">' + _('Save').t() + '</a>');
                 } else {
-                    this.$(Modal.BODY_FORM_SELECTOR).append('<div>' + _('This report can not be accelerated').t() + '</div>');
+                    this.$(Modal.BODY_FORM_SELECTOR).append('<div>' + _('This report cannot be accelerated.').t() + '</div>');
                     this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_DONE);
                 }
             }.bind(this));
@@ -6328,7 +6190,9 @@ define('views/shared/reportcontrols/details/EditAcceleration',
                 'click a.edit-acceleration': function(e) {
                     this.children.accelerationDialog = new AccelerationDialog({
                         model: {
-                            report: this.model.report
+                            report: this.model.report,
+                            searchJob: this.model.searchJob,
+                            application: this.model.application
                         },
                         onHiddenRemove: true
                     });
@@ -6386,6 +6250,351 @@ define('views/shared/documentcontrols/details/Permissions',
     }
 );
 
+define('views/shared/documentcontrols/dialogs/permissions_dialog/ACL',[
+    'underscore',
+    'jquery',
+    'backbone',
+    'module',
+    'views/Base',
+    'views/shared/controls/SyntheticCheckboxControl'
+    ],
+    function(
+        _,
+        $,
+        Backbone,
+        module,
+        BaseView,
+        SyntheticCheckboxControl
+    ) {
+    return BaseView.extend({
+        moduleId: module.id,
+        className: 'push-margins',
+        initialize: function() {
+            BaseView.prototype.initialize.apply(this, arguments);
+
+            this.children.read = new BaseView();
+            this.children.write = new BaseView();
+
+            //listeners
+            this.model.perms.on('change:Everyone.read', function() {
+                this.toggleEveryone('read');
+            }, this);
+            this.model.perms.on('change:Everyone.write', function() {
+                this.toggleEveryone('write');
+            }, this);
+        },
+        appendRow: function(roleName, className) {
+            this.$('tbody').append(
+                '<tr class="'+ roleName + '">\
+                    <td class="role-name">' + roleName + '</td>\
+                    <td class="perms-read ' + roleName + '-checkbox"></td>\
+                    <td class="perms-write ' + roleName + '-checkbox"></td>\
+                </tr>'
+            );
+            this.children.readCheckbox = new SyntheticCheckboxControl({
+                modelAttribute: roleName +'.read',
+                model: this.model.perms,
+                checkboxClassName: className + " " + roleName + " read btn"
+            });
+            this.children.writeCheckbox = new SyntheticCheckboxControl({
+                modelAttribute: roleName + '.write',
+                model: this.model.perms,
+                checkboxClassName: className + " " + roleName + " write btn"
+            });
+
+            this.$('td.perms-read.'+ roleName + '-checkbox').append(this.children.readCheckbox.render().el);
+            this.$('td.perms-write.'+ roleName + '-checkbox').append(this.children.writeCheckbox.render().el);
+
+            this.children.read.children[roleName ] = this.children.readCheckbox;
+            this.children.write.children[roleName] = this.children.writeCheckbox;
+        },
+        toggleEveryone: function(col) {
+            var everyoneChecked = this.model.perms.get('Everyone.' + col),
+                view = this.children[col];
+            _.each(view.children, function(checkbox, role) {
+                if (role !== 'Everyone') {
+                    if (everyoneChecked) {
+                        checkbox.disable();
+                    } else {
+                        checkbox.enable();
+                    }
+                }
+            });
+        },
+        render: function() {
+            this.$el.html(this.compiledTemplate({
+                _: _
+            }));
+
+            this.appendRow(_("Everyone").t());
+
+            this.collection.each(function(roleModel) {
+                this.appendRow(roleModel.entry.get("name"), 'role');
+            }.bind(this));
+
+            this.toggleEveryone('read');
+            this.toggleEveryone('write');
+
+            return this;
+        },
+        template: '\
+            <table class="table table-striped table-condensed table-scroll table-border-row">\
+                <thead>\
+                    <tr>\
+                        <td></td>\
+                        <th class="perms-read"><%- _("Read").t() %></th>\
+                        <th class="perms-write"><%- _("Write").t() %></th>\
+                    </tr>\
+                </thead>\
+                <tbody>\
+                </tbody>\
+            </table>\
+        '
+    });
+});
+
+define('views/shared/documentcontrols/dialogs/permissions_dialog/Master',[
+    'jquery',
+    'underscore',
+    'backbone',
+    'module',
+    'models/ACLReadOnly',
+    'views/shared/Modal',
+    'views/shared/controls/ControlGroup',
+    'views/shared/documentcontrols/dialogs/permissions_dialog/ACL',
+    'views/shared/FlashMessages',
+    'util/splunkd_utils'
+    ],
+    function(
+        $,
+        _,
+        Backbone,
+        module,
+        ACLReadOnlyModel,
+        Modal,
+        ControlGroup,
+        ACL,
+        FlashMessage,
+        splunkd_utils
+    ) {
+    return Modal.extend({
+        moduleId: module.id,
+        /**
+        * @param {Object} options {
+        *       model: { 
+        *           document: <models.Report>,
+        *           nameModel: <model> Model for name,
+        *           user: <models.service.admin.user>
+        *       }
+        *       collection: <collections.services.authorization.Roles>,
+        *       nameLabel: <string> Label for name,
+        *       nameKey: <string> Key for name found in nameModel,  
+        * }
+        */
+        initialize: function(options) {
+            Modal.prototype.initialize.apply(this, arguments);
+
+            this.model.perms = new Backbone.Model();
+            this.model.inmem = new ACLReadOnlyModel($.extend(true, {}, this.model.document.entry.acl.toJSON()));
+
+            var defaults = {
+                nameLabel: _('Name').t(),
+                nameKey: 'name'
+            };
+
+            _.defaults(this.options, defaults);
+
+            this.translateToPermsModel();
+            this.children.flashMessage = new FlashMessage({
+                model: {
+                    inmem: this.model.inmem,
+                    report: this.model.document,
+                    reportAcl: this.model.document.acl
+                }
+            });
+
+            this.children.name = new ControlGroup({
+                controlType: 'Label',
+                controlOptions: {
+                    modelAttribute: this.options.nameKey,
+                    model: this.model.nameModel
+                },
+                label: this.options.nameLabel
+            });
+
+            this.children.owner = new ControlGroup({
+                controlType: 'Label',
+                controlOptions: {
+                    modelAttribute: 'owner',
+                    model: this.model.inmem
+                },
+                label: _('Owner').t()
+            });
+
+            this.children.app = new ControlGroup({
+                controlType: 'Label',
+                controlOptions: {
+                    modelAttribute: 'app',
+                    model: this.model.inmem
+                },
+                label: _('App').t()
+            });
+
+            this.children.display_for = new ControlGroup({
+                controlType: 'SyntheticRadio',
+                controlClass: 'controls-thirdblock',
+                controlOptions: {
+                    modelAttribute: 'sharing',
+                    model: this.model.inmem,
+                    items: [
+                        {
+                            label: _('Owner').t(),
+                            value: splunkd_utils.USER,
+                            className: 'user'
+                        },
+                        {
+                            label: _('App').t(),
+                            value: splunkd_utils.APP,
+                            className: 'app'
+                        },
+                        {
+                            label: _('All Apps').t(),
+                            value: splunkd_utils.GLOBAL,
+                            className: 'global'
+                        }
+                    ],
+                    save: false
+                },
+                label: _('Display For').t()
+            });
+
+            this.children.acl = new ACL({
+                model : {
+                    perms: this.model.perms
+                },
+                collection: this.collection
+            });
+
+            this.model.inmem.on('change:sharing', function() {
+                if (this.model.inmem.get("sharing") === splunkd_utils.USER) {
+                    this.children.acl.$el.hide();
+                } else {
+                    this.children.acl.$el.show();
+                }
+            }, this);
+        },
+        events: $.extend({}, Modal.prototype.events, {
+            'click .btn-primary': function(e) {
+                this.translateFromPermsModel();
+                var data = this.model.inmem.toDataPayload();
+                this.model.document.acl.save({}, {
+                    data: data,
+                    success: function(model, response){
+                        this.hide();
+                        this.model.document.fetch({
+                            url: splunkd_utils.fullpath(
+                                this.model.document.url + '/' + encodeURIComponent(this.model.document.entry.get('name')),
+                                {
+                                    sharing: data.sharing,
+                                    app: this.model.inmem.get('app'),
+                                    owner: data.owner
+                                }
+                            ),
+                            success: function() {
+                                this.model.document.trigger('updateCollection');
+                            }.bind(this)
+                        });
+                    }.bind(this)
+                });
+
+                e.preventDefault();
+            }
+        }),
+        translateToPermsModel: function() {
+            var perms = this.model.inmem.get('perms') || {};
+
+            this.model.perms.set('Everyone.read', _.indexOf(perms.read, '*')!=-1);
+            this.model.perms.set('Everyone.write', _.indexOf(perms.write, '*')!=-1);
+            this.collection.each(function(roleModel){
+                var roleName = roleModel.entry.get("name");
+                this.model.perms.set(roleName + '.read', _.indexOf(perms.read, roleName)!=-1);
+                this.model.perms.set(roleName + '.write', _.indexOf(perms.write, roleName)!=-1);
+            }.bind(this));
+        },
+        translateFromPermsModel: function() {
+            var perms = {
+                read: [],
+                write: []
+            };
+
+            if (this.model.perms.get('Everyone.read')) {
+                perms.read.push('*');
+            }
+            if (this.model.perms.get('Everyone.write')) {
+                perms.write.push('*');
+            }
+
+            this.collection.each(function(roleModel){
+                var role = roleModel.entry.get("name");
+                if (this.model.perms.get(role +'.read')) {
+                    perms.read.push(role);
+                }
+                if (this.model.perms.get(role +'.write')) {
+                    perms.write.push(role);
+                }
+            }.bind(this));
+
+            this.model.inmem.set('perms', perms);
+
+        },
+        setView: function() {
+            if (!this.model.inmem.get("can_share_user")) {
+                this.children.display_for.$('.user').attr('disabled', true);
+            }
+            if (!this.model.inmem.get("can_share_app")) {
+                this.children.display_for.$('.app').attr('disabled', true);
+            }
+            if (!this.model.inmem.get("can_share_global")) {
+                this.children.display_for.$('.global').attr('disabled', true);
+            }
+            if(!this.model.inmem.get("modifiable")) {
+                this.children.display_for.$('.btn').attr('disabled', true);
+            }
+            if (this.model.inmem.get("sharing") ==='user'){
+                this.children.acl.$el.hide();
+            } else {
+                this.children.acl.$el.show();
+            }
+        },
+        render: function() {
+            this.$el.html(Modal.TEMPLATE);
+
+            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Permissions").t());
+            this.$(Modal.BODY_SELECTOR).addClass('modal-body-scrolling');
+
+            this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessage.render().el);
+
+            this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
+
+            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.name.render().el);
+            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.owner.render().el);
+            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.app.render().el);
+            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.display_for.render().el);
+
+            if (!this.model.user.isFree()) {
+                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.acl.render().el);
+            }
+
+            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
+            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
+
+            this.setView();
+
+            return this;
+        }
+    });
+});
+
 define('views/shared/reportcontrols/details/EditPermissions',
     [
         'underscore',
@@ -6404,7 +6613,11 @@ define('views/shared/reportcontrols/details/EditPermissions',
             events: {
                 'click a.edit-permissions': function(e) {
                     this.children.permissionsDialog = new PermissionsDialog({
-                        model: this.model,
+                        model: {
+                            document: this.model.report,
+                            nameModel: this.model.report.entry,
+                            user: this.model.user
+                        },
                         collection: this.collection,
                         onHiddenRemove: true,
                         nameLabel: _('Report').t()
@@ -6498,11 +6711,18 @@ define('views/shared/reportcontrols/details/Master',[
                 this.children.editAccelerationView = new EditAccelerationView({
                     model: {
                         report: this.model.report,
-                        searchJob: this.model.searchJob
+                        searchJob: this.model.searchJob,
+                        application: this.model.application
                     }
                 });
                 this.children.permissionsView = new PermissionsView({model: this.model.report});
-                this.children.editPermissionsView = new EditPermissionsView({model: this.model.report, collection: this.collection});
+                this.children.editPermissionsView = new EditPermissionsView({
+                    model: {
+                        report: this.model.report,
+                        user: this.model.user
+                    },
+                    collection: this.collection
+                });
 
                 if (this.model.searchJob){
                     this.model.searchJob.on("prepared", function() {
@@ -6578,9 +6798,10 @@ define('views/dashboards/panelcontrols/titledialog/Modal',
         'backbone',
         'module',
         'views/shared/controls/ControlGroup',
-        'views/shared/Modal'
+        'views/shared/Modal', 
+        'views/shared/FlashMessages'
     ],
-    function(_, $, backbone, module, ControlGroup, Modal){
+    function(_, $, backbone, module, ControlGroup, Modal, FlashMessagesView){
         return Modal.extend({
             moduleId: module.id,
             initialize: function() {
@@ -6588,34 +6809,37 @@ define('views/dashboards/panelcontrols/titledialog/Modal',
                 var titleProperty = 'display.general.title';
                 this.model.workingReport = new backbone.Model(/*this.model.report.entry.content.toJSON()*/);
                 this.model.workingReport.set(titleProperty, this.model.report.entry.content.get(titleProperty, { tokens: true }));
+                this.children.flashMessages = new FlashMessagesView({model: this.model.dashboard});
+                //reset flashmessages to clear pre-existing flash messages on 'cancel' or 'close' of dialog
+                this.on('hide', this.model.dashboard.error.clear, this.model.dashboard.error); 
+
                 this.children.panelTitleControlGroup = new ControlGroup({
                     label: _("Title").t(),
                     controlType:'Text',
                     controlClass: 'controls-block',
                     controlOptions: {
                         model: this.model.workingReport,
-                        modelAttribute: titleProperty
+                        modelAttribute: titleProperty,
+                        placeholder: "optional"
                     }
                 });
+
+                this.listenTo(this.model.report, 'successfulSave', this.hide, this); 
             },
             events: $.extend({}, Modal.prototype.events, {
                 'click .modal-btn-primary': 'onSave'
             }),
             onSave: function(e){
+                var newTitle = this.model.workingReport.get('display.general.title'); 
                 e.preventDefault();
-                this.model.report.entry.content.set(this.model.workingReport.toJSON(), { tokens: true });
-                this.model.report.save();
-                this.hide();
-            },
+                this.model.report.trigger("saveTitle", newTitle); //this.model.report is actually this.model.working due to titledialog using tokens 
+           },
             render: function() {
                 this.$el.html(Modal.TEMPLATE);
-
                 this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Title").t());
-
+                this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessages.render().el);                
                 this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
-
                 this.$(Modal.BODY_FORM_SELECTOR).append(this.children.panelTitleControlGroup.render().el);
-
                 this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
                 this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
             }
@@ -6623,11 +6847,97 @@ define('views/dashboards/panelcontrols/titledialog/Modal',
     }
 );
 
-define('views/dashboards/panelcontrols/querydialog/Modal',['underscore',
+define('views/dashboards/PanelTimeRangePicker',['require','exports','module','underscore','views/Base','views/shared/controls/ControlGroup','util/console','uri/route','util/time_utils','splunkjs/mvc/tokenutils','bootstrap.tooltip'],function(require, module, exports) {
+    var _ = require('underscore'),
+        BaseView = require('views/Base');
+    var ControlGroup = require('views/shared/controls/ControlGroup');
+    var console = require('util/console');
+    var route = require('uri/route');
+    var time_utils = require('util/time_utils');
+    var token_utils = require('splunkjs/mvc/tokenutils');
+    require('bootstrap.tooltip');
+
+    return BaseView.extend({
+        moduleId: module.id,
+        initialize: function() {
+            BaseView.prototype.initialize.apply(this, arguments);
+
+            this.model.timeRange.on('applied', function() {
+                this.updateReportTime();
+                this.updateTime();
+            }, this);
+
+            var hasTokens = token_utils.hasToken(this.model.report.get("dispatch.earliest_time"));
+            var useTimeFrom = hasTokens ? 'dashboard' : 'search';
+            this.model.timeRange.set({useTimeFrom: useTimeFrom});
+
+            if (this.model.state.get('default_timerange')){
+                this.children.timeScope = new ControlGroup({
+                    label: _("Time Range Scope").t(),
+                    controlType: 'SyntheticRadio',
+                    controlOptions: {
+                        className: 'btn-group btn-group-2 time-range-scope-select',
+                        items: [
+                            {value: 'dashboard', label: _('Dashboard').t(),tooltip: _('Use the time range set by the dashboard time range picker.').t()},
+                            {value: 'search', label: _('Search').t(),tooltip: _('Override the dashboard time range picker by setting a time range for this Search.').t()}
+                        ],
+                        model: this.model.timeRange,
+                        modelAttribute: 'useTimeFrom',
+                        elastic: true
+                    }
+                });
+            }
+            else {
+                this.model.timeRange.set('useTimeFrom', 'search');
+            }
+
+            this.listenTo(this.model.timeRange, 'change:useTimeFrom', this.updateTokens, this);
+        },
+        updateReportTime: function(){
+            this.model.report.set({
+                'dispatch.earliest_time': this.model.timeRange.get('earliest'),
+                'dispatch.latest_time':this.model.timeRange.get('latest')
+            }, {tokens: true});
+        },
+        updateTokens: function(){
+            this.toggleTimeRangePicker();
+            this.updateTime();
+        },
+        toggleTimeRangePicker: function() {
+            if (this.model.timeRange.get('useTimeFrom') == "dashboard"){
+                this.$('.timerange').hide();
+            }
+            else{
+                this.$('.timerange').show();
+            }
+        },
+        updateTime: function() {
+            var timeLabel = this.model.timeRange.generateLabel(this.collection);
+            this.$el.find("span.time-label").text(timeLabel);
+        },
+        render: function() {
+            if (this.children.timeScope){
+                this.children.timeScope.render().appendTo(this.el);
+            }
+
+            this.$el.append('<div class="timerange" style="display: block;"><label class="control-label">' + _('Time Range').t() + '</label></div>');
+            this.$('div.timerange').append('<div class="controls"><a href="#" class="btn timerange-control"><span class="time-label"></span><span class="icon-triangle-right-small"></span></a></div>');
+            this.toggleTimeRangePicker();
+            this.updateTime();
+
+
+            return this;
+        }
+    });
+
+});
+define('views/dashboards/panelcontrols/querydialog/Modal',[
+    'underscore',
     'jquery',
     'backbone',
     'module',
     'views/shared/controls/ControlGroup',
+    'views/shared/delegates/ModalTimerangePicker',
     'views/shared/timerangepicker/dialog/Master',
     'views/shared/Modal',
     'models/TimeRange',
@@ -6640,13 +6950,16 @@ define('views/dashboards/panelcontrols/querydialog/Modal',['underscore',
     'util/time_utils',
     'bootstrap.tooltip',
     'util/console',
-    'splunkjs/mvc/tokenawaremodel',
-    'splunkjs/mvc/tokenutils'],
+    'splunkjs/mvc',
+    'views/shared/FlashMessages',
+    'views/dashboards/PanelTimeRangePicker',
+    'splunkjs/mvc/tokenawaremodel'],
     function(_,
              $,
              Backbone,
              module,
              ControlGroup,
+             TimeRangeDelegate,
              TimeRangePickerView,
              Modal,
              TimeRangeModel,
@@ -6659,18 +6972,26 @@ define('views/dashboards/panelcontrols/querydialog/Modal',['underscore',
              time_utils,
              _bootstrapTooltip,
              console,
-             TokenAwareModel,
-             token_utils){
+             mvc,
+             FlashMessagesView,
+             PanelTimeRangePicker,
+             TokenAwareModel
+    ){
+
+        function mergeSearch(base, sub) {
+            if (!sub) {
+                return base;
+            }
+            return [ base.replace(/[\|\s]$/g,''), sub.replace(/^[\|\s]/g,'') ].join(' | ');
+        }
 
         return Modal.extend({
-            SLIDE_ANIMATION_DISTANCE: 450,
-            SLIDE_ANIMATION_DURATION: 500,
             moduleId: module.id,
             className: 'modal edit-search-string',
             initialize: function() {
                 Modal.prototype.initialize.apply(this, arguments);
 
-                this.model.workingReport = new Backbone.Model(
+                this.model.workingReport = new TokenAwareModel(
                     _.pick(
                             this.model.report.entry.content.toJSON({ tokens: true }),
                             ['search','dispatch.earliest_time','dispatch.latest_time']
@@ -6715,10 +7036,8 @@ define('views/dashboards/panelcontrols/querydialog/Modal',['underscore',
                         owner: this.model.application.get("owner")
                     }
                 });
-                this.model.timeRange = new TimeRangeModel({
-                    'earliest': this.model.workingReport.get('dispatch.earliest_time'),
-                    'latest':this.model.workingReport.get('dispatch.latest_time')
-                });
+                this.model.timeRange = new TimeRangeModel();
+
                 this.children.timeRangePickerView =  new TimeRangePickerView({
                     model: {
                         state: this.model.workingReport,
@@ -6731,33 +7050,56 @@ define('views/dashboards/panelcontrols/querydialog/Modal',['underscore',
                 });
 
                 this.model.timeRange.on('applied', function() {
-                    this.closeTimeRangePicker();
-                    this.model.workingReport.set({
-                        'dispatch.earliest_time': this.model.timeRange.get('earliest'),
-                        'dispatch.latest_time':this.model.timeRange.get('latest')
-                    });
-                    this.setLabel();
+                    this.timeRangeDelegate.closeTimeRangePicker();
                 }, this);
 
+                this.children.panelTimeRangePicker = new PanelTimeRangePicker({
+                    model: {
+                        timeRange: this.model.timeRange,
+                        report: this.model.workingReport,
+                        state: this.model.state
+                    },
+                    collection: this.collection.times
+                });
+                this.children.flashMessages = new FlashMessagesView({ model: this.model.dashboard });
+                //reset flashmessages to clear pre-existing flash messages on 'cancel' or 'close' of dialog
+                this.on('hide', this.model.dashboard.error.clear, this.model.dashboard.error); 
+                this.listenTo(this.model.report, 'successfulSave', this.hide, this); 
+
             },
-            events: {
+            events: $.extend({}, Modal.prototype.events, {
                 'click .modal-btn-primary': function(e){
                     e.preventDefault();
-                    var attributes = this.model.workingReport.toJSON();
-                    console.log('Applying attributes to report model: %o', attributes);
-                    this.model.report.entry.content.set(attributes);
-                    this.model.report.trigger('updateSearchString');
-                    this.hide();
+                    if (this.model.timeRange.get('useTimeFrom') == "dashboard"){
+                        this.model.workingReport.set({
+                            'dispatch.earliest_time': '$earliest$',
+                            'dispatch.latest_time': '$latest$'
+                        }, {tokens: true});
+                    } else {
+                        this.model.workingReport.set({
+                            'dispatch.earliest_time': this.model.timeRange.get('earliest') || "0",
+                            'dispatch.latest_time': this.model.timeRange.get('latest') || "now"
+                        });
+                    }
+                    var newAttributes = this.model.workingReport.toJSON();
+                    console.log('Applying attributes to report model: %o', newAttributes);
+                    this.model.report.trigger('updateSearchString', newAttributes);
                 },
                 'click a.run-search': function(e) {
                     e.preventDefault();
-                    var search = this.model.workingReport.get('search', { tokens: false }), params = { q: search };
+                    var search = this.model.workingReport.get('search', { tokens: false });
+                    var reportContent = this.model.report.entry.content;
+                    if (reportContent.get('display.general.search.type') === 'postprocess') {
+                        var baseSearch = mvc.Components.get(reportContent.get('display.general.managerid')).parent.query.resolve();
+                        search = mergeSearch(baseSearch, search);
+                    }
                     if(!search) {
                         return;
                     }
+                    var params = { q: search };
                     if(this.model.workingReport.has('dispatch.earliest_time')) {
-                        params.earliest = this.model.workingReport.get('dispatch.earliest_time', { tokens: false });
-                        params.latest = this.model.workingReport.get('dispatch.latest_time', { tokens: false });
+                        params.earliest = this.model.workingReport.get('dispatch.earliest_time', { tokens: false } || '0');
+                        params.latest = this.model.workingReport.get('dispatch.latest_time', { tokens: false }) || 'now';
                     }
                     var pageInfo = utils.getPageInfo();
                     var url = route.search(pageInfo.root, pageInfo.locale, pageInfo.app, { data: params });
@@ -6776,127 +7118,11 @@ define('views/dashboards/panelcontrols/querydialog/Modal',['underscore',
                     var pageInfo = utils.getPageInfo();
                     var url = route.pivot(pageInfo.root, pageInfo.locale, pageInfo.app, { data: params });
                     utils.redirect(url, true);
-                },
-                'click a.btn.back' : function(e) {
-                    e.preventDefault();
-                    this.closeTimeRangePicker();
-                },
-                'click a.timerange-control': function(e) {
-                    e.preventDefault();
-                    this.showTimeRangePicker();
                 }
-            },
+            }),
             handleSubmitButtonState: function(model) {
                 this.$(Modal.FOOTER_SELECTOR)
                     .find('.btn-primary')[model.get('elementCreateType') === 'pivot' ? 'addClass' : 'removeClass']('disabled');
-            },
-            setLabel: function() {
-                var timeLabel = this.model.timeRange.generateLabel(this.collection);
-                this.$el.find("span.time-label").text(timeLabel);
-            },
-            showTimeRangePicker: function () {
-
-                var $from = this.$addpanelContent,
-                    $to = this.$timeRangePickerWrapper;
-
-                this.onBeforePaneAnimation($from, $to);
-
-                this.$visArea.animate({
-                    height: this.$timeRangePickerWrapper.height()
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION,
-                    complete: function() {
-                        this.onAfterPaneAnimation($from, $to);
-                    }.bind(this)
-                }, this);
-
-                this.$slideArea.animate({
-                    marginLeft: -this.SLIDE_ANIMATION_DISTANCE
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION
-                });
-
-                this.$el.animate({
-                    width: this.$timeRangePickerWrapper.width()
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION
-                });
-
-                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Select Time Range").t());
-                this.$('.btn.back').show();
-                this.$('.btn-primary').hide();
-                this.$('.btn.cancel').hide();
-            },
-            closeTimeRangePicker: function () {
-                var $from = this.$timeRangePickerWrapper,
-                    $to = this.$addpanelContent;
-
-                this.onBeforePaneAnimation($from, $to);
-
-                this.$visArea.animate({
-                    height: this.$addpanelContent.height()
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION,
-                    complete: function() {
-                        this.onAfterPaneAnimation($from, $to);
-                    }.bind(this)
-                }, this);
-
-                this.$slideArea.animate({
-                    marginLeft: 0
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION
-                });
-
-                this.$el.animate({
-                    width: this.$addpanelContent.width()
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION
-                });
-
-                this.$modalParent.animate({
-                    width: this.$addpanelContent.width(),
-                    marginLeft: -(this.SLIDE_ANIMATION_DISTANCE/2)
-                }, {
-                    duration: this.SLIDE_ANIMATION_DURATION
-                });
-
-                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Schedule").t());
-                this.$('.btn.back').hide();
-                this.$('.btn-primary').show();
-                this.$('.btn.cancel').show();
-            },
-
-            // sets up heights of the 'from' and 'to' elements for a smooth animation
-            // during the animation, the slide area uses overflow=hidden to control visibility of the 'from' pane
-            onBeforePaneAnimation: function($from, $to) {
-                this.$visArea.css('overflow', 'hidden');
-                this.$visArea.css({ height: $from.height() + 'px'});
-                if($to === this.$timeRangePickerWrapper) {
-                    this.children.timeRangePickerView.$el.show();
-                }
-                $to.css({ height: '', visibility: '' });
-            },
-            // undo the height manipulations that were applied to make a smooth animation
-            // after the animation, the 'from' is hidden via display=none and the slide area has visible overflow
-            // (this prevents vertical clipping of popup menus)
-            onAfterPaneAnimation: function($from, $to) {
-                if($from === this.$timeRangePickerWrapper) {
-                    this.children.timeRangePickerView.$el.hide();
-                }
-                this.$visArea.css('overflow', '');
-                this.$visArea.css({ height: ''});
-                $from.css({ height: '2px', visibility : 'hidden'});
-            },
-            setLabel: function() {
-                var timeLabel = _("All Time").t();
-                if (token_utils.hasToken(this.model.timeRange.get("earliest"))){
-                    timeLabel = _("Inherit").t();
-                }
-                else {
-                    timeLabel = this.model.timeRange.generateLabel(this.collection);
-                }
-                this.$el.find("span.time-label").text(timeLabel);
             },
             render: function() {
                 this.$el.html(Modal.TEMPLATE);
@@ -6907,7 +7133,7 @@ define('views/dashboards/panelcontrols/querydialog/Modal',['underscore',
                 this.$(Modal.FOOTER_SELECTOR).before(
                     '<div class="vis-area">' +
                         '<div class="slide-area">' +
-                            '<div class="schedule-wrapper">' +
+                            '<div class="content-wrapper query-dialog-wrapper">' +
                                 '<div class="' + Modal.BODY_CLASS + '" >' +
                                 '</div>' +
                             '</div>' +
@@ -6919,19 +7145,37 @@ define('views/dashboards/panelcontrols/querydialog/Modal',['underscore',
 
                 this.$visArea = this.$('.vis-area').eq(0);
                 this.$slideArea = this.$('.slide-area').eq(0);
-                this.$addpanelContent = this.$('.schedule-wrapper').eq(0);
+                this.$editSearchContent = this.$('.query-dialog-wrapper').eq(0);
                 this.$timeRangePickerWrapper = this.$('.timerange-picker-wrapper').eq(0);
                 this.$modalParent = this.$el;
-                this.children.timeRangePickerView.$el.hide();
 
-                this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
+                this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessages.render().el);                
+                this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL_JUSTIFIED);
                 this.children.title.render().appendTo(this.$(Modal.BODY_FORM_SELECTOR));
                 this.children.searchStringInput.render().appendTo(this.$(Modal.BODY_FORM_SELECTOR));
-                this.$(Modal.BODY_FORM_SELECTOR).append($('<div class="timerange" style="display: block;"><label class="control-label">' + _('Time Range').t() + '</label></div>'));
-                this.$('div.timerange').append('<div class="controls"><a href="#" class="btn timerange-control"><span class="time-label"></span><span class="icon-triangle-right-small"></span></a></div>');
-                this.setLabel();
+                
+                var dfd = this.model.timeRange.save({
+                    'earliest': this.model.workingReport.get('dispatch.earliest_time', {tokens: false} || "0"),
+                    'latest': this.model.workingReport.get('dispatch.latest_time', {tokens: false} || "now")
+                }); 
+
+                dfd.done(_.bind(function(){
+                    this.$(Modal.BODY_FORM_SELECTOR).append(this.children.panelTimeRangePicker.render().el);
+                }, this)); 
 
                 this.$timeRangePickerWrapper.append(this.children.timeRangePickerView.render().el);
+
+                this.timeRangeDelegate = new TimeRangeDelegate({
+                    el: this.el,
+                    $visArea: this.$visArea,
+                    $slideArea: this.$slideArea,
+                    $contentWrapper: this.$editSearchContent,
+                    $timeRangePickerWrapper: this.$timeRangePickerWrapper,
+                    $modalParent: this.$modalParent,
+                    $timeRangePicker: this.children.timeRangePickerView.$el,
+                    activateSelector: 'a.timerange-control',
+                    backButtonSelector: 'a.btn.back'
+                });
 
                 this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
                 this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
@@ -6944,24 +7188,6 @@ define('views/dashboards/panelcontrols/querydialog/Modal',['underscore',
     }
 );
 
-define('collections/Reports',
-    [
-        "models/Report",
-        "collections/services/SavedSearches"
-    ],
-    function(ReportModel, SavedSearchCollection) {
-        return SavedSearchCollection.extend({
-            model: ReportModel,
-            initialize: function() {
-                SavedSearchCollection.prototype.initialize.apply(this, arguments);
-            }
-        },
-        {
-            ALERT_SEARCH_STRING: '(is_scheduled=1 AND (alert_type!=always OR alert.track=1 OR (dispatch.earliest_time="rt*" AND dispatch.latest_time="rt*" AND actions="*" )))'
-        });
-    }
-);
-
 define('views/dashboards/panelcontrols/ReportDialog',
     [
         'jquery',
@@ -6970,11 +7196,26 @@ define('views/dashboards/panelcontrols/ReportDialog',
         'module',
         'views/shared/controls/ControlGroup',
         'views/shared/Modal',
-        'splunkjs/mvc/utils',
-        'splunk.config',
-        'collections/Reports'
+        'views/shared/FlashMessages', 
+        'splunk.util', 
+        'uri/route', 
+        'collections/Reports', 
+        'splunkjs/mvc/utils', 
+        'splunk.config'
     ],
-    function($, _, backbone, module, ControlGroup, Modal, utils, splunkConfig, Reports){
+    function($, 
+        _, 
+        backbone, 
+        module, 
+        ControlGroup, 
+        Modal, 
+        FlashMessage, 
+        splunkUtil, 
+        route, 
+        Reports, 
+        utils, 
+        splunkConfig
+    ){
         return Modal.extend({
             moduleId: module.id,
             initialize: function() {
@@ -6982,65 +7223,100 @@ define('views/dashboards/panelcontrols/ReportDialog',
 
                 this.model.workingReport = new backbone.Model();
                 this.model.workingReport.set({"title": ""});
+                this.model.workingReport.set("id", this.model.report.get('id')); 
+                this.children.flashMessage = new FlashMessage({ model: this.model.dashboard });
+                //reset flashmessages to clear pre-existing flash messages on 'cancel' or 'close' of dialog
+                this.on('hide', this.model.dashboard.error.clear, this.model.dashboard.error); 
+                this.listenTo(this.model.report, 'successfulManagerChange', this.hide, this); 
+                this.controller = this.options.controller;
 
-                this.collection = new Reports();
-                var pageInfo = utils.getPageInfo();
-                this.dfd = this.collection.fetch({
-                    data: {
-                        owner: splunkConfig.USERNAME,
-                        app: pageInfo.app
+                if(!this.controller.reportsCollection){
+                    this.controller.fetchCollection(); 
+                }
+
+                this.controller.reportsCollection.initialFetchDfd.done(_.bind(function() {  
+                    this.ready = true;
+                    var items = this.controller.reportsCollection.map(function(report) {
+                        return { label: report.entry.get('name'), value: report.id };
+                    });
+                     var reportsLink = route.reports(
+                        this.model.application.get("root"),
+                        this.model.application.get("locale"),
+                        this.model.application.get("app")
+                    ); 
+
+                    if(this.controller.reportsCollection.length === this.controller.reportsCollection.REPORTS_LIMIT){
+                        this.children.reportsControlGroup = new ControlGroup({
+                            label: _("Select Report").t(),
+                            controlType:'SyntheticSelect',
+                            controlClass: 'controls-block',
+                            controlOptions: {
+                                model: this.model.workingReport,
+                                modelAttribute: 'id',
+                                items: items,
+                                toggleClassName: 'btn',
+                                popdownOptions: {
+                                    attachDialogTo: '.modal:visible',
+                                    scrollContainer: '.modal:visible .modal-body:visible'
+                                }
+                            }, 
+                            help: _("This does not contain all reports. Add a report that is not listed from ").t() + splunkUtil.sprintf('<a href=%s>%s</a>.', reportsLink, _('Reports').t())
+                        });
+                    }else{
+                        this.children.reportsControlGroup = new ControlGroup({
+                            label: _("Select Report").t(),
+                            controlType:'SyntheticSelect',
+                            controlClass: 'controls-block',
+                            controlOptions: {
+                                model: this.model.workingReport,
+                                modelAttribute: 'id',
+                                items: items,
+                                toggleClassName: 'btn',
+                                popdownOptions: {
+                                    attachDialogTo: '.modal:visible',
+                                    scrollContainer: '.modal:visible .modal-body:visible'
+                                }
+                            }
+                        });
+                    }
+                }, this));
+
+                this.children.panelTitleControlGroup = new ControlGroup({
+                    label: _("Panel Title").t(),
+                    controlType:'Text',
+                    controlClass: 'controls-block',
+                    controlOptions: {
+                        model: this.model.workingReport,
+                        modelAttribute: 'title',
+                        placeholder: "optional"
                     }
                 });
-                this.dfd.done(_.bind(function(){
-                    this.ready = true;
-                    var reportNames = this.collection.map(function(model) {
-                        return {label:model.entry.get('name'), value:model.get('id')};
-                    });
-                    this.children.reportsControlGroup = new ControlGroup({
-                        label: _("Select Report").t(),
-                        controlType:'SyntheticSelect',
-                        controlClass: 'controls-block',
-                        controlOptions: {
-                            model: this.model.workingReport,
-                            modelAttribute: 'id',
-                            items:reportNames,
-                            toggleClassName: 'btn'
-                        }
-                    });
-
-                    this.children.panelTitleControlGroup = new ControlGroup({
-                        label: _("Panel Title").t(),
-                        controlType:'Text',
-                        controlClass: 'controls-block',
-                        controlOptions: {
-                            model: this.model.workingReport,
-                            modelAttribute: 'title'
-                        }
-                    });
-                }, this));
             },
             events: $.extend({}, Modal.prototype.events, {
                 'click .modal-btn-primary': 'onSave'
             }),
             onSave: function(e){
                 e.preventDefault();
-                this.hide();
                 this.model.report.trigger("updateReportID", this.model.workingReport.get('id'), this.model.workingReport.get('title'));
             },
             render: function() {
-                this.dfd.done(_.bind(function(){
-                    this.$el.html(Modal.TEMPLATE);
+                this.$el.html(Modal.TEMPLATE);
+                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Select a New Report").t());
+                this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessage.render().el);
+                this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
+                
+                this.$(Modal.BODY_FORM_SELECTOR).append(Modal.LOADING_HORIZONTAL);
+                this.$(Modal.LOADING_SELECTOR).html(_('Loading...').t()); 
 
-                    this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Select a New Report").t());
-
-                    this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
-
+                this.controller.reportsCollection.initialFetchDfd.done(_.bind(function(){
+                    this.$(Modal.LOADING_SELECTOR).remove(); 
                     this.$(Modal.BODY_FORM_SELECTOR).append(this.children.reportsControlGroup.render().el);
                     this.$(Modal.BODY_FORM_SELECTOR).append(this.children.panelTitleControlGroup.render().el);
-
-                    this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
-                    this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
                 }, this));
+
+                
+                this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
+                this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
             }
         });
     }
@@ -7056,15 +7332,25 @@ define('views/dashboards/panelcontrols/CreateReportDialog',
         'views/shared/Modal', 
         'views/shared/FlashMessages'
     ],
-    function($, _, backbone, module, ControlGroup, Modal, FlashMessagesView){
+    function($, 
+        _, 
+        backbone, 
+        module, 
+        ControlGroup, 
+        Modal, 
+        FlashMessagesView
+    ){
         return Modal.extend({
             moduleId: module.id,
             initialize: function() {
                 Modal.prototype.initialize.apply(this, arguments);
 
                 this.model.workingReport = new backbone.Model({'name': this.model.report.entry.content.get('display.general.title') });
-
-                this.children.flashMessages = new FlashMessagesView({model: this.model.report});
+                this.children.flashMessagesReport = new FlashMessagesView({model: this.model.report});
+                this.children.flashMessagesDashboard = new FlashMessagesView({model: this.model.dashboard});
+                //reset flashmessages to clear pre-existing flash messages on 'cancel' or 'close' of dialog
+                this.on('hide', this.model.report.error.clear, this.model.report.error); 
+                this.on('hide', this.model.dashboard.error.clear, this.model.dashboard.error); 
 
                 this.children.reportNameControlGroup = new ControlGroup({
                     label: _("Report Title").t(),
@@ -7082,11 +7368,12 @@ define('views/dashboards/panelcontrols/CreateReportDialog',
                     controlClass: 'controls-block',
                     controlOptions: {
                         model: this.model.workingReport,
-                        modelAttribute: 'description'
+                        modelAttribute: 'description',
+                        placeholder: "optional"
                     }
                 });
 
-                this.listenTo(this.model.report, 'successfulReportSave', this.closeDialog, this); 
+                this.listenTo(this.model.report, 'successfulReportSave', this.hide, this); 
             },
             events: $.extend({}, Modal.prototype.events, {
                 'click .modal-btn-primary': 'onSave'
@@ -7095,15 +7382,11 @@ define('views/dashboards/panelcontrols/CreateReportDialog',
                 e.preventDefault();
                 this.model.report.trigger("saveAsReport", this.model.workingReport.get("name"), this.model.workingReport.get("description"));
             },
-            closeDialog: function(){
-                //if save succeeds
-                this.hide(); 
-            },
             render: function() {
                 this.$el.html(Modal.TEMPLATE);
-                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Save panel as report.").t());
-                this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessages.render().el);
-
+                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Convert to Report").t());
+                this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessagesDashboard.render().el);
+                this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessagesReport.render().el);
                 this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
 
                 this.$(Modal.BODY_FORM_SELECTOR).append(this.children.reportNameControlGroup.render().el);
@@ -7116,6 +7399,498 @@ define('views/dashboards/panelcontrols/CreateReportDialog',
     }
 );
 
+/**
+ * @author jszeto
+ * @date 12/17/12
+ */
+define('views/ValidatingView',[
+    'jquery',
+    'backbone',
+    'underscore',
+    'views/Base',
+    'util/general_utils'
+],
+    function(
+        $,
+        Backbone,
+        _,
+        BaseView,
+        general_utils
+        ){
+        return BaseView.extend(
+        {
+
+            /**
+             * A dictionary mapping the model attributes to the name of ControlGroup children views. The key is the
+             * model attribute name. The value is the name of the ControlGroup in the view's children dictionary.
+             * ex. {
+             *         firstName: "FirstNameView",
+             *         lastName: "LastNameView",
+             *         zipCode: "ZipCodeView"
+             *     }
+             */
+            modelToControlGroupMap: {},
+
+            /**
+             *  Override parent class dispose to also call tearDownValidation()
+             */
+            dispose: function() {
+                var returnValue = BaseView.prototype.dispose.call(this, arguments);
+                this.tearDownValidation();
+                return returnValue;
+            },
+
+            /**
+             * Call this function if your View has data input controls that need to perform validation. Instantiate the
+             * view's model prior to calling this function.
+             *
+             * @param model - a model or collection The view listens for their "validated" event
+             * @param flashMessagesHelper - {FlashMessagesHelper} - reference to the FlashMessagesHelper which listens to
+             * "validated" events from a set of Views and applies those errors to a FlashMessages collection
+             */
+            setupValidation: function(modelOrCollection, flashMessagesHelper) {
+                if (_.isUndefined(modelOrCollection))
+                    throw "The model or collection you passed into views/Base.setupValidation is undefined";
+                // Handle case of collection by iterating over it
+                if (modelOrCollection instanceof Backbone.Model)
+                    this._setupModelValidationListener(modelOrCollection);
+                else if (modelOrCollection instanceof Backbone.Collection) {
+                    modelOrCollection.each(function(model){
+                        this._setupModelValidationListener(model);
+                    });
+                    modelOrCollection.on('add', function(model) {this._setupModelValidationListener(model);}, this);
+                    modelOrCollection.on('remove', function(model) {model.off("validated", this._modelValidatedHandler, this);}, this);
+                }
+                // Register with the FlashMessagesHelper
+                this.__flashMessagesHelper__ = flashMessagesHelper;
+                this.__flashMessagesHelper__.register(this);
+            },
+
+            /**
+             * Call this when destroying the View
+             */
+            tearDownValidation: function() {
+                if (this.__flashMessagesHelper__)
+                    this.__flashMessagesHelper__.unregister(this);
+            },
+
+            // Helper function to setup the validated listener on a given model. For internal use only.
+            _setupModelValidationListener: function(model) {
+                model.on("validated",this._modelValidatedHandler, this);
+            },
+
+            /**
+             * Handle when a model has performed validation. This function decorates the error messages with labels from
+             * the view's ControlGroups if the modelToControlGroupMap property is defined. It then sets the error states
+             * of the ControlGroups based on the errors. The function also notifies the FlashMessagesHelper of the latest
+             * validation result.
+             *
+             * @param isValid - true if the entire model passed validation
+             * @param model - the model that was validated
+             * @param invalidAttrs - an object of invalid model attributes and their error messages. The key is the attribute
+             * name while the value is the error message.
+             */
+            _modelValidatedHandler: function(isValid, model, invalidAttrs) {
+
+                var flashMessages = [];
+
+                if (this.modelToControlGroupMap) {
+                    // Get a dictionary where the keys are the controlGroups and the values are undefined.
+                    var controlGroupToErrorMap = general_utils.invert(this.modelToControlGroupMap);
+                    controlGroupToErrorMap =  _.reduce(_.keys(controlGroupToErrorMap || {}), function(memo, key) {
+                        memo[key] = void 0;
+                        return memo;
+                    }, {});
+
+                    _(invalidAttrs).each(function (error, invalidAttr) {
+                        invalidAttrs[invalidAttr] = {message:error, label:""};
+                    });
+
+                    // Iterate over the invalidAttrs and map their error message to the controlGroupToErrorMap
+                    _(invalidAttrs).each(function(error, invalidAttr) {
+                        // Get the controlGroup associated with this model attribute
+                        var controlGroupName = this.modelToControlGroupMap[invalidAttr];
+                        var message = error.message;
+                        var decoratedMessage;
+                        var controlGroupLabel = "";
+
+                        if (!_.isUndefined(controlGroupName)) {
+
+                            // Replace the {label} placeholder with the control group's label.
+                            if (this.children[controlGroupName].options.label)
+                                controlGroupLabel = this.children[controlGroupName].options.label;
+                            decoratedMessage = message.replace(/\{(label)\}/g, controlGroupLabel || invalidAttr);
+
+                            controlGroupToErrorMap[controlGroupName] = decoratedMessage;
+                        } else {
+                            // If we can't find the attribute in the map, then just use the model attribute for the label
+                            decoratedMessage = message.replace(/\{(label)\}/g, invalidAttr);
+                        }
+
+                        error.message = decoratedMessage;
+                        error.label = controlGroupLabel;
+
+                    }, this);
+
+                    // Iterate over the View's controlGroups and set the error state
+                    _(controlGroupToErrorMap).each(function(error, controlGroup) {
+                        if (!_.isUndefined(error)) {
+                            this.children[controlGroup].error(true, error);
+                        }
+                        else {
+                            this.children[controlGroup].error(false, "");
+                        }
+                    }, this);
+                }
+                else {
+                    _(invalidAttrs).each(function(error, invalidAttr) {
+                        error.message = error.message.replace(/\{(label)\}/g, invalidAttr);
+                    });
+                }
+
+                this.trigger("validated", isValid, model, invalidAttrs, this);
+            }
+
+    });
+});
+
+/**
+ * @author jszeto
+ * @date 10/18/12
+ *
+ * The DialogBase class serves as the base class for all dialog classes. It provides a template that is divided into
+ * three sections, the header, body and footer. It currently uses the Bootstrap modal class for appearance and
+ * functionality.
+ *
+ * The default behaviors are as follows:
+ *
+ * The header displays a title and a close button. Set the title using the settings.titleLabel attribute.
+ * The body doesn't have any content. Subclasses should populate the body by overriding renderBody().
+ * The footer shows a primary button and a cancel button. Set the labels of these buttons using the
+ * settings.primaryButtonLabel and settings.cancelButtonLabel attributes.
+ *
+ * If you don't want the built-in appearance for the header, body or footer, then subclasses can override the
+ * renderXHtml() functions.
+ */
+
+define('views/shared/dialogs/DialogBase',
+    [
+        'jquery',
+        'underscore',
+        'backbone',
+        'views/ValidatingView',
+        'module',
+        'bootstrap.transition',
+        'bootstrap.modal'
+    ],
+    function(
+        $,
+        _,
+        Backbone,
+        ValidatingView,
+        module
+        // bootstrap transition
+        // bootstrap modal
+        )
+    {
+        var ENTER_KEY = 13,
+            TEXT_INPUT_SELECTOR = 'input[type="text"], input[type="password"], textarea';
+
+        return ValidatingView.extend({
+            moduleId: module.id,
+            className: "modal fade",
+            attributes: {tabIndex: -1},
+            /**
+             * A model holding the settings for the Dialog.
+             *
+             * {String} primaryButtonLabel - label for the primary button. If not defined, primary button isn't shown
+             * {String} cancelButtonLabel - label for the cancel button. If not defined, cancel button isn't shown
+             * {String} titleLabel - label for the dialog title
+             */
+            settings: undefined,
+            /**
+             * CSS class to apply to the modal-body
+             */
+            bodyClassName: "modal-body-scrolling",
+
+            // Subclasses must call super.initialize()
+            initialize: function(options) {
+                ValidatingView.prototype.initialize.call(this, options);
+
+                options = options || {};
+                // Initialize the modal
+                // TODO [JCS] Look at other dialogs and add ability to not close on outside click
+                this.$el.modal({show:false, keyboard:true});
+
+                if (!_.isUndefined(options.bodyClassName))
+                    this.bodyClassName = options.bodyClassName;
+                // TODO [JCS] Override remove to remove event listeners on settings
+                // Setup the settings
+                this.settings = new Backbone.Model();
+                this.settings.set("footerTemplate",this._footerTemplate);
+                this.settings.set("headerTemplate",this._headerTemplate);
+
+                // Re-render if any of the labels have changed
+
+                this.settings.on('change:primaryButtonLabel change:cancelButtonLabel change:titleLabel',
+                                  this.debouncedRender, this);
+
+                // Hook up click event listeners. We avoid using the events array since subclasses might clobber it
+                this.$el.on("click.dialog",".btn-dialog-primary", _.bind(function(event) {
+                    event.preventDefault();
+                    this.primaryButtonClicked();
+                }, this));
+                this.$el.on("click.dialog",".btn-dialog-cancel", _.bind(function(event) {
+                    event.preventDefault();
+                    this.cancelButtonClicked();
+                }, this));
+                this.$el.on("click.dialog",".btn-dialog-close", _.bind(function(event) {
+                    event.preventDefault();
+                    this.closeButtonClicked();
+                }, this));
+                this.$el.on("keypress", _.bind(function(event) {
+                    if(event.which === ENTER_KEY) {
+                        this.submitKeyPressed(event);
+                    }
+                }, this));
+                this.$el.on("shown", _.bind(function(e) {
+                    if (e.target !== e.currentTarget) return;
+                    this.dialogShown();
+                }, this));
+                this.$el.on("hide", _.bind(function(e) {
+                    if (e.target !== e.currentTarget) return;
+                    this.cleanup();
+                }, this));
+                this.$el.on("hidden", _.bind(function(e) {
+                    if (e.target !== e.currentTarget) return;
+                    this.trigger("hidden");
+                }, this));
+            },
+            render: function() {
+                this.$(".modal-header").detach();
+                this.$(".modal-body").detach();
+                this.$(".modal-footer").detach();
+
+                var html = this.compiledTemplate({
+                    bodyClassName:this.bodyClassName});
+
+                this.$el.html(html);
+
+                this.renderHeader(this.$(".modal-header"));
+                this.renderBody(this.$(".modal-body"));
+                this.renderFooter(this.$(".modal-footer"));
+
+                return this;
+            },
+            hide: function() {
+                this.$el.modal('hide');
+            },
+            show: function() {
+                this.$el.modal('show');
+            },
+            /**
+             * Called when the primary button has been clicked.
+             */
+            primaryButtonClicked: function() {
+                this.trigger("click:primaryButton", this);
+            },
+            /**
+             * Called when the cancel button has been clicked.
+             */
+            cancelButtonClicked: function() {
+                this.trigger("click:cancelButton", this);
+            },
+            /**
+             * Called when the close button has been clicked.
+             */
+            closeButtonClicked: function() {
+                this.trigger("click:closeButton", this);
+            },
+            /**
+             * Called when the "submit key" is pressed.  Currently the submit key is hard-coded to the enter key,
+             * but this may become configurable in the future.
+             *
+             * @param event
+             */
+            submitKeyPressed: function(event) {
+                var $target = $(event.target);
+                // if the currently focused element is any kind of text input,
+                // make sure to blur it so that any change listeners are notified
+                if($target.is(TEXT_INPUT_SELECTOR)) {
+                    $target.blur();
+                }
+                // manually trigger the primary button click handler
+                this.primaryButtonClicked();
+            },
+            /**
+             * Called when the dialog has been shown. Subclasses can override with their own handlers
+             */
+            dialogShown: function() {
+                this.trigger("show");
+                // Apply focus to the first text input in the dialog. [JCS] Doesn't work without doing a debounce. Not sure why.
+                _.debounce(function() {
+                    this.$('input:text:enabled:visible:first').focus();
+                }.bind(this), 0)();
+                return;
+            },
+            /**
+             * Called when the dialog has been closed. Subclasses can override with their own cleanup logic
+             */
+            cleanup: function() {
+                this.trigger("hide");
+                return;
+            },
+            /**
+             * Render the dialog body. Subclasses should override this function
+             *
+             * @param $el The jQuery DOM object of the body
+             */
+            renderBody : function($el) {
+                // No op
+            },
+            /**
+             * Render the header.
+             *
+             * @param $el The jQuery DOM object of the header
+             */
+            renderHeader : function($el) {
+                // To perform jQuery manipulation, wrap the header template in a div.
+                // Insert the titleLabel into the title placeholder
+                $el.html(this.settings.get("headerTemplate"));
+                $el.find(".text-dialog-title").html(this.settings.get("titleLabel"));
+            },
+            /**
+             * Renders the dialog footer. The default implementation takes the settings.footerTemplate
+             * and searches for primary and cancel buttons. If a label is defined for it, then it will show the button
+             * and set its label. Otherwise, it will hide the button.
+             *
+             * Subclasses can override this to customize the footer html.
+             *
+             * @param $el The jQuery DOM object of the footer
+             */
+            renderFooter : function($el) {
+                // To perform jQuery manipulation, wrap the header template in a div.
+                $el.html(this.settings.get("footerTemplate"));
+
+                // If the primary button label is undefined, then don't show the button
+                var primaryButton = $el.find(".btn-dialog-primary.label_from_data");
+                if (this.settings.has("primaryButtonLabel"))
+                {
+                    primaryButton.html(this.settings.get("primaryButtonLabel"));
+                    primaryButton.show();
+                }
+                else
+                {
+                    primaryButton.html('');
+                    primaryButton.hide();
+                }
+
+                // If the cancel button label is undefined, then don't show the button
+                var cancelButton = $el.find(".btn-dialog-cancel.label_from_data");
+                if (this.settings.has("cancelButtonLabel"))
+                {
+                    cancelButton.html(this.settings.get("cancelButtonLabel"));
+                    cancelButton.show();
+                }
+                else
+                {
+                    cancelButton.html('');
+                    cancelButton.hide();
+                }
+            },
+            template: '\
+                <div class="modal-header"></div>\
+                <div class="modal-body <%- bodyClassName %>"></div>\
+                <div class="modal-footer"></div>\
+            ',
+            _footerTemplate: '\
+                <a href="#" class="btn btn-dialog-cancel label_from_data pull-left" data-dismiss="modal"></a>\
+                <a href="#" class="btn btn-primary btn-dialog-primary label_from_data pull-right"></a>\
+            ',
+            _headerTemplate: '\
+                <button type="button" class="close btn-dialog-close" data-dismiss="modal">x</button>\
+                <h3 class="text-dialog-title"></h3>\
+            '
+        });
+    }
+);
+
+/**
+ * @author jszeto
+ * @date 10/22/12
+ */
+
+define('views/shared/dialogs/TextDialog',
+    [
+        'jquery',
+        'underscore',
+        'views/shared/dialogs/DialogBase',
+        'module', 
+        'views/shared/FlashMessages'
+    ],
+    function(
+        $,
+        _,
+        DialogBase,
+        module, 
+        FlashMessagesView
+    )
+    {
+
+        return DialogBase.extend({ 
+            moduleId: module.id,
+            _text: "",
+            initialize: function(options) {
+                DialogBase.prototype.initialize.call(this, options);
+                // Set default values for the button labels
+                this.settings.set("primaryButtonLabel",_("Ok").t());
+                this.settings.set("cancelButtonLabel",_("Cancel").t());
+                if(this.options.flashModel){
+                    this.children.flashMessages = new FlashMessagesView({model: this.options.flashModel});
+                    //reset flashmessages to clear pre-existing flash messages on 'cancel' or 'close' of dialog
+                    this.on('hide', this.options.flashModel.error.clear, this.options.flashModel.error); 
+                }
+                this.on('hidden', this.remove, this); //clean up dialog after it is closed
+                this.doDefault = true; 
+            },
+            primaryButtonClicked: function() {
+                DialogBase.prototype.primaryButtonClicked.call(this);
+                if (this.doDefault){
+                    this.hide();
+                }
+            },
+            setText : function(value) {
+                this._text = value;
+                this.debouncedRender();
+            },
+            closeDialog: function(){
+            //if delete succeeds
+                this.hide(); 
+                this.remove(); 
+            },
+            preventDefault: function(){
+                this.doDefault = false; 
+            },
+            /**
+             * Render the dialog body. Subclasses should override this function
+             *
+             * @param $el The jQuery DOM object of the body
+             */
+            renderBody : function($el) {
+                $el.html(this.bodyTemplate);
+                $el.find(".text-dialog-placeholder").html(this._text);
+                if(this.children.flashMessages){
+                    $el.find(".text-dialog-placeholder").prepend(this.children.flashMessages.render().el);
+                }
+            },
+            bodyTemplate: '\
+                <span class="text-dialog-placeholder"></span>\
+            '
+        });
+    }
+);
+
+
 define('views/dashboards/panelcontrols/Master',[
     'underscore',
     'views/Base',
@@ -7123,20 +7898,18 @@ define('views/dashboards/panelcontrols/Master',[
     'jquery',
     'module',
     'views/shared/controls/SyntheticSelectControl',
-    'views/shared/dialogs/TextDialog',
     'views/shared/delegates/Popdown',
     'views/shared/reportcontrols/details/Master',
     'collections/services/authorization/Roles',
     'models/Application',
-    'splunkjs/mvc/utils',
-    'splunk.config',
     'views/dashboards/panelcontrols/titledialog/Modal',
     'views/dashboards/panelcontrols/querydialog/Modal',
     'views/dashboards/panelcontrols/ReportDialog',
     'views/dashboards/panelcontrols/CreateReportDialog',
     'uri/route',
     'util/console', 
-    'splunk.util'
+    'splunk.util',
+    'views/shared/dialogs/TextDialog'
 ],
 function(_,
          BaseView,
@@ -7144,20 +7917,18 @@ function(_,
          $,
          module,
          SyntheticSelectControl,
-         TextDialog,
          Popdown,
          ReportDetailsView,
          RolesCollection,
          ApplicationModel,
-         utils,
-         splunkConfig,
          TitleDialogModal,
          QueryDialogModal,
          ReportDialog,
          CreateReportDialog,
          route,
          console, 
-         splunkUtils
+         splunkUtils, 
+         TextDialog
     ){
 
     var PanelControls = BaseView.extend({
@@ -7171,13 +7942,13 @@ function(_,
             this.collection = this.collection || {};
             this.collection.roles = new RolesCollection({});
             this.collection.roles.fetch();
-
         },
         onChangeElementTitle: function(e) {
             e.preventDefault();
             this.children.titleDialogModal = new TitleDialogModal({
                 model:  {
-                    report: this.model.working
+                    report: this.model.working, 
+                    dashboard: this.model.dashboard
                 },
                 onHiddenRemove: true
             });
@@ -7193,7 +7964,9 @@ function(_,
                     report: this.model.report,
                     appLocal: this.model.appLocal,
                     application: this.model.application,
-                    user: this.model.user
+                    user: this.model.user,
+                    dashboard: this.model.dashboard,
+                    state: this.model.state
                 },
                 onHiddenRemove: true
             });
@@ -7266,21 +8039,28 @@ function(_,
         ',
         onDelete: function(e){
             e.preventDefault();
-            this.children.dialog = new TextDialog({id: "modal_delete"});
+
+            this.children.dialog = new TextDialog({
+                id: "modal_delete", 
+                "flashModel": this.model.dashboard
+            });
+
+            this.model.report.on('successfulDelete', this.children.dialog.closeDialog, this.children.dialog);  
             this.children.dialog.settings.set("primaryButtonLabel",_("Delete").t());
             this.children.dialog.settings.set("cancelButtonLabel",_("Cancel").t());
-            this.children.dialog.on('click:primaryButton', this.dialogDeleteHandler, this);
+            this.children.dialog.on('click:primaryButton', this._dialogDeleteHandler, this);
             this.children.dialog.settings.set("titleLabel",_("Delete").t());
             this.children.dialog.setText(splunkUtils.sprintf(
-                _("Are you sure you want to delete %s?").t(), this.model.report.entry.content.get('display.general.title')));
+                _("Are you sure you want to delete %s?").t(), '<em>' + _.escape(this.model.report.entry.content.get('display.general.title')) + '</em>'));
             $("body").append(this.children.dialog.render().el);
             this.children.dialog.show();
             this.children.popdown.hide();
         },
-        dialogDeleteHandler: function() {
-            this.children.dialog.hide();
-            this.children.dialog.remove();
-            this.model.report.deleteXML();
+        
+        _dialogDeleteHandler: function(e) {
+            e.preventDefault(); 
+            this.model.report.trigger('deleteReport'); 
+            console.log('deleteReport event triggered');
         },
         onViewPanelReport: function(e){
             e.preventDefault();
@@ -7313,7 +8093,7 @@ function(_,
                 collection: this.collection.roles
             });
 
-            this.$('.reportDetails').prepend($("<li/>").append(this.children.reportDetails.render().el));
+            this.$('.reportDetails').prepend($("<li/>").addClass('reportDetailsView').append(this.children.reportDetails.render().el));
             var desc = this.model.report.entry.content.get('description');
             if(desc) {
                 this.$('.reportDetails').prepend($("<li/>").addClass('report-description').text(desc));
@@ -7332,7 +8112,7 @@ function(_,
             </ul>\
             <ul class="reportActions">\
                 <li><a href="#" class="selectNewReport"><%- _("Select New Report").t() %></a></li>\
-                <li><a href="#" class="useReportFormatting"><%- _("Use Report Formatting On Visualization").t() %></a></li>\
+                <li><a href="#" class="useReportFormatting"><%- _("Use Report\'s Formatting for this Content").t() %></a></li>\
             </ul>\
         ',
         pivotReportDetailsTemplate: '\
@@ -7345,7 +8125,7 @@ function(_,
             </ul>\
             <ul class="reportActions">\
                 <li><a class="selectNewReport"><%- _("Select New Report").t() %></a></li>\
-                <li><a class="useReportFormatting"><%- _("Use Report Formatting On Visualization").t() %></a></li>\
+                <li><a class="useReportFormatting"><%- _("Use Report\'s Formatting for this Content").t() %></a></li>\
             </ul>\
         ',
         onDialogBack: function(e){
@@ -7361,10 +8141,14 @@ function(_,
         },
         convertToInlineSearch: function(e){
             e.preventDefault();
-            this.children.dialog = new TextDialog({id: "modal_inline"});
+            this.children.dialog = new TextDialog({
+                id: "modal_inline",
+                "flashModel": this.model.dashboard
+            });
             this.children.dialog.settings.set("primaryButtonLabel",_("Clone to Inline Search").t());
             this.children.dialog.settings.set("cancelButtonLabel",_("Cancel").t());
             this.children.dialog.on('click:primaryButton', this._convertToInlineSearch, this);
+            this.model.report.on('successfulManagerChange', this.children.dialog.closeDialog, this.children.dialog);  
             this.children.dialog.settings.set("titleLabel", _("Clone to Inline Search").t());
             this.children.dialog.setText('<div>\
                 <p>'+_("The report will be cloned to an inline search.").t()+'</p>\
@@ -7381,10 +8165,14 @@ function(_,
         },
         convertToInlinePivot: function(e){
             e.preventDefault();
-            this.children.dialog = new TextDialog({id: "modal_inline"});
+            this.children.dialog = new TextDialog ({
+                id: "modal_inline",
+                "flashModel": this.model.dashboard
+            });
             this.children.dialog.settings.set("primaryButtonLabel",_("Clone to Inline Pivot").t());
             this.children.dialog.settings.set("cancelButtonLabel",_("Cancel").t());
             this.children.dialog.on('click:primaryButton', this._convertToInlineSearch, this);
+            this.model.report.on('successfulManagerChange', this.children.dialog.closeDialog, this.children.dialog);
             this.children.dialog.settings.set("titleLabel", _("Clone to Inline Pivot").t());
             this.children.dialog.setText('<div>\
                 <p>'+_("The report will be cloned to an inline pivot.").t()+'</p>\
@@ -7398,36 +8186,45 @@ function(_,
             $("body").append(this.children.dialog.render().el);
             this.children.dialog.show();
             this.children.popdown.hide();
+            
         },
-        _convertToInlineSearch: function(){
-            this.children.dialog.hide();
-            this.children.dialog.remove();
+        _convertToInlineSearch: function(e){
+            e.preventDefault();
             this.model.report.trigger("makeInline");
+            console.log("makeInline event triggered"); 
         },
         useReportFormatting: function(e){
             e.preventDefault();
-            this.children.dialog = new TextDialog({id: "modal_use_report_formatting"});
 
-            this.children.dialog.settings.set("primaryButtonLabel",_("Use Report Formatting on Visualization").t());
+            this.children.dialog = new TextDialog({
+                id: "modal_use_report_formatting", 
+                "flashModel": this.model.dashboard
+            });
+
+            this.children.dialog.settings.set("primaryButtonLabel",_("Use Report's Formatting").t());
             this.children.dialog.settings.set("cancelButtonLabel",_("Cancel").t());
             this.children.dialog.on('click:primaryButton', this._useReportFormatting, this);
-            this.children.dialog.settings.set("titleLabel",_("Use Report Formatting").t());
-            this.children.dialog.setText(_("Use only the report formatting?").t());
+            this.model.report.on('successfulReportFormatting', this.children.dialog.closeDialog, this.children.dialog);  
+            this.children.dialog.settings.set("titleLabel",_("Use Report's Formatting").t());
+            this.children.dialog.setText(_("This will change the content's formatting to the report's formatting. Are you sure you want use the report's formatting?").t());
             $("body").append(this.children.dialog.render().el);
             this.children.dialog.show();
             this.children.popdown.hide();
         },
-        _useReportFormatting: function(){
-            this.children.dialog.hide();
-            this.children.dialog.remove();
+        _useReportFormatting: function(e){
+            e.preventDefault(); 
             this.model.report.trigger("useReportFormatting");
+            console.log('useReportFormatting event triggered');
         },
         selectNewReport: function(e) {
             e.preventDefault();
             this.children.newReportDialog = new ReportDialog({
                 model:  {
-                    report: this.model.report
+                    report: this.model.report, 
+                    dashboard: this.model.dashboard, 
+                    application: this.model.application
                 },
+                controller: this.options.controller, 
                 onHiddenRemove: true
             });
 
@@ -7439,7 +8236,8 @@ function(_,
             e.preventDefault();
             this.children.createReportDialog = new CreateReportDialog({
                 model:  {
-                    report: this.model.report
+                    report: this.model.report, 
+                    dashboard: this.model.dashboard
                 },
                 onHiddenRemove: true
             });
@@ -7458,16 +8256,27 @@ function(_,
             'click a.clonePivotReport': "convertToInlinePivot",
             'click a.selectNewReport': "selectNewReport",
             'click a.convertToReport': "convertToReport",
-            'click a.useReportFormatting': "useReportFormatting"
+            'click a.useReportFormatting': "useReportFormatting",
+            'click a': function(e){
+                // SPL-66074 - Catch all: open regular links in a new window
+                var link = $(e.currentTarget).attr('href');
+                if(link && link[link.length-1] !== '#') {
+                    e.preventDefault();
+                    window.open(link);
+                }
+            }, 
+            'click li.reportDetailsView a': function(e){
+                this.children.popdown.hide(); 
+            }
         }
 
     });
     return PanelControls;
 });
-define('splunkjs/mvc/simplexml/paneleditor',['require','exports','module','../mvc','../basesplunkview','models/Report','views/shared/vizcontrols/Master','views/dashboards/panelcontrols/Master','../savedsearchmanager','../searchmanager','splunkjs/mvc/utils','underscore','splunk.config','models/Base','util/console','./controller','../tokenawaremodel'],function(require, exports, module) {
+
+define('splunkjs/mvc/simplexml/paneleditor',['require','exports','module','../mvc','../basesplunkview','views/shared/vizcontrols/Master','views/dashboards/panelcontrols/Master','../savedsearchmanager','../searchmanager','splunkjs/mvc/utils','underscore','splunk.config','models/Base','util/console','./controller','../tokenawaremodel','models/DashboardReport'],function(require, exports, module) {
     var mvc = require('../mvc');
     var BaseSplunkView = require('../basesplunkview');
-    var Report = require('models/Report');
     var FormatControls = require('views/shared/vizcontrols/Master');
     var PanelControls = require('views/dashboards/panelcontrols/Master');
     var SavedSearchManager = require('../savedsearchmanager');
@@ -7479,27 +8288,35 @@ define('splunkjs/mvc/simplexml/paneleditor',['require','exports','module','../mv
     var console = require('util/console');
     var controller = require('./controller');
     var TokenAwareModel = require('../tokenawaremodel');
+    var DashboardReport = require('models/DashboardReport'); 
 
     /**
      * Working model for a DashboardReport model
      * Delegates to saveXML() when save() is called
      */
-    var WorkingModel = BaseModel.extend({
+    var WorkingModel = DashboardReport.extend({
         initialize: function(attrs, options) {
+            DashboardReport.prototype.initialize.apply(this, arguments);
             this._report = options.report;
-            this.entry = new BaseModel();
+
             this.entry.content = new TokenAwareModel({}, {
                 applyTokensByDefault: true,
                 retrieveTokensByDefault: true
             });
-            this.entry.set(this._report.entry.toJSON({ tokens: true }));
+
+            this.setFromSplunkD(this._report.toSplunkD());
+
             // Make sure the working model stays up-to-date while in edit mode
             this.contentSyncer = utils.syncModels({
                 source: this._report.entry.content,
                 dest: this.entry.content,
                 auto: 'push'
             });
-            BaseModel.prototype.initialize.call(this, attrs);
+            this.entrySyncer = utils.syncModels({
+                source: this._report.entry,
+                dest: this.entry,
+                auto: 'push'
+            });
         },
         save: function(attrs, options) {
             if(attrs) {
@@ -7507,10 +8324,13 @@ define('splunkjs/mvc/simplexml/paneleditor',['require','exports','module','../mv
             }
             this._report.entry.set(this.entry.toJSON());
             this._report.entry.content.set(this.entry.content.toJSON({ tokens: true }));
-            this._report.saveXML();
+
+            //return deferred that is returned by .save()
+            return this._report.saveXML(options); 
         },
         syncOff: function() {
             this.contentSyncer.destroy();
+            this.entrySyncer.destroy();
             this.off();
         }
     });
@@ -7522,8 +8342,9 @@ define('splunkjs/mvc/simplexml/paneleditor',['require','exports','module','../mv
             BaseSplunkView.prototype.initialize.call(this);
             //create the report and state models
             this.model = this.model || {};
-            this.model.report = this.model.report || new Report();
+            this.model.report = this.model.report || new DashboardReport();
             this.model.working = new WorkingModel({}, { report: this.model.report });
+            this.model.application = controller.model.app;
             this.manager = this.options.manager;
             this._instantiateChildren();
             this.bindToComponent(this.manager, this.onManagerChange, this);
@@ -7531,31 +8352,36 @@ define('splunkjs/mvc/simplexml/paneleditor',['require','exports','module','../mv
             this.listenTo(this.model.report, 'makeInline', this._makePanelInline, this);
             this.listenTo(this.model.report, 'useReportFormatting', this._useReportFormatting, this);
             this.listenTo(this.model.report, 'updateReportID', this._updateReportID, this);
-            this.listenTo(this.model.report, 'updateSearchString', this._updateSearchManager, this);
             this.listenTo(this.model.report, 'saveAsReport', this._saveAsReport, this);
+            this.listenTo(this.model.report, 'updateSearchString', this._updateSearchManager, this);
+            this.listenTo(this.model.report, 'deleteReport', this._deleteReport, this);
+            //use this.model.working instead of this.model.report for dialogs that use tokens
+            this.listenTo(this.model.working, 'saveTitle', this._saveTitle, this);
 
-            this.model.application = controller.model.app;
             this.model.user = controller.model.user;
             this.model.appLocal = controller.model.appLocal;
         },
         _instantiateChildren: function() {
             //create the child views
             this.children.vizControl = new FormatControls({
-                model: { report: this.model.working },
+                model: { report: this.model.working, application: this.model.application },
                 vizTypes: ['events', 'statistics', 'visualizations'],
-                saveOnApply: true
+                saveOnApply: true,
+                dashboard: true
             });
-
+            
             this.children.panelControl = new PanelControls({
                 model: {
                     report: this.model.report,
                     working: this.model.working,
                     application: this.model.application,
                     appLocal: this.model.appLocal,
-                    user: this.model.user
-                }
+                    user: this.model.user, 
+                    dashboard: controller.model.view,
+                    state: controller.getStateModel()
+                }, 
+                controller: controller
             });
-
         },
         remove: function() {
             this.model.working.syncOff();
@@ -7566,30 +8392,40 @@ define('splunkjs/mvc/simplexml/paneleditor',['require','exports','module','../mv
             this.children.vizControl.remove();
             this.children.panelControl.remove();
         },
-        _updateSearchManager: function() {
-            var manager = mvc.Components.get(this.manager);
-            if(manager.query) {
-                manager.query.set('search', this.model.report.entry.content.get('search', { tokens: true }), { tokens: true });
-            }
-            if(manager.search) {
-                manager.search.set({
-                    'earliest_time': this.model.report.entry.content.get('dispatch.earliest_time', { tokens: true }),
-                    'latest_time': this.model.report.entry.content.get('dispatch.latest_time', { tokens: true })
-                });
-            }
+        _updateSearchManager: function(newAttributes) {
+            //preserve old state before search info is updated
+            var oldState = this.model.report.toSplunkD(); 
 
-            this.model.report.saveXML();
+            //update search info (note: we are passing newAttributes instead of newState as model.workingReport does not have toSplunkD() method)
+            this.model.report.entry.content.set(newAttributes);
+
+            var dfd = this.model.report.saveXML();
+            dfd.done(_.bind(function(){
+                //notify modal dialog of save success, so that the dialog knows to hide itself
+                this.model.report.trigger("successfulSave"); 
+                //update search manager with new search info 
+                var manager = mvc.Components.get(this.manager);
+                if(manager.query) {
+                    manager.query.set('search', this.model.report.entry.content.get('search', { tokens: true }), { tokens: true, silent: false });
+                }
+                if(manager.search) {
+                    manager.search.set({
+                        'earliest_time': this.model.report.entry.content.get('dispatch.earliest_time', { tokens: true }),
+                        'latest_time': this.model.report.entry.content.get('dispatch.latest_time', { tokens: true })
+                    }, {tokens: true});
+                }
+            }, this)); 
+            dfd.fail(_.bind(function(){
+                //restore state and notify listeners to re-render views
+                this.model.report.setFromSplunkD(oldState, {silent: false}); 
+            }, this));             
         },
 
-        onManagerChange: function(ctxs, manager) {
-            if(this._seenManager) {
-                this.model.report.saveXML();
-            } else {
-                this._seenManager = true;
-            }
+        onManagerChange: function() {
             this._removeChildren();
             this._instantiateChildren();
             this.render();
+
         },
         render: function() {
             this.$el.append(this.children.panelControl.render().el);
@@ -7597,84 +8433,172 @@ define('splunkjs/mvc/simplexml/paneleditor',['require','exports','module','../mv
             return this;
         },
         _makePanelInline: function() {
-            //remove the old saved search manager
-            mvc.Components.revokeInstance(this.manager, {silent: true});
-            //set the search manager
+            var oldState = this.model.report.toSplunkD(); 
+            var oldName = this.model.report.entry.get('name'); 
+            var oldId = this.model.report.get('id'); 
+
             delete this.model.report.id;
             this.model.report.unset('id', {silent: true});
-            new SearchManager({
-                "id": this.manager,
-                "latest_time": this.model.report.entry.content.get('dispatch.latest_time'),
-                "earliest_time": this.model.report.entry.content.get('dispatch.earliest_time'),
-                "search": this.model.report.entry.content.get('search'),
-                "app": utils.getCurrentApp(),
-                "auto_cancel": 90,
-                "status_buckets": 0,
-                "preview": true,
-                "timeFormat": "%s.%Q",
-                "wait": 0
-            });
+            this.model.report.entry.unset('name', {silent: true}); //making inline, so remove name for getSearch() in mapper.js
+
+            var dfd = this.model.report.saveXML();
+            dfd.fail(_.bind(function(){
+                //restore state and notify listeners to re-render views
+                this.model.report.setFromSplunkD(oldState, {silent: false}); 
+            }, this)); 
+            dfd.done(_.bind(function(){
+                this.model.report.trigger('successfulManagerChange'); 
+                new SearchManager({
+                    "id": this.manager,
+                    "latest_time": this.model.report.entry.content.get('dispatch.latest_time'),
+                    "earliest_time": this.model.report.entry.content.get('dispatch.earliest_time'),
+                    "search": this.model.report.entry.content.get('search'),
+                    "app": utils.getCurrentApp(),
+                    "auto_cancel": 90,
+                    "status_buckets": 0,
+                    "preview": true,
+                    "timeFormat": "%s.%Q",
+                    "wait": 0
+                }, { replace: true });
+
+                //trigger change events on 'id' and 'name' 
+                this.model.report.set({'id': oldId}, {silent: true}); 
+                this.model.report.unset('id', {silent: false});
+
+                this.model.report.entry.set({'name': oldName}, {silent: true}); 
+                this.model.report.entry.unset('name', {silent: false}); 
+            }, this)); 
+
         },
         _useReportFormatting: function() {
             //this.model.report.clear({silent: true});
-            var dfd = this.model.report.fetch();
-            dfd.done(_.bind(function() {
-                this.model.report.saveXML({ clearOptions: true });
-            }, this));
+
+            //preserve copy of report's attributes before fetch on model 
+            var oldState = this.model.report.toSplunkD(); 
+            var dfd = this.model.report.fetch({}, {silent: true});
+            dfd.done(_.bind(function(){
+                //get copy of report's attributes after fetch on model
+                var newState = this.model.report.toSplunkD();
+                var dfd = this.model.report.saveXML({clearOptions: true});                 
+                dfd.fail(_.bind(function(){
+                    //restore state and notify listeners to re-render views
+                    this.model.report.setFromSplunkD(oldState, {silent: false}); 
+                }, this)); 
+                dfd.done(_.bind(function(){
+                    this.model.report.setFromSplunkD(oldState, {silent: true}); //reset to enable listener notification in next line
+                    this.model.report.setFromSplunkD(newState, {silent: false}); //notify listeners 
+                    this.model.report.trigger("successfulReportFormatting"); 
+                }, this)); 
+
+            }, this)); 
+
         },
         _updateReportID: function(id, title) {
-            this.model.report.unset('id', {silent: true});
-            this.model.report.id = id;
-            this.model.report.set('id',id);
-            var dfd = this.model.report.fetch();
-            dfd.done(_.bind(function() {
-                // tbd: overlay the defaults from the XML
-                this.model.report.entry.content.set("display.general.manager", this.manager);
+            //preserve copy of report's attributes before ID reset and fetch
+            var oldState = this.model.report.toSplunkD(); 
+            if(id){
+                //set new attributes
+                this.model.report.set({'id': id}, {silent: true});
+                this.model.report.entry.set({'id': id}, {silent: true});
+                this.model.report.id = id;
+            }
+            if(title){
                 this.model.report.entry.content.set({"display.general.title": title});
-                mvc.Components.revokeInstance(this.manager, {silent: true});
-                new SavedSearchManager({
-                    "id": this.manager,
-                    "searchname": this.model.report.entry.get("name"),
-                    "app": utils.getCurrentApp(),
-                    "auto_cancel": 90,
-                    "status_buckets": 0,
-                    "preview": true,
-                    "timeFormat": "%s.%Q",
-                    "wait": 0
-                });
+            }
+
+            var dfd = this.model.report.fetch({}, {silent: true});
+            dfd.done(_.bind(function() {
+                var dfd = this.model.report.saveXML();
+                dfd.fail(_.bind(function(){
+                    //restore old state and views 
+                    this.model.report.setFromSplunkD(oldState, {silent: false}); 
+                }, this)); 
+                dfd.done(_.bind(function(){
+                    //tell dialog to close itself
+                    this.model.report.trigger('successfulManagerChange'); 
+                    // tbd: overlay the defaults from the XML
+                    
+                    //update view to reflect new, successfully-saved attributes 
+                    new SavedSearchManager({
+                        "id": this.manager, 
+                        "searchname": this.model.report.entry.get("name"),
+                        "app": utils.getCurrentApp(),
+                        "auto_cancel": 90,
+                        "status_buckets": 0,
+                        "preview": true,
+                        "timeFormat": "%s.%Q",
+                        "wait": 0
+                    }, { replace: true });
+
+                }, this));               
             }, this));
         },
         _saveAsReport: function(name, description) {
-            console.log('Saving Panel as Report'); 
-            //save the report
-            this.model.report.entry.content.set({"name": name});
-            this.model.report.entry.content.set({"description": description});
+            var oldState = this.model.report.toSplunkD();
+
+            //would like to add option {silent: true} to avoid notifying listeners (which updates the view) but adding it causes network 'bad request' response
+            this.model.report.entry.content.set({"name": name, "description": description, "display.general.title": name}); 
+            this.model.report.entry.set({'name': name}, {silent: true});
+
+            if(this.model.report.entry.content.get('display.general.search.type') === 'postprocess') {
+                // Apply base-search + post process as search for new report
+                this.model.report.entry.content.set('search', mvc.Components.get(this.manager).query.resolve());
+            }
+
             var dfd = this.model.report.save({}, { data: { app: utils.getCurrentApp(), owner: splunkConfig.USERNAME }});
-            // once dfd done: set a new savedSearchManager
             dfd.done(_.bind(function() {
-                console.log("Report saved successfully"); 
-                this.model.report.trigger("successfulReportSave");
-                mvc.Components.revokeInstance(this.manager, {silent: true});
-                new SavedSearchManager({
-                    "id": this.manager,
-                    "searchname": name,
-                    "app": utils.getCurrentApp(),
-                    "auto_cancel": 90,
-                    "status_buckets": 0,
-                    "preview": true,
-                    "timeFormat": "%s.%Q",
-                    "wait": 0
-                });
+                var dfd = this.model.report.saveXML(); 
+                dfd.fail(_.bind(function(){
+                    this.model.report.destroy(); 
+                    this.model.report.unset('id', {silent: true});
+                    this.model.report.setFromSplunkD(oldState, {silent: false}); //notify listeners to restore old view 
+                }, this)); 
+                dfd.done(_.bind(function(){
+                    this.model.report.trigger("successfulReportSave");
+                    new SavedSearchManager({
+                        "id": this.manager,
+                        "searchname": name,
+                        "app": utils.getCurrentApp(),
+                        "auto_cancel": 90,
+                        "status_buckets": 0,
+                        "preview": true,
+                        "timeFormat": "%s.%Q",
+                        "wait": 0
+                    }, { replace: true });
+                }, this));       
             }, this));
+        },
+        _saveTitle: function(newTitle){
+            var oldState = this.model.report.toSplunkD(); 
+            this.model.working.entry.content.set({'display.general.title': newTitle});
+            //use this.model.working instead of this.model.report for dialogs that use tokens
+            var dfd = this.model.working.save();
+            dfd.fail(_.bind(function(){
+                //restore old title as new title could not be saved, and notify listners to restore old views 
+                this.model.report.setFromSplunkD(oldState, {silent: false}); 
+            }, this)); 
+            dfd.done(_.bind(function(){
+                //notify modal dialog of save success, so that the dialog knows to hide itself
+                this.model.working.trigger("successfulSave"); 
+                //notify listeners so they update their views on displayed report model 
+                this.model.report.entry.content.set({'display.general.title': ""}, {silent: false});   
+                this.model.report.entry.content.set({'display.general.title': newTitle}, {silent: false});   
+            }, this)); 
+        }, 
+        _deleteReport: function(){
+            var dfd = this.model.report.deleteXML(); //returns deferred - removes panel from dashboard view
+            dfd.done(_.bind(function(){
+                this.model.report.trigger("successfulDelete");  
+                this.model.report.trigger("removedPanel"); //removes report's XML
+            }, this)); 
         }
     });
 
     return EditPanel;
 });
 
-define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','backbone','splunk.util','../../basesplunkview','../../../mvc','../../utils','../controller','models/DashboardReport','util/console','../../progressbarview','../../refreshtimeindicatorview','../../resultslinkview','../paneleditor','../../savedsearchmanager','../../messages','../../settings'],function(require){
+define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','backbone','../../basesplunkview','../../../mvc','../../utils','../controller','models/DashboardReport','util/console','../../progressbarview','../../refreshtimeindicatorview','../../resultslinkview','../paneleditor','../../savedsearchmanager','../../postprocessmanager','../../messages'],function(require){
     var _ = require('underscore'), $ = require('jquery'), Backbone = require('backbone');
-    var SplunkUtil = require('splunk.util');
     var BaseSplunkView = require('../../basesplunkview');
     var mvc = require('../../../mvc');
     var utils = require('../../utils');
@@ -7686,8 +8610,15 @@ define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','b
     var ResultsLinkView = require("../../resultslinkview");
     var PanelElementEditor = require('../paneleditor');
     var SavedSearchManager = require('../../savedsearchmanager');
+    var PostProcessSearchManager = require('../../postprocessmanager');
     var Messages = require("../../messages");
-    var Settings = require("../../settings");
+    
+    // Enable to warn whenever a SimpleXML element or visualization
+    // is created without the tokens=true option.
+    // 
+    // All product code should be using the option.
+    // Only custom JS code from the user may omit it.
+    var WARN_ON_MISSING_TOKENS_TRUE = false;
 
     var ELEMENT_TYPES = {};
 
@@ -7697,17 +8628,26 @@ define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','b
         initialVisualization: '#abstract',
         configure: function() {
             this.options.settingsOptions = _.extend({
-                retainUnmatchedTokens: true,
-                tokens: true
+                retainUnmatchedTokens: true
             }, this.options.settingsOptions || {});
-            
+
             // Augment the options with the extra information we need
             this.options = _.extend(this.options, {
                 id: this.id,
+                // NOTE: Aliasing 'managerid' to the deprecated 'manager'
+                //       setting since old code may still be depending on it.
+                //       However any such code will behave oddly if the manager
+                //       is changed after initialization.
                 manager: this.options.managerid,
                 title: this.$('h3').text()
             });
             
+            if (WARN_ON_MISSING_TOKENS_TRUE && 
+                this.options.settingsOptions.tokens !== true)
+            {
+                console.warn('element created without tokens=true: ' + this.id);
+            }
+
             BaseSplunkView.prototype.configure.apply(this, arguments);
         },
         initialize: function () {
@@ -7715,13 +8655,23 @@ define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','b
             this.visualization = null;
             this.model = new ReportModel();
             this.managerid = this.options.managerid;
-            mvc.enableDynamicTokens(this.settings);
 
             this.settings._sync = utils.syncModels(this.settings, this.model.entry.content, {
                 auto: true,
-                prefix: 'display.general.'
+                prefix: 'display.general.',
+                include: ['id', 'title', 'manager', 'managerid']
             });
 
+            // TODO: Not using bindToComponentSetting('managerid', ...) here
+            //       because this view inconsistently uses *both* the 'manager'
+            //       and 'managerid' options. Thus it is not presently possible
+            //       to dynamically change the 'managerid' option for SimpleXML
+            //       elements, although you can for MVC components.
+            //
+            //       If usage of the 'manager' property can be eliminated and
+            //       any assumptions about a constant manager at initialization
+            //       time can be eliminated, this code can be safely
+            //       transitioned. (SPL-72466)
             this.bindToComponent(this.managerid, this.onManagerChange, this);
 
             var typeModel = this.typeModel = new Backbone.Model({
@@ -7757,49 +8707,66 @@ define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','b
         onManagerChange: function(managers, manager) {
             var that = this;
             if(manager instanceof SavedSearchManager) {
-                var name = manager.get('searchname'), appModel = Dashboard.getStateModel().app;
-                this.model.id = ['','servicesNS',appModel.get('owner'),appModel.get('app'),'saved','searches', name].join('/');
+                var name = manager.get('searchname'),
+                        appModel = Dashboard.getStateModel().app,
+                        initial = !this.model.entry.content.has('display.general.type');
+                this.model.id = ['','servicesNS',appModel.get('owner'),appModel.get('app'),'saved','searches', encodeURIComponent(name)].join('/');
                 this.model.fetch().done(function(){
-                    if(that.initialVisualization !== '#abstract') {
+                    if (initial) {
                         that.model.entry.content.set(that._initialVisualizationToAttributes());
                     }
                     that.reportReady.resolve(that.model);
                 }).fail(function(xhr){
                             console.error('Failed to load saved search', arguments);
                             if(xhr.status === 404) {
-                                that.handleSavedSearchError(_("Warning: saved search not found: ").t() + JSON.stringify(name));
+                                that.showErrorMessage(_("Warning: saved search not found: ").t() + JSON.stringify(name));
                             }
                         });
             } else if(manager) {
                 REPORT_DEFAULTS_LOADED.done(function(response){
-                    that.model.entry.content.set(response.entry[0].content);
-                    if(that.initialVisualization !== '#abstract') {
-                        that.model.entry.content.set(that._initialVisualizationToAttributes());
+                    // Apply the report defaults (from the _new entity) to our report model before applying specific settings
+                    if (!that.model.entry.content.has('display.general.type')) {
+                        // Apply defaults and initial visualization attributes if they aren't set yet
+                        that.model.entry.content.set(response.entry[0].content);
+                        if(that.initialVisualization !== '#abstract') {
+                            that.model.entry.content.set(that._initialVisualizationToAttributes());
+                        }
                     }
+                    var searchType = 'inline';
+                    if (manager instanceof PostProcessSearchManager) {
+                        searchType = 'postprocess';
+                        that.model.entry.content.set('fullSearch', manager.query.resolve());
+                    }
+                    that.model.entry.content.set('display.general.search.type', searchType);
                     that.model.entry.content.set({
-                        search: manager.get('search'),
-                        "dispatch.earliest_time": manager.get('earliest_time'),
-                        "dispatch.latest_time": manager.get('latest_time')
-                    });
+                        search: manager.get('search', {tokens: true}),
+                        "dispatch.earliest_time": manager.get('earliest_time', {tokens: true}),
+                        "dispatch.latest_time": manager.get('latest_time', {tokens: true})
+                    }, {tokens: true});
                     that.reportReady.resolve(that.model);
                 });
             } else {
                 REPORT_DEFAULTS_LOADED.done(function(response){
-                    that.model.entry.content.set(response.entry[0].content);
-                    if(that.initialVisualization !== '#abstract') {
-                        that.model.entry.content.set(that._initialVisualizationToAttributes());
+                    // Apply the report defaults (from the _new entity) to our report model
+                    if (!that.model.entry.content.has('display.general.type')) {
+                        // Apply defaults and initial visualization attributes if they aren't set yet
+                        that.model.entry.content.set(response.entry[0].content);
+                        if(that.initialVisualization !== '#abstract') {
+                            that.model.entry.content.set(that._initialVisualizationToAttributes());
+                        }
                     }
                     that.reportReady.resolve(that.model);
                 });
             }
         },
-        handleSavedSearchError: function(message) {
+        showErrorMessage: function(message) {
+            this._removeInitialPlaceholder();
             var el = this.$('.panel-body>.msg');
             if(!el.length) {
                 el = $('<div class="msg"></div>').appendTo(this.$('.panel-body'));
             }
             Messages.render({
-                level: "warning",
+                level: "error",
                 icon: "warning-sign",
                 message: message
             }, el);
@@ -7858,9 +8825,6 @@ define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','b
                 }).render();
             }
         },
-        handleDrilldown: function(e) {
-            this.trigger('drilldown', e);
-        },
         createVisualization: function (applyOptions) {
             var createFn = this._debouncedCreateViz;
             if(!createFn) {
@@ -7872,25 +8836,34 @@ define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','b
         },
         _removeVisualization: function() {
             if (this.visualization) {
+                if (this.visualization.panelClassName) {
+                    this.$el.removeClass(this.visualization.panelClassName);
+                }
                 this.visualization.off();
+                // Remove will revoke it from the registry
                 this.visualization.remove();
-                mvc.Components.revokeInstance(this.visualization.id, {silent: true});
                 this.visualization = null;
             }
             if (this.resultsLink) {
+                this.resultsLink.off();
+                // Remove will revoke it from the registry
                 this.resultsLink.remove();
                 this.resultsLink = null;
             }
         },
+        _removeInitialPlaceholder: function(){
+            this.$('.panel-body > .msg, .panel-body > .initial-placeholder').remove();
+        },
         _createVisualization: function (applyOptions) {
             var initial = !this.visualization;
-            this.$('.panel-body>.msg').remove();
+            this._removeInitialPlaceholder();
             this._removeVisualization();
             var type = this.typeModel.get('type'),
                 Element = ELEMENT_TYPES[type];
-                
+
             if (!Element) {
-                throw new Error('Unsupported visualization type "' + type + '"');
+                this.showErrorMessage(_("Unsupported visualization type: ").t() + JSON.stringify(type));
+                return;
             }
             var options = {
                 el: $('<div></div>').appendTo(this.$('.panel-body')),
@@ -7902,11 +8875,24 @@ define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','b
                 // Only pass the component options down when the initial visualization is created
                 options = _.extend({}, this.options, options);
             }
-            this.visualization = new Element(options, {tokens: true}).render();
-            
+            if (options.settingsOptions) {
+                // Do not pass through retainUnmatchedTokens=true to visualization
+                options.settingsOptions.retainUnmatchedTokens = false;
+            }
+            if (WARN_ON_MISSING_TOKENS_TRUE &&
+                (options.settingsOptions || {}).tokens !== true)
+            {
+                console.warn('viz created without tokens=true: ' + options.id);
+            }
+            this.visualization = new Element(options).render();
+
+            if (this.visualization.panelClassName) {
+                this.$el.addClass(this.visualization.panelClassName);
+            }
+
             // If we are switching this visualization to the events visualization,
             // then we need to set any search manager to have status_buckets > 0
-            if (type === "events") {
+            if (type.indexOf("events") === 0) {
                 var manager = mvc.Components.getInstance(this.settings.get('manager'));
                 manager.search.set('status_buckets', 300);
             }
@@ -7921,12 +8907,12 @@ define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','b
                 this.resultsLink = new ResultsLinkView(_.extend({}, resultsLinkOptions, this.options, {
                     id: _.uniqueId(this.id + '-resultslink'),
                     el: $('<div class="view-results pull-left"></div>').appendTo(this.$('.panel-footer')),
-                    manager: this.managerid, 
+                    manager: this.managerid,
                     model: this.model
                 })).render();
             }
 
-            this.visualization.on('drilldown', this.handleDrilldown, this);
+            this.visualization.on('all', this.trigger, this);
         },
         getVisualization: function(callback) {
             var dfd = $.Deferred();
@@ -7969,22 +8955,24 @@ define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','b
             if (!this.$('.panel-body').length) {
                 $('<div class="panel-body"></div>').appendTo(this.$el);
             }
+            var el = $('<div class="initial-placeholder"></div>').addClass('placeholder-' + this.initialVisualization.replace(/\W+/,'-'));
+            el.appendTo(this.$('.panel-body'));
             if (!this.$('panel-footer').length) {
                 $('<div class="panel-footer"></div>').appendTo(this.$el);
             }
-            this.$('.panel-footer').addClass('clearfix');
+            // this.$('.panel-footer').addClass('clearfix');
         },
         updateTitle: function () {
             var title = this.settings.get('title') || '';
             if(Dashboard.getStateModel().get('edit') && !title) {
-                this.$('.panel-head>h3').empty().append($('<span class="untitled">'+_("Untitled panel").t()+'</span>'));
+                this.$('.panel-head>h3').empty().append($('<span class="untitled">'+_("Untitled Panel").t()+'</span>'));
             } else {
                 this.$('.panel-head>h3').text(title);
             }
         },
         getExportParams: function(prefix) {
             var manager = mvc.Components.get(this.managerid), result = {};
-            if(manager && manager.job && manager.job.sid) {
+            if(manager && (!(manager instanceof PostProcessSearchManager)) && manager.job && manager.job.sid) {
                 result[prefix] = manager.job.sid;
             }
             return result;
@@ -8001,11 +8989,11 @@ define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','b
             return viz;
         }
     });
-    
+
     return DashboardElement;
 });
 
-define('splunkjs/mvc/simplexml/dialog/addpanel/inline',['require','underscore','jquery','views/Base','views/shared/controls/ControlGroup','util/console','../../../utils','uri/route','util/time_utils','../../../tokenutils','bootstrap.tooltip'],function(require){
+define('splunkjs/mvc/simplexml/dialog/addpanel/inline',['require','underscore','jquery','views/Base','views/shared/controls/ControlGroup','util/console','../../../utils','uri/route','util/time_utils','views/dashboards/PanelTimeRangePicker','bootstrap.tooltip'],function(require){
     var _ = require('underscore'),
         $ = require('jquery'),
         BaseView = require('views/Base');
@@ -8014,25 +9002,8 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/inline',['require','underscore','
     var utils = require('../../../utils');
     var route = require('uri/route');
     var time_utils = require('util/time_utils');
-    var token_utils = require('../../../tokenutils');
+    var PanelTimeRangePicker = require('views/dashboards/PanelTimeRangePicker');
     require('bootstrap.tooltip');
-
-    var ControlWrapper = BaseView.extend({
-        render: function() {
-            if(!this.el.innerHTML) {
-                this.$el.html(_.template(this.template, {
-                    label: this.options.label,
-                    controlClass: this.options.controlClass || ''
-                }));
-            }
-            var target = this.$('.controls');
-            _.each(this.options.children, function(child){
-                child.render().appendTo(target);
-            });
-            return this;
-        },
-        template: '<label class="control-label"><%- label %></label><div class="controls <%- controlClass %>"></div>'
-    });
 
     return BaseView.extend({
         initialize: function() {
@@ -8049,13 +9020,20 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/inline',['require','underscore','
             });
 
             this.listenTo(this.model.report, 'change:elementCreateType', this.onModeChange, this);
-            this.model.timeRange.on('applied', function() {
-                this.model.report.set({
-                    'dispatch.earliest_time': this.model.timeRange.get('earliest'),
-                    'dispatch.latest_time':this.model.timeRange.get('latest')
-                });
-                this.setLabel();
-            }, this);
+
+            this.children.panelTimeRangePicker = new PanelTimeRangePicker({
+                model: {
+                    timeRange: this.model.timeRange,
+                    report: this.model.report,
+                    state: this.model.state
+                },
+                collection: this.collection
+            });
+
+            this.model.report.set({
+                'dispatch.earliest_time': this.model.timeRange.get('earliest'),
+                'dispatch.latest_time':this.model.timeRange.get('latest')
+            }, {tokens: true});
         },
         events: {
             'click a.run-search': function(e) {
@@ -8075,22 +9053,10 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/inline',['require','underscore','
             var fn = this.model.report.get('elementCreateType') === 'inline' ? 'show' : 'hide';
             this.$el[fn]();
         },
-        setLabel: function() {
-            var timeLabel = _("All Time").t();
-            if (token_utils.hasToken(this.model.timeRange.get("earliest"))){
-                timeLabel = _("Inherit").t();
-            }
-            else {
-                timeLabel = this.model.timeRange.generateLabel(this.collection);
-            }
-            this.$el.find("span.time-label").text(timeLabel);
-        },
         render: function() {
             this.children.searchField.render().appendTo(this.el);
 
-            this.$el.append('<div class="timerange" style="display: block;"><label class="control-label">' + _('Time Range').t() + '</label></div>');
-            this.$('div.timerange').append('<div class="controls"><a href="#" class="btn timerange-control"><span class="time-label"></span><span class="icon-triangle-right-small"></span></a></div>');
-            this.setLabel();
+            this.children.panelTimeRangePicker.render().appendTo(this.el);
 
             this.onModeChange();
             
@@ -8099,44 +9065,74 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/inline',['require','underscore','
     });
 
 });
-define('splunkjs/mvc/simplexml/dialog/addpanel/report',['require','underscore','jquery','views/Base','views/shared/controls/ControlGroup','collections/services/SavedSearches','splunkjs/mvc/simplexml/controller','../../../utils','util/time_utils','models/Cron','splunk.util','uri/route'],function(require) {
+define('splunkjs/mvc/simplexml/dialog/addpanel/report',['require','underscore','jquery','views/Base','views/shared/controls/ControlGroup','../../../utils','util/time_utils','models/Cron','splunk.util','uri/route','collections/services/SavedSearches','views/shared/Modal'],function(require) {
     var _ = require('underscore'),
             $ = require('jquery'),
             Base = require('views/Base');
     var ControlGroup = require('views/shared/controls/ControlGroup');
-    var SavedSearches = require('collections/services/SavedSearches');
-    var Dashboard = require('splunkjs/mvc/simplexml/controller');
     var utils = require('../../../utils');
     var timeUtils = require('util/time_utils');
     var Cron = require('models/Cron');
     var splunkUtil = require('splunk.util');
     var route = require('uri/route');
+    var SavedSearches = require('collections/services/SavedSearches');
+    var Modal = require('views/shared/Modal');
+
     return Base.extend({
         initialize: function() {
             Base.prototype.initialize.apply(this, arguments);
-
             this.children.reportPlaceholder = new Base();
-            var reports = this.collection.reports;
-            var appModel = Dashboard.model.app;
-            var reportsLoaded = this.reportsLoaded = $.Deferred();
+            this.controller = this.options.controller;
 
-            reports.fetch({ data: { app: appModel.get('app'), owner: appModel.get('owner')  } }).done(_.bind(function() {
-                var items = reports.map(function(report) {
+            if(!this.controller.reportsCollection){
+                this.controller.fetchCollection();
+            }
+
+            this.controller.reportsCollection.initialFetchDfd.done(_.bind(function() {
+                var items = this.controller.reportsCollection.map(function(report){
                     return { label: report.entry.get('name'), value: report.id };
                 });
-                this.children.report = new ControlGroup({
-                    label: "",
-                    controlType: 'SyntheticSelect',
-                    controlOptions: {
-                        className: 'btn-group add-panel-report',
-                        menuWidth: 'narrow',
-                        toggleClassName: 'btn',
-                        model: this.model,
-                        modelAttribute: 'savedSearch',
-                        items: items
-                    }
-                });
-                reportsLoaded.resolve();
+                var pageInfo = utils.getPageInfo();
+                var reportsLink = route.reports(
+                    pageInfo.root,
+                    pageInfo.locale,
+                    pageInfo.app
+                );
+
+                if(this.controller.reportsCollection.length === this.controller.reportsCollection.REPORTS_LIMIT){
+                    this.children.report = new ControlGroup({
+                        label: "",
+                        controlType: 'SyntheticSelect',
+                        controlOptions: {
+                            className: 'btn-group add-panel-report',
+                            toggleClassName: 'btn',
+                            model: this.model,
+                            modelAttribute: 'savedSearch',
+                            items: items,
+                            popdownOptions: {
+                                attachDialogTo: '.modal:visible',
+                                scrollContainer: '.modal:visible .modal-body:visible'
+                            }
+                        },
+                        help: _("This does not contain all reports. Add a report that is not listed from ").t() + splunkUtil.sprintf('<a href=%s>%s</a>.', reportsLink, _('Reports').t())
+                    });
+                }else{
+                    this.children.report = new ControlGroup({
+                        label: "",
+                        controlType: 'SyntheticSelect',
+                        controlOptions: {
+                            className: 'btn-group add-panel-report',
+                            toggleClassName: 'btn',
+                            model: this.model,
+                            modelAttribute: 'savedSearch',
+                            items: items,
+                            popdownOptions: {
+                                attachDialogTo: '.modal:visible',
+                                scrollContainer: '.modal:visible .modal-body:visible'
+                            }
+                        }
+                    });
+                }
                 this.model.set('savedSearch', items[0].value);
             }, this));
 
@@ -8197,7 +9193,7 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/report',['require','underscore','
         },
         searchSelected: function() {
             var savedSearch = this.model.get('savedSearch');
-            var report = this.collection.reports.get(savedSearch);
+            var report = this.controller.reportsCollection.get(savedSearch);
 
             this.model.set('savedSearchName', report.entry.get('name'));
             this.model.set('savedSearchString', report.entry.content.get('search'));
@@ -8207,13 +9203,9 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/report',['require','underscore','
             var vizType = 'statistics', sub;
             if(report.entry.content.has('display.general.type')) {
                 vizType = report.entry.content.get('display.general.type');
-                if(vizType == 'events') {
-                    vizType = 'statistics'; // Revert to a table for now - do not default to the events viewer
-                } else {
-                    sub = ['display', vizType, 'type'].join('.');
-                    if(report.entry.content.has(sub)) {
-                        vizType = [vizType, report.entry.content.get(sub)].join(':');
-                    }
+                sub = ['display', vizType, 'type'].join('.');
+                if(report.entry.content.has(sub)) {
+                    vizType = [vizType, report.entry.content.get(sub)].join(':');
                 }
             }
             this.model.set('savedSearchVisualization', vizType);
@@ -8230,27 +9222,37 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/report',['require','underscore','
         },
         onModeChange: function() {
             this.$el[ this.model.get('elementCreateType') === 'saved' ? 'show' : 'hide' ]();
+            //if reports have not been fetched and there is no loading message yet, then create a loading message
+            if(this.model.get('elementCreateType') === 'saved' && this.controller.reportsCollection.initialFetchDfd.readyState !== 4 && this.$(Modal.LOADING_SELECTOR).length === 0){
+                this.$el.append(Modal.LOADING_HORIZONTAL);
+                this.$(Modal.LOADING_SELECTOR).html(_('Loading...').t());
+            }
         },
         render: function() {
             this.children.reportPlaceholder.render().appendTo(this.el);
-
-            $.when(this.reportsLoaded).then(_.bind(function() {
+            this.controller.reportsCollection.initialFetchDfd.done(_.bind(function() {
+                //reports fetch is done so remove any loading message and render other elements
+                if(this.$(Modal.LOADING_SELECTOR).length > 0){
+                   this.$(Modal.LOADING_SELECTOR).remove();
+                }
                 this.children.report.render().appendTo(this.children.reportPlaceholder.el);
+                this.searchSelected();
+                this.children.searchField.render().appendTo(this.el);
+                this.children.searchField.$('textarea').attr('readonly', 'readonly');
+
+                this.children.timerangeField.render().appendTo(this.el);
+                this.children.schedule.render().appendTo(this.el);
+                this.children.permissions.render().appendTo(this.el);
+
+                this.onModeChange();
             }, this));
 
-            this.children.searchField.render().appendTo(this.el);
-            this.children.searchField.$('textarea').attr('readonly', 'readonly');
-
-            this.children.timerangeField.render().appendTo(this.el);
-            this.children.schedule.render().appendTo(this.el);
-            this.children.permissions.render().appendTo(this.el);
-
-            this.onModeChange();
             return this;
         }
     });
 
 });
+
 define('splunkjs/mvc/simplexml/dialog/addpanel/pivot',['require','underscore','views/Base','../../../utils','uri/route'],function(require){
     var _ = require('underscore'),
         Base = require('views/Base'),
@@ -8277,17 +9279,15 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/pivot',['require','underscore','v
             this.$el[fn]();
         },
         template: '<label class="control-label"></label><div class="controls">' +
-                _("Create a pivot panel in").t()+' <a href="<%= pivotLink %>">'+_("Pivot").t()+'</a>' +
+                _("Use the Pivot tool to summarize Data Model information and add it as a dashboard panel. You'll need to know the name of this dashboard when you save from the Pivot tool.").t()+
                 '</div>'
-
     });
 
 });
-define('splunkjs/mvc/simplexml/dialog/addpanel/master',['require','exports','module','underscore','jquery','splunkjs/mvc','views/Base','views/shared/controls/ControlGroup','collections/services/SavedSearches','../../controller','./inline','./report','./pivot','util/console'],function(require, module, exports) {
+define('splunkjs/mvc/simplexml/dialog/addpanel/master',['require','exports','module','underscore','jquery','splunkjs/mvc','views/Base','views/shared/controls/ControlGroup','../../controller','./inline','./report','./pivot','util/console'],function(require, module, exports) {
     var _ = require('underscore'), $ = require('jquery'), mvc = require('splunkjs/mvc');
     var BaseView = require('views/Base');
     var ControlGroup = require('views/shared/controls/ControlGroup');
-    var SavedSearches = require('collections/services/SavedSearches');
     var Dashboard = require('../../controller');
     var InlineForm = require('./inline');
     var ReportForm = require('./report');
@@ -8305,7 +9305,8 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/master',['require','exports','mod
                 controlClass: 'controls-block',
                 controlOptions: {
                     model: this.model.report,
-                    modelAttribute: 'title'
+                    modelAttribute: 'title',
+                    placeholder: "optional"
                 }
             });
 
@@ -8327,8 +9328,6 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/master',['require','exports','mod
 
             var timesCollection = Dashboard.collection.times;
 
-            var reportsCollection = new SavedSearches();
-
             this.children.inline = new InlineForm({
                 model: this.model,
                 collection: {
@@ -8338,9 +9337,9 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/master',['require','exports','mod
             this.children.report = new ReportForm({
                 model: this.model.report,
                 collection: {
-                    timeRanges: timesCollection,
-                    reports: reportsCollection
-                }
+                    timeRanges: timesCollection
+                }, 
+                controller: this.options.controller
             });
 
             this.children.pivot = new PivotForm({
@@ -8362,223 +9361,7 @@ define('splunkjs/mvc/simplexml/dialog/addpanel/master',['require','exports','mod
 
 });
 
-define('splunkjs/mvc/searchtemplate',['require','exports','module','underscore','./mvc','./utils','util/console','./searchmanager','./tokenawaremodel','./tokensafestring','backbone','splunk.util','./simplexml/controller'],function(require, exports, module) {
-    var _ = require("underscore");
-    var mvc = require('./mvc');
-    var utils = require('./utils');
-    var console = require('util/console');
-    var SearchManager = require('./searchmanager');
-    var TokenAwareModel = require("./tokenawaremodel");
-    var TokenSafeString = require("./tokensafestring");
-    var Backbone = require('backbone');
-    var splunkUtils = require('splunk.util');
-    var Dashboard = require('./simplexml/controller');
-
-    var TemplateQueryModel = Backbone.Model.extend({
-        initialize: function(attributes, options) {
-            this.tokenModel = (options && options.tokenModel) || mvc.Global;
-            this.on('change:search', this.detectTokens, this);
-            if(this.has('search')) {
-                this.detectTokens();
-            }
-        },
-        set: function(key, val, options) {
-            var attrs;
-            if (null === key) {
-                return this;
-            }
-            if(typeof key === 'object') {
-                attrs = key;
-                options = val;
-            } else {
-                (attrs = {})[key] = val;
-            }
-
-            if(options && options.qualified && attrs.search) {
-                if(attrs.search instanceof TokenSafeString) {
-                    attrs.search = new TokenSafeString(splunkUtils.stripLeadingSearchCommand(attrs.search.value));
-                } else {
-                    attrs.search = splunkUtils.stripLeadingSearchCommand(attrs.search);
-                }
-            }
-            return Backbone.Model.prototype.set.call(this, attrs, options);
-        },
-        get: function(attribute, options) {
-            var result = Backbone.Model.prototype.get.apply(this, arguments);
-            
-            // We only want to add the leading search if:
-            // 1. the get is for 'search'
-            // 2. they explicitly asked for it to be qualified
-            // 3. there is an actual search string (i.e. not an empty string)
-            if(attribute === 'search' && options && options.qualified && result) {
-                result = splunkUtils.addLeadingSearchCommand(result);
-            }
-            
-            return result;
-        },
-        detectTokens: function() {
-            var tokens = this.tokens = _(utils.discoverReplacementTokens(this.get('search'))).unique(),
-                    model = this.tokenModel;
-            model.off(null, null, this);
-            if(tokens.length) {
-                _(tokens).each(function(t){
-                    model.on('change:'+t, this.triggerChange, this);
-                }, this);
-            }
-        },
-        triggerChange: function() {
-            this.trigger('change');
-        },
-        resolve: function(options) {
-            var result = utils.replaceTokens(this.get('search'), this.tokenModel.toJSON());
-            if(options && options.qualified) {
-                result = splunkUtils.addLeadingSearchCommand(result);
-            }
-            return result;
-        },
-        isSatisfied: function() {
-            if(this.tokens.length) {
-                var model = this.tokenModel;
-                return _(this.tokens).all(function(t){ return model.has(t); });
-            } else {
-                return true;
-            }
-        }
-    });
-    
-    /*
-     * Extends SearchManager functionality with:
-     *      - FormManager-style token binding for the 'search' property.
-     *        Implicitly opts out of standard token binding.
-     *          > Refuses to startSearch or createSearch if the 'search'
-     *            property has any unbound tokens.
-     *      - FormManager-style token binding for the search model.
-     *        Implicitly opts out of standard token binding.
-     *      - If neither the 'earliest_time' nor 'latest_time' properties
-     *        are specified, binds them to '$earliest$' and '$latest$',
-     *        which are bound to the default time picker automatically elsewhere.
-     * 
-     * Extends SearchManager API with:
-     *      - runOnSubmit : boolean
-     *          > Unclear whether this is intended to be public.
-     */
-    var SearchTemplate = SearchManager.extend({
-        constructor: function(options) {
-            options = options || {};
-            
-            var id = options.id;
-
-            if (id === undefined && options.name) {
-                // Advise users watching the console to not use .name
-                id = options.name;
-                console.log("Use of 'name' to specify the ID of a Splunk model is deprecated.");
-            }
-            if (id === undefined) {
-                id = _.uniqueId('manager_');
-            }
-            
-            // Store it on the instance/options
-            this.id = this.name = options.name = options.id = id;
-            
-            if(!options.queryModel) {
-                options.queryModel = new TemplateQueryModel({ search: options.search },{ tokenModel: options.tokenModel || mvc.Global });
-            }
-            if(!options.searchModel) {
-                options.searchModel = new TokenAwareModel({ label: options.id });
-                mvc.enableDynamicTokens(options.searchModel);
-            }
-            
-            this.search = options.searchModel;
-            this.runOnSubmit = options.runOnSubmit !== false;
-            delete options.runOnSubmit;
-
-            // make sure to create only a single search jobs for multiple changes on the search template
-            this.createSearch = _.debounce(this.createSearch);
-
-            var formManager = (options.formManager || 'fieldset');
-            mvc.Components.bind('change:'+formManager, this.onFormManagerChange, this);
-
-            var origAutoStart;
-            if(mvc.Components.has(formManager)) {
-                // Prevent the search from starting before we get hold of the form manager
-                // to check if there's a default time range picker which overrides our time range
-                origAutoStart = options.hasOwnProperty('autostart') ? options.autostart : true;
-                options.autostart = false;
-            }
-            
-            // Note that this will call our override of _start,
-            // which purposefully does nothing.
-            SearchManager.prototype.constructor.apply(this, arguments);
-            mvc.enableDynamicTokens(this.search);
-            
-            // Put the real _start back there, and call it
-            this._start = SearchManager.prototype._start;
-            this._start();
-            
-            if(mvc.Components.has(formManager)) {
-                this.onFormManagerChange(null, mvc.Components.get(formManager));
-                this.set('autostart', origAutoStart);
-                this._start();
-            }
-            
-            // No form manager? Force bind to default timepicker properties immediately,
-            // under the assumption that they will be picked up by MVC token binding.
-            if(!options.formManager) {
-                this._enableTimeRangePicker();
-            }
-        },
-        _start: function() {
-            // This purposefully does nothing, so that when the super class calls it, 
-            // nothing will happen. We override at the end of the constructor.
-        },
-        onFormManagerChange: function(ctxs, formManager) {
-            if(this.formManager) {
-                if(this.formManager === formManager) {
-                    return;
-                }
-                this.formManager.off(null, null, this);
-            }
-            this.formManager = formManager;
-            // Check if there are timerange picker settings in the form manager
-            if(Dashboard.getStateModel().has('default_timerange')) {
-                this._enableTimeRangePicker();
-            } else {
-                // Switch to tokens for earliest/latest once a timerange picker has been added to the form manager
-                formManager.once("change:earliest change:latest", this._enableTimeRangePicker, this);
-            }
-            if(this.runOnSubmit) {
-                formManager.on('submit', this.startSearch, this);
-            }
-        },
-        _enableTimeRangePicker: function() {
-            var earliestIsToken = utils.isToken(this.search.get('earliest_time')),
-                latestIsToken = utils.isToken(this.search.get('latest_time'));
-            // Only use default timerange picker, if the current timerange isn't already expressed as a token
-            if(!(earliestIsToken || latestIsToken)) {
-                this.search.set({
-                    'earliest_time': '$earliest$',
-                    'latest_time': '$latest$'
-                }, {tokens: true});
-            }
-        },
-        startSearch: function() {
-            if((!this.query.isSatisfied()) || (!this.search.isSatisfied())) {
-                return;
-            }
-            SearchManager.prototype.startSearch.apply(this, arguments);
-        },
-        createSearch: function() {
-            if((!this.query.isSatisfied()) || (!this.search.isSatisfied())) {
-                return;
-            }
-            SearchManager.prototype.createSearch.apply(this, arguments);
-        }
-    });
-
-    return SearchTemplate;
-});
-
-define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','underscore','jquery','splunkjs/mvc','views/shared/Modal','models/Base','../../utils','../controller','../element/base','../mapper','./addpanel/master','../../savedsearchmanager','../../searchtemplate','util/console','views/shared/timerangepicker/dialog/Master','models/TimeRange'],function(require, module, exports) {
+define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','underscore','jquery','splunkjs/mvc','views/shared/Modal','models/Base','../../utils','../controller','../element/base','../mapper','./addpanel/master','../../searchmanager','../../savedsearchmanager','util/console','views/shared/timerangepicker/dialog/Master','models/TimeRange','views/shared/delegates/ModalTimerangePicker','../controller','uri/route','views/shared/FlashMessages'],function(require, module, exports) {
     var _ = require('underscore'), $ = require('jquery'), mvc = require('splunkjs/mvc');
     var Modal = require('views/shared/Modal');
     var BaseModel = require('models/Base');
@@ -8587,18 +9370,24 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
     var DashboardElement = require('../element/base');
     var Mapper = require('../mapper');
     var AddPanelView = require('./addpanel/master');
+    var SearchManager = require('../../searchmanager');
     var SavedSearchManager = require('../../savedsearchmanager');
-    var SearchTemplate = require('../../searchtemplate');
     var console = require('util/console');
     var TimeRangePickerView = require('views/shared/timerangepicker/dialog/Master');
     var TimeRangeModel = require('models/TimeRange');
-
+    var TimeRangeDelegate = require('views/shared/delegates/ModalTimerangePicker');
+    var controller = require('../controller');
+    var route = require('uri/route');
+    var FlashMessages = require('views/shared/FlashMessages'); 
+    
     /**
      * Transient model representing the information for a new dashboard panel element
      */
     var NewPanelModel = BaseModel.extend({
         defaults: {
-            elementCreateType: 'inline'
+            elementCreateType: 'inline',
+            'dispatch.earliest_time': '0',
+            'dispatch.latest_time': 'now'
         },
         validation: {
             search: {
@@ -8607,7 +9396,7 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
         },
         validateSearchQuery: function(value, attr, computedState) {
             if(computedState['elementCreateType'] === 'inline' && !value) {
-                return 'Search query is required';
+                return 'Search string is required.';
             }
         },
         sync: function(method, model, options) {
@@ -8626,7 +9415,7 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
                 elementId = 'element' + (i++);
             } while(mvc.Components.has(elementId));
 
-            var vizType = searchType === 'saved' ? this.get('savedSearchVisualization') || 'statistics' : 'statistics',
+            var vizType = searchType === 'saved' ? this.get('savedSearchVisualization') || 'visualizations:charting' : 'visualizations:charting',
                     mapper = Mapper.get(vizType);
 
             Dashboard.getStateModel().view.addElement(elementId, {
@@ -8647,10 +9436,10 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
                         var newSearchId = _.uniqueId('new-search');
                         switch(searchType) {
                             case 'inline':
-                                new SearchTemplate({
+                                new SearchManager({
                                     "id": newSearchId,
                                     "search": this.get('search'),
-                                    "earliest_time": this.get('dispatch.earliest_time') || 0,
+                                    "earliest_time": this.get('dispatch.earliest_time') || "0",
                                     "latest_time": this.get('dispatch.latest_time') || 'now',
                                     "app": utils.getCurrentApp(),
                                     "auto_cancel": 90,
@@ -8659,7 +9448,7 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
                                     "timeFormat": "%s.%Q",
                                     "wait": 0,
                                     "runOnSubmit": true
-                                });
+                                }, {tokens: true});
                                 break;
                             case 'saved':
                                 new SavedSearchManager({
@@ -8683,7 +9472,7 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
                             id: elementId,
                             managerid: newSearchId,
                             el: newItemElement
-                        });
+                        }, {tokens: true});
                         component.render();
                         dfd.resolve();
                     }, this));
@@ -8693,28 +9482,34 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
     });
 
     return Modal.extend({
-        SLIDE_ANIMATION_DISTANCE: 450,
-        SLIDE_ANIMATION_DURATION: 500,
         moduleId: module.id,
         className: 'modal add-panel',
         initialize: function() {
             Modal.prototype.initialize.apply(this, arguments);
-            this.model = new NewPanelModel();
-            var timeRangeModel = new TimeRangeModel({
-                'earliest': '$earliest$',
-                'latest': '$latest$'
+            this.model=  this.model || {};
+            this.model.report = new NewPanelModel();
+            var timeRangeModel = this.model.timeRange = new TimeRangeModel({
+                'earliest': "0",
+                'latest': "now"
             });
 
             var appModel = Dashboard.model.app;
             var userModel = Dashboard.model.user;
             var appLocalModel = Dashboard.model.appLocal;
             var timesCollection = Dashboard.collection.times;
-            //TODO how to use these so that things don't break but work when the models aren't prepoulated
-            var userDfd = userModel.dfd;
-            var appLocalDfd = appLocalModel.dfd;
-            var timesDfd = timesCollection.dfd;
 
-            this.children.addPanel = new AddPanelView({model: {'report': this.model, 'timeRange': timeRangeModel}, collection: timesCollection});
+            this.children.addPanel = new AddPanelView({ 
+                model: {
+                    report: this.model.report,
+                    timeRange: timeRangeModel,
+                    state: controller.getStateModel()
+                }, 
+                collection: {
+                    times: timesCollection
+                }, 
+                controller: this.options.controller  
+            });
+
             this.children.timeRangePickerView = new TimeRangePickerView({
                 model: {
                     timeRange: timeRangeModel,
@@ -8725,21 +9520,30 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
                 collection: timesCollection
             });
 
+            this.children.flashMessages = new FlashMessages({model: this.model.report});
+
             timeRangeModel.on('applied', function() {
-                this.closeTimeRangePicker();
+                this.timeRangeDelegate.closeTimeRangePicker();
             }, this);
 
-            this.listenTo(this.model, 'change:elementCreateType', this.handleSubmitButtonState, this);
+            this.listenTo(this.model.report, 'change:elementCreateType', this.handleSubmitButtonState, this);
+
         },
         events: {
             'click a.modal-btn-primary': function(e) {
-                e.preventDefault();
-                if(this.model.get('elementCreateType') === 'pivot') {
+                if(this.model.report.get('elementCreateType') === 'pivot') {
                     return;
                 }
+                e.preventDefault();               
                 Dashboard.getStateModel().set('edit', false);
                 var modal = this;
-                var dfd = this.model.save();
+                if (this.model.timeRange.get('useTimeFrom') == "dashboard"){
+                    this.model.report.set({
+                        'dispatch.earliest_time': '$earliest$',
+                        'dispatch.latest_time': '$latest$'
+                    }, {tokens: true});
+                }
+                var dfd = this.model.report.save();
 
                 if(dfd) {
                     dfd.done(function() {
@@ -8751,117 +9555,30 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
                 } else {
                     Dashboard.getStateModel().set('edit', true);
                 }
-            },
-            'click a.btn.back' : function(e) {
-                e.preventDefault();
-                this.closeTimeRangePicker();
-            },
-            'click a.timerange-control': function(e) {
-                e.preventDefault();
-                this.showTimeRangePicker();
+            }, 
+            'hide': function(e){
+                //if 'hide' event is triggered on this modal and not bubbled up from its child elements
+                if( e.target === this.el ){ 
+                    this.remove(); 
+                }      
             }
         },
         handleSubmitButtonState: function(model) {
-            this.$(Modal.FOOTER_SELECTOR)
-                    .find('.btn-primary')[model.get('elementCreateType') === 'pivot' ? 'addClass' : 'removeClass']('disabled');
+   
+            if(this.model.report.get('elementCreateType') === 'pivot') {
+                var pageInfo = utils.getPageInfo();
+                this.$(Modal.FOOTER_SELECTOR)
+                    .find('.btn-primary').replaceWith('<a href="'+route.data_models(pageInfo.root, pageInfo.locale, pageInfo.app)+'" class="btn btn-primary modal-btn-primary">' + _('Go to Pivot').t() + '</a>');
+            }
+            else{
+                this.$(Modal.FOOTER_SELECTOR)
+                    .find('.btn-primary').replaceWith('<a href="#" class="btn btn-primary modal-btn-primary">' + _('Add Panel').t() + '</a>');             
+            }
+
         },
         setLabel: function() {
             var timeLabel = this.model.timeRange.generateLabel(this.collection);
             this.$el.find("span.time-label").text(timeLabel);
-        },
-        showTimeRangePicker: function () {
-
-            var $from = this.$addpanelContent,
-                $to = this.$timeRangePickerWrapper;
-
-            this.onBeforePaneAnimation($from, $to);
-
-            this.$visArea.animate({
-                height: this.$timeRangePickerWrapper.height()
-            }, {
-                duration: this.SLIDE_ANIMATION_DURATION,
-                complete: function() {
-                    this.onAfterPaneAnimation($from, $to);
-                }.bind(this)
-            }, this);
-
-            this.$slideArea.animate({
-                marginLeft: -this.SLIDE_ANIMATION_DISTANCE
-            }, {
-                duration: this.SLIDE_ANIMATION_DURATION
-            });
-
-            this.$el.animate({
-                width: this.$timeRangePickerWrapper.width()
-            }, {
-                duration: this.SLIDE_ANIMATION_DURATION
-            });
-
-            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Select Time Range").t());
-            this.$('.btn.back').show();
-            this.$('.btn-primary').hide();
-            this.$('.btn.cancel').hide();
-        },
-        closeTimeRangePicker: function () {
-            var $from = this.$timeRangePickerWrapper,
-                $to = this.$addpanelContent;
-
-            this.onBeforePaneAnimation($from, $to);
-
-            this.$visArea.animate({
-                height: this.$addpanelContent.height()
-            }, {
-                duration: this.SLIDE_ANIMATION_DURATION,
-                complete: function() {
-                    this.onAfterPaneAnimation($from, $to);
-                }.bind(this)
-            }, this);
-
-            this.$slideArea.animate({
-                marginLeft: 0
-            }, {
-                duration: this.SLIDE_ANIMATION_DURATION
-            });
-
-            this.$el.animate({
-                width: this.$addpanelContent.width()
-            }, {
-                duration: this.SLIDE_ANIMATION_DURATION
-            });
-
-            this.$modalParent.animate({
-                width: this.$addpanelContent.width(),
-                marginLeft: -(this.SLIDE_ANIMATION_DISTANCE/2)
-            }, {
-                duration: this.SLIDE_ANIMATION_DURATION
-            });
-
-            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Schedule").t());
-            this.$('.btn.back').hide();
-            this.$('.btn-primary').show();
-            this.$('.btn.cancel').show();
-        },
-
-        // sets up heights of the 'from' and 'to' elements for a smooth animation
-        // during the animation, the slide area uses overflow=hidden to control visibility of the 'from' pane
-        onBeforePaneAnimation: function($from, $to) {
-            this.$visArea.css('overflow', 'hidden');
-            this.$visArea.css({ height: $from.height() + 'px'});
-            if($to === this.$timeRangePickerWrapper) {
-                this.children.timeRangePickerView.$el.show();
-            }
-            $to.css({ height: '', visibility: '' });
-        },
-        // undo the height manipulations that were applied to make a smooth animation
-        // after the animation, the 'from' is hidden via display=none and the slide area has visible overflow
-        // (this prevents vertical clipping of popup menus)
-        onAfterPaneAnimation: function($from, $to) {
-            if($from === this.$timeRangePickerWrapper) {
-                this.children.timeRangePickerView.$el.hide();
-            }
-            this.$visArea.css('overflow', '');
-            this.$visArea.css({ height: ''});
-            $from.css({ height: '2px', visibility : 'hidden'});
         },
         render: function() {
             this.$el.html(Modal.TEMPLATE);
@@ -8873,7 +9590,7 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
             this.$(Modal.FOOTER_SELECTOR).before(
                 '<div class="vis-area">' +
                     '<div class="slide-area">' +
-                        '<div class="schedule-wrapper">' +
+                        '<div class="content-wrapper add-panel-wrapper">' +
                             '<div class="' + Modal.BODY_CLASS + '" >' +
                             '</div>' +
                         '</div>' +
@@ -8883,21 +9600,34 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
                 '</div>'
             );
 
-            this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
+            this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessages.render().el);      
+            this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL_JUSTIFIED);
 
             this.$visArea = this.$('.vis-area').eq(0);
             this.$slideArea = this.$('.slide-area').eq(0);
-            this.$addpanelContent = this.$('.schedule-wrapper').eq(0);
+            this.$addpanelContent = this.$('.add-panel-wrapper').eq(0);
             this.$timeRangePickerWrapper = this.$('.timerange-picker-wrapper').eq(0);
 
             this.$(Modal.BODY_FORM_SELECTOR).append(this.children.addPanel.render().el);
             this.$timeRangePickerWrapper.append(this.children.timeRangePickerView.render().el);
 
             this.$modalParent = this.$el;
-            this.children.timeRangePickerView.$el.hide();
+
+            this.timeRangeDelegate = new TimeRangeDelegate({
+                el: this.el,
+                $visArea: this.$visArea,
+                $slideArea: this.$slideArea,
+                $contentWrapper: this.$addpanelContent,
+                $timeRangePickerWrapper: this.$timeRangePickerWrapper,
+                $modalParent: this.$modalParent,
+                $timeRangePicker: this.children.timeRangePickerView.$el,
+                activateSelector: 'a.timerange-control',
+                backButtonSelector: 'a.btn.back'
+            });
 
             this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
-            this.$(Modal.FOOTER_SELECTOR).append('<a href="#" class="btn btn-primary modal-btn-primary">' + _('Save').t() + '</a>');
+            this.$(Modal.FOOTER_SELECTOR).append('<a href="#" class="btn btn-primary modal-btn-primary">' + _('Add Panel').t() + '</a>');
+
             this.$(Modal.FOOTER_SELECTOR).append('<a href="#" class="btn back modal-btn-back pull-left">' + _('Back').t() + '</a>');
             this.$('.btn.back').hide();
 
@@ -8907,356 +9637,528 @@ define('splunkjs/mvc/simplexml/dialog/addpanel',['require','exports','module','u
 
 });
 
-define('models/services/ScheduledView',['jquery','underscore','backbone','models/SplunkDBase','models/Base','backbone_validation'],
-function($, _, Backbone, SplunkDBase, BaseModel, Val){
+define('splunkjs/mvc/simpleform/input/base',['require','underscore','jquery','../../basesplunkview','../../tokenutils'],function(require) {
+    var _ = require('underscore');
+    var $ = require('jquery');
+    var BaseSplunkView = require('../../basesplunkview');
+    var TokenUtils = require('../../tokenutils');
 
-    var ScheduledView =  SplunkDBase.extend({
-        defaults: {
-            'is_scheduled': false,
-            'action.email.subject': 'Splunk Alert: $name$',
-            'action.email.reportPaperSize': 'letter',
-            'action.email.reportPaperOrientation': 'portrait',
-            'cron_schedule': '0 6 * * 1'
+    var BaseInput = BaseSplunkView.extend({
+        options: {
+            submitOnChange: false
         },
-        initialize: function() {
-            SplunkDBase.prototype.initialize.apply(this, arguments);
+        initialize: function(options) {
+            this.configure();
+            this.settings.enablePush('value');
+            
+            // Update self when settings change
+            this.settings.on('change:label', this.renderLabel, this);
+            
+            options = options || {};
+            this.inputId = options.inputId || _.uniqueId((this.id || 'input') + '_');
         },
-        url: function() {
-            return 'scheduled/views/' + this.viewName;
+        handleChange: function() {
+            // Update MVC token
+            this.settings.set('value', this.getValue());
         },
-        findByName: function(viewName, app, owner) {
-            this.viewName = viewName;
-            this.id = 'scheduled/views/'+viewName;
-            var dfd = this.fetch({ data: { app: app, owner: owner }});
-            dfd.done(_.bind(this.applyDefaultsIfNotScheduled, this));
-            return dfd;
+        submit: function() {
+            // Notify listeners
+            this.trigger('change', this);
         },
-        applyDefaultsIfNotScheduled: function() {
-            if(!this.entry.content.get('is_scheduled')) {
-                this.entry.content.set(this.defaults);
+        hasValue: function() {
+            var value = this.settings.get("value");
+            var defaultValue = this.settings.get("default");
+            // We have a value if one of these conditions is true:
+            // 1. Value is truth-y
+            // 2. We have no default value
+            // 3. Our value and default value are the same
+            return value || defaultValue === undefined || value === defaultValue;
+        },
+        setValue: function(v) {
+            throw 'setValue not implemented';
+        },
+        getValue: function() {
+            throw 'getValue not implemented';
+        },
+        renderLabel: function() {
+            var label = this.$('label');
+            if(!label.length) {
+                label = $('<label></label>').appendTo(this.el);
             }
+            label.attr('for', this.inputId);
+            if(this.settings.has('label')) {
+                label.text(this.settings.get('label'));
+            } else {
+                var v = label.text();
+                if(v) {
+                    this.settings.set('label', v);
+                }
+            }
+        },
+        // For API compatibility with MVC controls.
+        val: function(newValue) {
+            // NOTE: Ignore parameters beyond the first one.
+            if (arguments.length >= 1) {
+                this.setValue(newValue);
+            }
+            return this.getValue();
+        },
+        on: function() {
+            return this._applyToWrappedView('on', arguments);
+        },
+        off: function() {
+            return this._applyToWrappedView('off', arguments);
+        },
+        trigger: function() {
+            return this._applyToWrappedView('trigger', arguments);
+        },
+        _applyToWrappedView: function(funcName, args) {
+            var wrappedView = this._getWrappedView();
+            if (wrappedView === this) {
+                return BaseSplunkView.prototype[funcName].apply(this, args);
+            } else {
+                return wrappedView[funcName].apply(wrappedView, args);
+            }
+        },
+        /*
+         * Subclasses should override if they delegate functionality
+         * to an underlying view.
+         */
+        _getWrappedView: function() {
+            return this;
         }
     });
-
-    ScheduledView.Entry = ScheduledView.Entry.extend({});
-    ScheduledView.Entry.Content = ScheduledView.Entry.Content.extend({
-        validation: {
-            'action.email.to': [{
-                fn: 'validateEmailList'
-            }],
-            'action.email.subject': {
-                required: true,
-                msg: _('Subject is empty').t()
-            }
-        },
-        validateEmailList: function(value, attr, model) {
-            if(model.is_scheduled) {
-                if(!value) {
-                    return _("Email Address list is empty").t();
-                }
-                if(_(value.split(/\s*,\s*/)).any(function(v){ return !Val.patterns.email.test(v); })) {
-                    return _("Email Address list is invalid").t();
-                }
-            }
-        }
-    });
-
-    return ScheduledView;
+    
+    return BaseInput;
 });
 
-define('views/dashboards/table/controls/SchedulePDF',
-    [
-        'module',
-        'jquery',
-        'underscore',
-        'backbone',
-        'util/console',
-        'util/pdf_utils',
-        'models/services/ScheduledView',
-        'models/Cron',
-        'views/Base',
-        'views/shared/Modal',
-        'views/shared/controls/ControlGroup',
-        'views/shared/ScheduleSentence',
-        'views/shared/FlashMessages'
-    ],
-    function(module, $, _, Backbone, console, pdfUtils, ScheduledViewModel, Cron, BaseView, Modal, ControlGroup, ScheduleSentence, FlashMessagesView){
-
-        var ControlWrapper = BaseView.extend({
-            render: function() {
-                if(!this.el.innerHTML) {
-                    this.$el.html(_.template(this.template, {
-                        label: this.options.label || '',
-                        controlClass: this.options.controlClass || '',
-                        body: _.template(this.options.body||'')(this.model ? (this.model.toJSON ? this.model.toJSON() : this.model) : {})
-                    }));
+define('splunkjs/mvc/simpleform/input/timerange',['require','underscore','jquery','./base','../../simplexml/controller','../../mvc','../../timerangeview'],function(require) {
+    var _ = require('underscore');
+    var $ = require('jquery');
+    var BaseInput = require('./base');
+    var Dashboard = require('../../simplexml/controller');
+    var mvc = require('../../mvc');
+    var TimeRangeView = require('../../timerangeview');
+    
+    var FACTORY_DEFAULT = {earliest_time: undefined, latest_time: undefined};
+    
+    var TimeRangeInput = BaseInput.extend({
+        events: {
+            // Destroy self when dashboard editor's remove button clicked
+            'click .remove-timerange-picker a': function(e) {
+                e.preventDefault();
+                this.remove();
+            }
+        },
+        
+        /*
+         * Private API:
+         * 
+         * @param options.isGlobal  Whether this time picker is considered
+         *                          a global time picker by the dashboard
+         *                          editor. If unspecified is determined
+         *                          automatically based on what the
+         *                          {earliest_time, latest_time} settings
+         *                          are bound to.
+         */
+        initialize: function() {
+            var inputOptions = _.defaults({
+                el: $('<div class="splunk-view"></div>').appendTo(this.el),
+                id: _.uniqueId(this.id + '-input')
+            }, this.options);
+            this.picker = new TimeRangeView(inputOptions);
+            this.picker.on('change', this.handleChange, this);
+            
+            // Always use the inner view's settings, so we don't have two of them
+            this.options.settings = this.picker.settings;
+            BaseInput.prototype.initialize.call(this);
+            
+            // Attach to dashboard
+            if (this._isGlobalTimeRangeInput()) {
+                Dashboard.getStateModel().on('change:edit', this._onEditStateChange, this);
+            }
+        },
+        
+        hasValue: function() {
+            var value = this.settings.get("value") || FACTORY_DEFAULT;
+            var defaultValue = this.settings.get("default");
+            var presetValue = this.settings.get("preset");
+            
+            // We have a value if one of these conditions is true:
+            // 1. Value is not the factory default
+            // 2. We have no default value
+            return !_.isEqual(value, FACTORY_DEFAULT) || (!defaultValue && !presetValue);
+        },
+        
+        /**
+         * Update the time range input's value to be the default,
+         * taking into account both the default value and the preset value.
+         * 
+         * @return The time range input object.
+         */
+        updateValueWithDefault: function() {   
+            var defaultValue = this.settings.get("default");
+            var presetValue = this.settings.get("preset");
+            if (defaultValue) {
+                this.val(defaultValue);
+            }
+            else if (presetValue) {
+                // Synchronize the displayed preset and the actual set value.
+                this.picker._onTimePresetUpdate();
+            }
+            
+            return this;
+        },
+        
+        handleChange: function(value, input) {
+            value = value || FACTORY_DEFAULT;
+                        
+            // Update dashboard with new value
+            if (this._isGlobalTimeRangeInput()) {
+                // TODO: Try to convert dashboard to use the same time format
+                //       as every other control.
+                value = this.val();
+                Dashboard.getStateModel().set('default_timerange', {
+                    earliestTime: value.earliest_time,
+                    latestTime: value.latest_time
+                });
+            }
+            
+            BaseInput.prototype.handleChange.apply(this, arguments);
+        },
+        
+        _onEditStateChange: function(model) {
+            if (this._isGlobalTimeRangeInput()) {
+                if (model.get('edit')) {
+                    // Render editing UI
+                    $('<div class="remove-timerange-picker"><a href="#"><i class="icon-x-circle"></i></a></div>')
+                        .appendTo(this.picker.$el);
+                    $('<div class="timerange-edit-hint"></div>')
+                        .html(_('Select default time range above. Time range only applies to <i class="icon-search-thin"></i> Inline Searches.').t())
+                        .appendTo(this.picker.$el);
+                    
+                    // NOTE: The dashboard editor will directly update the
+                    //       internal timerange picker
+                    //       ('views/shared/timerangepicker/Master') and the
+                    //       inner TimeRangeView will pick up the changes
+                    //       automatically.
+                } else {
+                    // Unrender editing UI
+                    this.$('.remove-timerange-picker').remove();
+                    this.$('.timerange-edit-hint').remove();
                 }
-                var target = this.$('.controls');
-                _.each(this.options.children, function(child){
-                    child.render().appendTo(target);
-                });
-                return this;
-            },
-            template: '<label class="control-label"><%- label %></label><div class="controls <%- controlClass %>"><%= body %></div>'
-        });
+            }
+        },
+        
+        _isGlobalTimeRangeInput: function() {
+            if (this.settings.has('isGlobal')) {
+                return (this.settings.get('isGlobal') === true);
+            }
+            
+            return (
+                (this.settings.get('earliest_time', {tokens: true}) === '$earliest$') &&
+                (this.settings.get('latest_time', {tokens: true}) === '$latest$'));
+        },
+        
+        remove: function() {
+            // Dispose inner view
+            this.picker.remove();
 
+            // Dispose self
+            mvc.Components.revokeInstance(this.id);
+            BaseInput.prototype.remove.apply(this, arguments);
 
-        return Modal.extend({
-            moduleId: module.id,
-            className: 'modal schedule-pdf',
-             /**
-             * @param {Object} options {
-             *     model: {
-             *         scheduledView: <models.services.ScheduledView>,
-             *         dashboard: <models.services.data.ui.Views>
-             *     }
-             * }
-             */
-            initialize: function() {
-                Modal.prototype.initialize.apply(this, arguments);
+            // Detach from dashboard
+            if (this._isGlobalTimeRangeInput()) {
+                Dashboard.getStateModel().off(null, null, this);
+                Dashboard.getStateModel().set('default_timerange', null);
+            }
+        },
+        
+        getValue: function() {
+            return this.picker.val();
+        },
+        
+        setValue: function(v) {
+            return this.picker.val(v);
+        },
+        
+        render: function() {
+            this.renderLabel();
+            this.picker.render();
+            
+            // Ensure dashboard editor chrome is displayed upon initial render
+            this._onEditStateChange(Dashboard.getStateModel());
+            this.handleChange(this.val(), this.picker);
+            
+            return this;
+        },
+        
+        _getWrappedView: function() {
+            return this.picker;
+        }
+    });
+    
+    return TimeRangeInput;
+});
 
-                this.model.inmem = new ScheduledViewModel.Entry.Content(this.model.scheduledView.entry.content.toJSON());
-                 var cronModel = this.model.cron = Cron.createFromCronString(this.model.inmem.get('cron_schedule') || '0 6 * * 1');
-                 this.listenTo(cronModel, 'change', function(){
-                     this.model.inmem.set('cron_schedule', cronModel.getCronString());
-                 }, this);
+define('views/shared/documentcontrols/dialogs/TitleDescriptionDialog',[
+    'underscore',
+    'backbone',
+    'module',
+    'views/shared/Modal',
+    'views/shared/controls/ControlGroup',
+    'views/shared/FlashMessages'
+    ],
+    function(
+        _,
+        Backbone,
+        module,
+        Modal,
+        ControlGroup,
+        FlashMessage
+    ) {
+    return Modal.extend({
+        moduleId: module.id,
+        /**
+        * @param {Object} options {
+        *       model: <models.Report>
+        * }
+        */
+        initialize: function(options) {
+            Modal.prototype.initialize.apply(this, arguments);
 
-                this.children.flashMessages = new FlashMessagesView({
-                    model: {
-                        scheduledView: this.model.scheduledView,
-                        content: this.model.inmem
-                    }
-                });
+            this.model = {
+                inmem: this.model.clone(),
+                report: this.model
+            };
 
-                this.children.name = new ControlGroup({
-                    controlType: 'Label',
-                    controlOptions: {
-                        modelAttribute: 'label',
-                        model: this.model.dashboard.entry.content
-                    },
-                    label: _('Dashboard').t()
-                });
+            this.children.flashMessage = new FlashMessage({ model: this.model.inmem });
 
-                this.children.schedule = new ControlGroup({
-                    controlType: 'SyntheticCheckbox',
-                    controlOptions: {
-                        modelAttribute: 'is_scheduled',
-                        model: this.model.inmem,
-                        save: false
-                    },
-                    label: _("Schedule PDF").t()
-                });
-
-
-                this.conditionalControls = [
-                    this.children.scheduleSentence = new ScheduleSentence({
-                        model: {
-                            cron: this.model.cron
-                        },
-                        lineOneLabel: _("Schedule").t()
-                    }),
-                    this.children.emailAddresses = new ControlGroup({
-                       controlType: 'Textarea',
-                       controlOptions: {
-                           modelAttribute: 'action.email.to',
-                           model: this.model.inmem,
-                           save: false
-                       },
-                       label: _("Email Addresses").t(),
-                       help: _("Semi-colon separated list.").t()+'<br/>'+_("To send emails you must configure the settings in System Settings &gt; Alert Email Settings.").t()+
-                               '<br/><a href="#">'+_("Learn More").t()+'</a>'
-                    }),
-                    this.children.emailSubject = new ControlGroup({
-                        controlType: 'Text',
-                        controlOptions: {
-                            modelAttribute: 'action.email.subject',
-                            model: this.model.inmem,
-                            save: false
-                        },
-                        label: _("Email Subject Line").t()
-                    }),
-                    this.children.paperSize = new ControlGroup({
-                        className: 'control-group',
-                        controlType: 'SyntheticSelect',
-                        controlOptions: {
-                            modelAttribute: 'action.email.reportPaperSize',
-                            model: this.model.inmem,
-                            items: [
-                                { label: _("A2").t(), value: 'a2' },
-                                { label: _("A3").t(), value: 'a3' },
-                                { label: _("A4").t(), value: 'a4' },
-                                { label: _("A5").t(), value: 'a5' },
-                                { label: _("Letter").t(), value: 'letter' },
-                                { label: _("Legal").t(), value: 'legal' }
-                            ],
-                            save: false,
-                            toggleClassName: 'btn'
-                        },
-                        label: _("Paper Size").t()
-                    }),
-                    this.children.paperLayout = new ControlGroup({
-                        controlType: 'SyntheticRadio',
-                        controlOptions: {
-                            modelAttribute: 'action.email.reportPaperOrientation',
-                            model: this.model.inmem,
-                            items: [
-                                { label: _("Portrait").t(), value: 'portrait' },
-                                { label: _("Landscape").t(), value: 'landscape' }
-                            ],
-                            save: false
-                        },
-                        label: _("Paper Layout").t()
-                    }),
-                    this.children.previewLinks = new ControlWrapper({
-                        body: '<div class="preview-actions">' +
-                            '<div class="test-email"><a href="#" class="action-send-test">'+_("Send Test Email").t()+'</a></div> ' +
-                            '<a href="#" class="action-preview">'+_("Preview PDF").t()+'</a>' +
-                            '</div>'
-                    })
-                ];
-                 this.model.inmem.on('change:is_scheduled', this._toggle, this);
-            },
-            events: {
-                'click .action-send-test': function(e) {
-                    e.preventDefault();
-                    this.model.inmem.validate();
-                    if(this.model.inmem.isValid()) {
-                        var $status = this.$('.test-email'), flashMessages = this.children.flashMessages.flashMsgCollection;
-                        $status.html(_("Sending...").t());
-
-                        pdfUtils.sendTestEmail(
-                                this.model.dashboard.entry.get('name'),
-                                this.model.dashboard.entry.acl.get('app'),
-                                this.model.inmem.get('action.email.to'),
-                                {
-                                    paperSize: this.model.inmem.get('action.email.reportPaperSize'),
-                                    paperOrientation: this.model.inmem.get('action.email.reportPaperOrientation')
-                                }
-                        ).done(function(){
-                                    $status.html('<i class="icon-check"></i> '+_("Email sent.").t());
-                        }).fail(function(error){
-                                    $status.html('<span class="error"><i class="icon-warning-sign"></i> '+_("Failed!").t()+'</span>');
-                                    if(error) {
-                                        flashMessages.add({
-                                            type: 'warning',
-                                            html: _("Sending the test email failed: ").t() + _.escape(error)
-                                        });
-                                    }
-                                }).always(function(){
-                                    setTimeout(function(){
-                                        $status.html('<a href="#" class="action-send-test">'+_("Send Test Email").t()+'</a>');
-                                    }, 5000);
-                                });
-                    }
+            this.children.titleField = new ControlGroup({
+                controlType: 'Label',
+                controlOptions: {
+                    modelAttribute: 'name',
+                    model: this.model.inmem.entry
                 },
-                'click .action-preview': function(e) {
-                    e.preventDefault();
-                    var orientationSuffix = '',
-                        orientation = this.model.inmem.get('action.email.reportPaperOrientation'),
-                        pageSize = this.model.inmem.get('action.email.reportPaperSize') || 'a2';
-                    if(orientation === 'landscape') {
-                        orientationSuffix = '-landscape';
-                    }
-                    pdfUtils.getRenderURL(
-                            this.model.dashboard.entry.get('name'), this.model.dashboard.entry.acl.get('app'),{
-                                'paper-size': pageSize + orientationSuffix
-                            }
-                    ).done(function(url){
-                        window.open(url);
-                    });
+                label: _('Title').t()
+            });
+
+            this.children.descriptionField = new ControlGroup({
+                controlType: 'Textarea',
+                controlOptions: {
+                    modelAttribute: 'description',
+                    model: this.model.inmem.entry.content,
+                    placeholder: _('optional').t()
                 },
-                'click .modal-btn-primary': function(e){
-                    e.preventDefault();
-                    this.model.inmem.validate();
-                    if(this.model.inmem.isValid()) {
-                        if(this.model.inmem.get('is_scheduled') === false && this.model.scheduledView.entry.content.get('is_scheduled') === false) {
-                            this.hide();
+                label: _('Description').t()
+            });
+
+            this.on('hidden', function() {
+                if (this.model.inmem.get("updated") > this.model.report.get("updated")) {
+                    //now we know have updated the clone
+                    this.model.report.entry.content.set('description', this.model.inmem.entry.content.get("description"));
+                }
+            }, this);
+        },
+        events: $.extend({}, Modal.prototype.events, {
+            'click .btn-primary': function(e) {
+                this.model.inmem.save({}, {
+                    success: function(model, response) {
+                        this.hide();
+                    }.bind(this)
+                });
+
+                e.preventDefault();
+            }
+        }),
+        render : function() {
+            this.$el.html(Modal.TEMPLATE);
+
+            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Description").t());
+
+            this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessage.render().el);
+
+            this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
+
+            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.titleField.render().el);
+            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.descriptionField.render().el);
+
+            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
+            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
+
+            return this;
+        }
+    });
+});
+
+define('views/shared/documentcontrols/dialogs/DeleteDialog',[
+    'underscore',
+    'backbone',
+    'module',
+    'models/Report',
+    'views/shared/Modal',
+    'views/shared/FlashMessages',
+    'uri/route',
+    'splunk.util'
+    ],
+    function(
+        _,
+        Backbone,
+        module,
+        ReportModel,
+        Modal,
+        FlashMessage,
+        route,
+        splunkUtil
+    ) {
+    return Modal.extend({
+        moduleId: module.id,
+        /**
+        * @param {Object} options {
+        *       model: {
+        *           report <models.Report>,
+        *           application: <models.Application>
+        *       },
+        *       {Boolean} deleteRedirect: (Optional) Whether or not to redirect to reports page after delete. Default is false.        * }
+        */
+        initialize: function(options) {
+            Modal.prototype.initialize.apply(this, arguments);
+
+            this.children.flashMessage = new FlashMessage({ model: this.model.report });
+        },
+        events: $.extend({}, Modal.prototype.events, {
+            'click .btn-primary': function(e) {
+                var deleteDeferred = this.model.report.destroy({wait: true});
+
+                $.when(deleteDeferred).then(function() {
+                    this.hide();
+                    if (this.options.deleteRedirect) {
+                        if (this.model.report.isAlert()) {
+                            window.location = route.alerts(this.model.application.get("root"), this.model.application.get("locale"), this.model.application.get("app"));
                         } else {
-                            this.model.scheduledView.entry.content.set(this.model.inmem.toJSON());
-                            var modal = this;
-                            this.model.scheduledView.save({},{success: function(){
-                                modal.hide();
-                            }});
+                            window.location = route.reports(this.model.application.get("root"), this.model.application.get("locale"), this.model.application.get("app"));
                         }
                     }
-                }
-            },
-            _toggle: function() {
-                _.chain(this.conditionalControls).pluck('$el').invoke(
-                        this.model.inmem.get('is_scheduled') ? 'show' : 'hide'
-                );
-            },
-            render: function() {
-                this.$el.html(Modal.TEMPLATE);
-                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit PDF Schedule").t());
-                this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessages.render().el);
-                this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
-                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.name.render().el);
-                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.schedule.render().el); 
-                _.each(this.conditionalControls, function(c) { 
-                    this.$(Modal.BODY_FORM_SELECTOR).append(c.render().el); 
-                }, this);
-                this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
-                this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
-                this._toggle();
-                return this;
-            }
-        });
-    }
-);
+                }.bind(this));
 
-define('views/dashboards/table/controls/CloneSuccess',['underscore', 'module', 'views/shared/Modal','uri/route','views/shared/documentcontrols/dialogs/permissions_dialog/Master','views/dashboards/table/controls/SchedulePDF','models/services/ScheduledView'],
-        function(_, module, Modal, route, PermissionsDialog, SchedulePDF, ScheduledViewModel){
+                e.preventDefault();
+            }
+        }),
+        render : function() {
+            this.$el.html(Modal.TEMPLATE);
+
+            this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessage.render().el);
+
+            if (this.model.report.isAlert()) {
+                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Delete Alert").t());
+            } else {
+                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Delete Report").t());
+            }
+            this.$(Modal.BODY_SELECTOR).append('<span>' + splunkUtil.sprintf(_('Are you sure you want to delete %s?').t(), '<em>' + _.escape(this.model.report.entry.get('name')) + '</em>') + '</span>');
+            
+            
+
+            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
+
+            this.$(Modal.FOOTER_SELECTOR).append(this.compiledTemplate({
+                _: _
+            }));
+
+            return this;
+        },
+        template: '\
+            <a href="#" class="btn btn-primary"><%- _("Delete").t() %></a>\
+        '
+    });
+});
+
+define('views/dashboards/table/controls/ConvertSuccess',[
+    'jquery',
+    'underscore', 
+    'module', 
+    'views/shared/Modal',
+    'uri/route',
+    'views/shared/documentcontrols/dialogs/permissions_dialog/Master'
+    ],
+    function(
+        $,
+        _, 
+        module, 
+        Modal, 
+        route, 
+        PermissionsDialog
+    )
+{
 
     return Modal.extend({
         moduleId: module.id,
-        events: {
+        options: {
+            refreshOnDismiss: false
+        },
+        initialize: function() {
+            Modal.prototype.initialize.apply(this, arguments);
+
+            if (this.options.refreshOnDismiss) {
+                this.on('hide hidden', function() {
+                    window.location.reload();
+                });
+            }
+        },
+        events: $.extend({}, Modal.prototype.events, {
             'click .edit-perms': function(e) {
                 e.preventDefault();
-                var model = this.model, roles = this.collection.roles;
+                var that = this;
+                var model = that.model, roles = that.collection.roles;
                 _.defer(function(){
                     var permissionsDialog = new PermissionsDialog({
-                        model: model.dashboard,
+                        model: {
+                            document: model.dashboard,
+                            nameModel: model.dashboard.entry.content,
+                            user: model.user
+                        },
                         collection: roles,
+                        nameLabel:  "Dashboard",
+                        nameKey: 'label',
                         onHiddenRemove: true
                     });
+
+                    if (that.options.refreshOnDismiss) {
+                        permissionsDialog.on('hide hidden', function() {
+                            window.location.reload();
+                        });
+                    }
 
                     $("body").append(permissionsDialog.render().el);
                     permissionsDialog.show();
                 });
 
-                this.hide();
-                this.remove();
-            },
-            'click .schedule-pdf': function(e) {
-                e.preventDefault();
-                var model = this.model;
-                var createDialog = function() {
-                    var schedulePDF = new SchedulePDF({
-                        model: model,
-                        onHiddenRemove: true
-                    });
-                    $("body").append(schedulePDF.render().el);
-                    schedulePDF.show();
-                };
-                if(!this.model.scheduledView) {
-                    var scheduledView = model.scheduledView = new ScheduledViewModel(),
-                        dfd = scheduledView.findByName(this.model.dashboard.entry.get('name'), this.model.application.get('app'), this.model.application.get('owner'));
-                    dfd.done(createDialog);
-                } else {
-                    _.defer(createDialog);
+                if (that.options.refreshOnDismiss) {
+                    that.off('hide hidden');
                 }
-                this.hide();
-                this.remove();
+
+                that.hide();
+                that.remove();
             }
-        },
+        }),
         render: function() {
             this.$el.html(Modal.TEMPLATE);
-            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Dashboard has been cloned.").t());
+            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Dashboard has been converted.").t());
             this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
 
+            var app = this.model.dashboard.entry.acl.get("app");
+            var name = this.model.dashboard.entry.get('name');
+
+
             var link = route.page(this.model.application.get("root"), this.model.application.get("locale"),
-                    this.model.dashboard.entry.acl.get("app"), this.model.dashboard.entry.get('name'));
+                    app, name);
+
+            // TODO some refactoring could be done here with editdashboard.js "Edit source" button
+            var newDashboardLink = route.page(this.model.application.get('root'), this.model.application.get('locale'), this.model.application.get('app'), this.model.dashboard.entry.get('name')); 
+            var editLink = "/manager/" + app + 
+                    "/data/ui/views/" + name + 
+                    "?action=edit&ns=" +  app + 
+                    "&redirect_override=" + encodeURIComponent(newDashboardLink);
 
             this.$(Modal.BODY_FORM_SELECTOR).append(_.template(this.messageTemplate, {
                 dashboardLink: link,
@@ -9265,19 +10167,19 @@ define('views/dashboards/table/controls/CloneSuccess',['underscore', 'module', '
 
             this.$(Modal.FOOTER_SELECTOR).append(_.template(this.buttonTemplate, {
                 dashboardLink: link,
+                editLink: editLink,
                 _: _
             }));
 
             this.$(Modal.FOOTER_SELECTOR).append('');
             return this;
         },
-        buttonTemplate: '<a href="<%= dashboardLink %>/edit" class="btn edit-panels"><%- _("Edit Panels").t() %></a>' +
+        buttonTemplate: '<a href="<%= editLink %>" class="btn edit-panels"><%- _("Edit HTML").t() %></a>' +
                         '<a href="<%= dashboardLink %>" class="btn btn-primary modal-btn-primary"><%- _("View").t() %></a>',
-        messageTemplate: '<p><%- _("You may now view your dashboard, change additional settings, or edit the panels.").t() %></p>' +
+        messageTemplate: '<p><%- _("You may now view your dashboard, change additional settings, or edit the HTML.").t() %></p>' +
                         '<p><%- _("Additional Settings").t() %>:' +
                             '<ul>' +
                                 '<li><a href="#" class="edit-perms"><%- _("Permissions").t() %></a></li>' +
-                                '<li><a href="#" class="schedule-pdf"><%- _("Schedule PDF Delivery").t() %></a></li>' +
                             '</ul>' +
                         '</p>'
     });
@@ -9362,275 +10264,6 @@ define('views/shared/delegates/PairedTextControls',['jquery',
 
         });
     });
-define('views/dashboards/table/controls/CloneDashboard',[
-    'underscore', 
-    'module', 
-    'views/shared/Modal', 
-    'views/shared/controls/ControlGroup', 
-    'models/Base', 
-    'models/Dashboard', 
-    'views/shared/FlashMessages',
-    'util/splunkd_utils',
-    'views/dashboards/table/controls/CloneSuccess',
-    'views/shared/delegates/PairedTextControls',
-    'views/shared/controls/TextControl'
-],
-    
-    function (
-        _, 
-        module, 
-        Modal, 
-        ControlGroup, 
-        BaseModel, 
-        DashboardModel, 
-        FlashMessagesView, 
-        splunkDUtils, 
-        CloneSuccessView,
-        PairedTextControls,
-        TextControl
-    ) 
-{
-
-    return Modal.extend({
-        moduleId: module.id,
-        initialize: function () {
-            Modal.prototype.initialize.apply(this, arguments);
-
-            this.model.perms = new BaseModel({
-                perms: 'private'
-            });
-
-            this.children.flashMessages = new FlashMessagesView({
-                model: {
-                    dashboard: this.model.dashboard,
-                    dashboardMeta: this.model.dashboard.meta
-                }
-            });
-
-             this.children.titleTextControl = new TextControl({
-                modelAttribute: 'label',
-                model: this.model.dashboard.meta,
-                save: false
-            });
-
-            this.children.filenameTextControl = new TextControl({
-                modelAttribute: 'name',
-                model: this.model.dashboard.entry.content,
-                save: false
-            });
-            this.children.filenameTextControl.setValue(
-                splunkDUtils.nameFromString(this.model.dashboard.meta.get('label'))
-            );
-
-            this.pairedTextControls = new PairedTextControls({
-                sourceDelegate: this.children.titleTextControl,
-                destDelegate: this.children.filenameTextControl,
-                transformFunction: splunkDUtils.nameFromString
-            });
-
-            this.children.title = new ControlGroup({
-                controls: this.children.titleTextControl,
-                label: _("Title").t()
-            });
-
-            this.children.filename = new ControlGroup({
-                controls: this.children.filenameTextControl,
-                label: _("ID").t(),
-                help: _("Can only contain letters, numbers and underscores.").t(),
-                tooltip: _("The ID is used as the filename on disk. Cannot be changed later.").t()
-            });
-
-            this.children.description = new ControlGroup({
-                controlType: 'Textarea',
-                controlOptions: {
-                    modelAttribute: 'description',
-                    model: this.model.dashboard.meta,
-                    placeholder: _("optional").t(),
-                    save: false
-                },
-                label: _("New Description").t()
-            });
-
-            this.children.permissions = new ControlGroup({
-                controlType: 'SyntheticRadio',
-                controlClass: 'controls-halfblock',
-                controlOptions: {
-                    className: "btn-group btn-group-2",
-                    modelAttribute: 'perms',
-                    model: this.model.perms,
-                    items: [
-                        { label: _("Private").t(), value: 'private' },
-                        { label: _("Shared").t(), value: 'shared' }
-                    ],
-                    save: false
-                },
-                label: _("Permissions").t()
-            });
-
-        },
-        events: {
-            'click a.modal-btn-primary': function (e) {
-                e.preventDefault();
-                this.submit();
-            },
-            "keypress": function(e) {
-                Modal.handleKeyboardEvent(e, { enter: this.submit }, this);
-            }
-        },
-        submit: function() {
-            var dashboard = this.model.dashboard;
-            dashboard.meta.validate();
-            if (dashboard.meta.isValid()) {
-                dashboard.meta.apply();
-                var modal = this, data;
-                data = this.model.application.getPermissions(this.model.perms.get('perms'));
-                dashboard.save({}, { data: data }).done(function () {
-                    if(modal.collection && modal.collection.dashboards) {
-                        modal.collection.dashboards.add(modal.model.dashboard);
-                    }
-
-                    _.defer(function(){
-                        var successDialog = new CloneSuccessView({
-                            model: {
-                                dashboard: dashboard,
-                                application: modal.model.application,
-                                scheduledView: modal.model.scheduledView
-                            },
-                            collection: modal.collection
-                        });
-                        successDialog.render().show();
-                    });
-
-                    modal.hide();
-                    modal.remove();
-                });
-            }
-        },
-        render: function () {
-            this.$el.html(Modal.TEMPLATE);
-            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Clone").t());
-            this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessages.render().el);
-            this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
-
-            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.title.render().el);
-             this.$(Modal.BODY_FORM_SELECTOR).append(this.children.filename.render().el);
-            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.description.render().el);
-            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.permissions.render().el);
-
-            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
-            this.$(Modal.FOOTER_SELECTOR).append('<a href="#" class="btn btn-primary modal-btn-primary">' + _("Clone Dashboard").t() + '</a>');
-            return this;
-        }
-    });
-
-});
-
-define('views/dashboards/table/controls/ConvertSuccess',[
-    'jquery',
-    'underscore', 
-    'module', 
-    'views/shared/Modal',
-    'uri/route',
-    'views/shared/documentcontrols/dialogs/permissions_dialog/Master'
-    ],
-    function(
-        $,
-        _, 
-        module, 
-        Modal, 
-        route, 
-        PermissionsDialog
-    )
-{
-
-    return Modal.extend({
-        moduleId: module.id,
-        options: {
-            refreshOnDismiss: false
-        },
-        initialize: function() {
-            Modal.prototype.initialize.apply(this, arguments);
-
-            if (this.options.refreshOnDismiss) {
-                this.on('hide hidden', function() {
-                    window.location.reload();
-                });
-            }
-        },
-        events: $.extend({}, Modal.prototype.events, {
-            'click .edit-perms': function(e) {
-                e.preventDefault();
-                var that = this;
-                var model = that.model, roles = that.collection.roles;
-                _.defer(function(){
-                    var permissionsDialog = new PermissionsDialog({
-                        model: model.dashboard,
-                        collection: roles,
-                        onHiddenRemove: true
-                    });
-
-                    if (that.options.refreshOnDismiss) {
-                        permissionsDialog.on('hide hidden', function() {
-                            window.location.reload();
-                        });
-                    }
-
-                    $("body").append(permissionsDialog.render().el);
-                    permissionsDialog.show();
-                });
-
-                if (that.options.refreshOnDismiss) {
-                    that.off('hide hidden');
-                }
-
-                that.hide();
-                that.remove();
-            }
-        }),
-        render: function() {
-            this.$el.html(Modal.TEMPLATE);
-            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Dashboard has been converted.").t());
-            this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
-
-            var app = this.model.dashboard.entry.acl.get("app");
-            var name = this.model.dashboard.entry.get('name');
-
-
-            var link = route.page(this.model.application.get("root"), this.model.application.get("locale"),
-                    app, name);
-
-            // TODO some refactoring could be done here with editdashboard.js "Edit source" button
-            var editLink = "/manager/" + app + 
-                    "/data/ui/views/" + name + 
-                    "?action=edit&ns=" +  app + 
-                    "&redirect_override=" + encodeURIComponent(window.location.pathname);
-
-            this.$(Modal.BODY_FORM_SELECTOR).append(_.template(this.messageTemplate, {
-                dashboardLink: link,
-                _: _
-            }));
-
-            this.$(Modal.FOOTER_SELECTOR).append(_.template(this.buttonTemplate, {
-                dashboardLink: link,
-                editLink: editLink,
-                _: _
-            }));
-
-            this.$(Modal.FOOTER_SELECTOR).append('');
-            return this;
-        },
-        buttonTemplate: '<a href="<%= editLink %>" class="btn edit-panels"><%- _("Edit HTML").t() %></a>' +
-                        '<a href="<%= dashboardLink %>" class="btn btn-primary modal-btn-primary"><%- _("View").t() %></a>',
-        messageTemplate: '<p><%- _("You may now view your dashboard, change additional settings, or edit the HTML.").t() %></p>' +
-                        '<p><%- _("Additional Settings").t() %>:' +
-                            '<ul>' +
-                                '<li><a href="#" class="edit-perms"><%- _("Permissions").t() %></a></li>' +
-                            '</ul>' +
-                        '</p>'
-    });
-
-});
-
 define('views/dashboards/table/controls/ConvertDashboard',[
     'underscore',
     'jquery',
@@ -9686,7 +10319,6 @@ define('views/dashboards/table/controls/ConvertDashboard',[
                 mode: ConvertMode.NEW
             });
 
-
             this.children.flashMessages = new FlashMessagesView({
                 model: {
                     dashboard: this.model.dashboard,
@@ -9694,9 +10326,14 @@ define('views/dashboards/table/controls/ConvertDashboard',[
                 }
             });
 
+            this.model.dashboard.meta.set({
+                label: this.model.dashboard.meta.get('label') + _(' HTML').t()
+            });
+
             this.children.titleTextControl = new TextControl({
                 modelAttribute: 'label',
                 model: this.model.dashboard.meta,
+                placeholder: 'optional', 
                 save: false
             });
 
@@ -9705,6 +10342,7 @@ define('views/dashboards/table/controls/ConvertDashboard',[
                 model: this.model.dashboard.entry.content,
                 save: false
             });
+
             this.children.filenameTextControl.setValue(
                 splunkDUtils.nameFromString(this.model.dashboard.meta.get('label'))
             );
@@ -9794,20 +10432,18 @@ define('views/dashboards/table/controls/ConvertDashboard',[
             });
 
         },
-        events: {
+        events: $.extend({}, Modal.prototype.events, {
             'click a.modal-btn-primary': function(e) {
                 e.preventDefault();
                 this.submit();
-            },
-            "keypress": function(e) {
-                Modal.handleKeyboardEvent(e, { enter: this.submit }, this);
             }
-        },
+        }),
         submit: function() {
             var that = this;
             var dashboard = that.model.dashboard;
             var currentDashboard = that.model.currentDashboard;
             var app = that.model.application;
+            var user = that.model.user;
             var sourceLink = route.page(app.get("root"), app.get("locale"), currentDashboard.entry.acl.get("app"), currentDashboard.entry.get('name')) + '/converttohtml';
             var updateCollection = that.collection && that.collection.dashboards;
 
@@ -9824,7 +10460,8 @@ define('views/dashboards/table/controls/ConvertDashboard',[
                     $.post(
                         sourceLink,
                         {
-                            xmlString: dashboard.entry.content.get('eai:data')
+                            xmlString: dashboard.entry.content.get('eai:data'), 
+                            newViewID: dashboard.entry.content.get('name')
                         }
                     ).done(function(htmlSource) {
                         dashboard.entry.content.set('eai:type', 'html');
@@ -9841,7 +10478,8 @@ define('views/dashboards/table/controls/ConvertDashboard',[
                                 var successDialog = new ConvertSuccessView({
                                     model: {
                                         dashboard: dashboard,
-                                        application: app
+                                        application: app,
+                                        user: user
                                     },
                                     collection: that.collection 
                                 });
@@ -9891,9 +10529,18 @@ define('views/dashboards/table/controls/ConvertDashboard',[
             }
         },
         render: function () {
+            var helpLink = route.docHelp(
+                this.model.application.get("root"),
+                this.model.application.get("locale"),
+                'learnmore.html.dashboard'
+            ); 
+
             this.$el.html(Modal.TEMPLATE);
             this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Convert Dashboard to HTML").t());
             this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessages.render().el);
+            this.$(Modal.BODY_SELECTOR).append('<p>' + _("HTML dashboards cannot be edited using Splunk's visual editors.").t() +
+                 '<br />' + _('Integrated PDF generation is not available for HTML dashboards.').t() + '<br />' + 
+                 '<a href=' + helpLink + '>' +_("Learn More").t() + ' <i class="icon-external"></i></a></p>'); 
             this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
 
             this.$(Modal.BODY_FORM_SELECTOR).append(this.children.mode.render().el);
@@ -9910,1036 +10557,809 @@ define('views/dashboards/table/controls/ConvertDashboard',[
 
 });
 
-define('splunkjs/mvc/simpleform/formtokens',['require','underscore','backbone','models/classicurl','../mvc'],function(require) {
-    var _ = require('underscore');
-    var Backbone = require('backbone');
-    var classicurl = require('models/classicurl');
-    var mvc = require('../mvc');
-    
-    /**
-     * Manages the special token namespaces that are available for
-     * binding tokens within SimpleXML forms:
-     * 
-     *  + form_raw
-     *      - Live: Updates immediately when a form token changes.
-     *      - Raw: Contains the raw token value, without any prefix/suffix.
-     *      - Contains:
-     *          > foo = value
-     *      - Read/write.
-     *  
-     *  + form_submitted_raw
-     *      - Submitted: Updates when the submit button is pressed.
-     *      - Raw: Contains the raw token value, without any prefix/suffix.
-     *      - Contains:
-     *          > foo = value
-     *      - Read/write.
-     *      - Persists to the URL automatically (with the 'form.' prefix).
-     *  
-     *  + form
-     *      - Live: Updates immediately when a form token changes.
-     *      - Transformed: Token values are transformed with a prefix/suffix.
-     *      - Augmented: Contains all URL query parameters.
-     *      - Contains:
-     *          > foo = <prefix>value<suffix>
-     *          > form.foo = value
-     *          > ... (non-form URL query parameters)
-     *      - Read only. (Writes will be ignored silently.)
-     *  
-     *  + form_submitted
-     *      - Submitted: Updates when the submit button is pressed.
-     *      - Transformed: Token values are transformed with a prefix/suffix.
-     *      - Augmented: Contains all URL query parameters.
-     *      - Contains:
-     *          > foo = <prefix>value<suffix>
-     *          > form.foo = value
-     *          > ... (non-form URL query parameters)
-     *      - Read only. (Writes will be ignored silently.)
-     */
-    var FormTokens = {
-        _isInitialized: false,
-        _tokenOptionsByName: {},
-        
-        /**
-         * Initializes all form-specific token namespaces.
-         * 
-         * Repeated invocations will have no effect.
-         */
+define('models/services/ScheduledView',['jquery','underscore','backbone','models/SplunkDBase','models/Base','backbone_validation'],
+function($, _, Backbone, SplunkDBase, BaseModel, Val){
+
+    var ScheduledView =  SplunkDBase.extend({
+        defaults: {
+            'is_scheduled': false,
+            'action.email.subject': 'Splunk Alert: $name$',
+            'action.email.papersize': 'letter',
+            'action.email.paperorientation': 'portrait',
+            'cron_schedule': '0 6 * * 1'
+        },
         initialize: function() {
-            var that = FormTokens;
-            
-            if (that._isInitialized) {
-                return;
+            SplunkDBase.prototype.initialize.apply(this, arguments);
+        },
+        url: function() {
+            return 'scheduled/views/' + this.viewName;
+        },
+        findByName: function(viewName, app, owner) {
+            this.viewName = viewName;
+            this.id = 'scheduled/views/'+viewName;
+            var dfd = this.fetch({ data: { app: app, owner: owner }});
+            dfd.done(_.bind(this.applyDefaultsIfNotScheduled, this));
+            return dfd;
+        },
+        applyDefaultsIfNotScheduled: function() {
+            if(!this.entry.content.get('is_scheduled')) {
+                this.entry.content.set(this.defaults);
             }
-            
-            // Create form token namespaces
-            that._formLiveRaw = that._createTokenModel('form_raw');
-            that._formSubmittedRaw = that._createTokenModel('form_submitted_raw');
-            that._formLive = that._createTokenModel('form');
-            that._formSubmitted = that._createTokenModel('form_submitted');
-            
-            // Changes to submitted tokens update the live tokens automatically
-            new Arrow(that._formSubmittedRaw, that._formLiveRaw);
-            
-            // Changes to raw tokens update the transformed tokens automatically
-            // NOTE: Changes to transformed tokens do NOT update raw
-            //       tokens automatically, since that would pollute the raw
-            //       token namespaces with URL query parameters.
-            that._transformingArrow1 = new Arrow(that._formLiveRaw, that._formLive,
-                { valueTransform: FormTokens._RAW_VALUE_TO_TRANSFORMED });
-            that._transformingArrow2 = new Arrow(that._formSubmittedRaw, that._formSubmitted,
-                { valueTransform: FormTokens._RAW_VALUE_TO_TRANSFORMED });
-            
-            // Create URL token namespaces
-            // NOTE: Deliberately not publishing as a public field, since the
-            //       registration of this model is likely to be moved out of 
-            //       this class in the future.
-            var urlModel = that._createUrlModel();
-            
-            // Tokens in the URL query parameters are automatically synced
-            // with the form.
-            new Arrow(urlModel, that._formSubmittedRaw, {
-                keyFilter: function(key) {
-                    return (key.indexOf('form.') === 0);
-                },
-                keyTransform: function(key) {
-                    return key.substring('form.'.length);
-                }
-            });
-            new Arrow(that._formSubmittedRaw, urlModel, {
-                keyTransform: function(key) {
-                    return ('form.' + key);
-                }
-            });
-            
-            // Expose all URL query parameters in the transformed token namespaces
-            // for backward compatibility with Splunk 5.x (Ace) forms.
-            // 
-            // In particular user code expects to be able to get the
-            // untransformed verson of token 'foo' by reading 'form.foo'.
-            new Arrow(urlModel, that._formSubmitted);
-            new Arrow(urlModel, that._formLive);
-            
-            that._isInitialized = true;
-        },
-        
-        /*
-         * Creates the 'url' token namespace which mirrors the live current
-         * URL query parameters.
-         */
-        // NOTE: This namespace may be extracted to the overall MVC framework in the
-        //       future, so that it is available outside of SimpleXML contexts.
-        _createUrlModel: function() {
-            var that = FormTokens;
-            var urlModel = that._createTokenModel('url');
-            
-            new Arrow(classicurl, urlModel);
-            new Arrow(urlModel, classicurl, {
-                didForward: function() {
-                    classicurl.save();
-                }
-            });
-            
-            return urlModel;
-        },
-        
-        _RAW_VALUE_TO_TRANSFORMED: function(value, key) {
-            var tokenOptions = FormTokens._tokenOptionsByName[key] || {};
-            if (typeof value === 'string') {
-                if (tokenOptions['default'] && (value === '')) {
-                    value = tokenOptions['default'];
-                }
-                if (tokenOptions.prefix) {
-                    value = tokenOptions.prefix + value;
-                }
-                if (tokenOptions.suffix) {
-                    value = value + tokenOptions.suffix;
-                }
-            }
-            return value;
-        },
-        
-        /**
-         * Registers the specified token with the specified options.
-         * 
-         * @param tokenOptions.prefix
-         *      Prepended to the transformed value of the token, as
-         *      available in the 'form' and 'form_submitted' models.
-         * @param tokenOptions.suffix
-         *      Appended to the transformed value of the token, as
-         *      available in the 'form' and 'form_submitted' models.
-         * @param tokenOptions.default
-         *      Used as the token value if the original value is ''.
-         */
-        register: function(tokenName, tokenOptions) {
-            var that = FormTokens;
-            
-            // TODO: Warn if a token is reregistered with different options.
-            //       Ask Marshall how to do this.
-            that._tokenOptionsByName[tokenName] = tokenOptions;
-            
-            if (that._isInitialized) {
-                // Retransform the token values, now that the token options
-                // have potentially changed.
-                that._transformingArrow1.forward(tokenName);
-                that._transformingArrow2.forward(tokenName);
-            }
-        },
-        
-        /**
-         * Triggers form submission.
-         * 
-         * This will update tokens in the 'form_submitted_raw' and
-         * 'form_submitted' namespaces, along with anything synced
-         * with them such as the 'url' token namespace.
-         */
-        submit: function() {
-            var that = FormTokens;
-            
-            if (!that._isInitialized) {
-                // Ignore submits before form namespaces have been created
-                return;
-            }
-            
-            // Forward the entire live model state to the submitted model
-            var forwarder = new Arrow(that._formLiveRaw, that._formSubmittedRaw);
-            forwarder.destroy();
-        },
-        
-        _createTokenModel: function(name) {
-            return mvc.Components.getInstance(name, {create: true});
         }
-    };
-    
-    /**
-     * Automatically forwards attributes from a source model
-     * to a destination model, optionally transforming attribute
-     * names and values in the process.
-     * 
-     * Upon creation the initial attributes from the source model are
-     * automatically forwarded to the destionation model.
-     * Therefore when using two arrows to create a bidirectional relationship,
-     * the arrow instantiation order matters if the two models initially have
-     * common keys with different values.
-     * 
-     * The options is an optional dictionary with keys:
-     *      + keyFilter : function(key)->boolean (optional)
-     *          > Returns whether the specified key should be forwarded.
-     *      + keyTransform : function(key)->transformedKey (optional)
-     *          > Returns a transformed version of the key that will be forwarded.
-     *      + valueTransform : function(value, key)->transformedValue (optional)
-     *          > Returns a transformed version of the value that will be forwarded.
-     *      + didForward : function() (optional)
-     *          > Called after a series of attributes have been forwarded.
-     */
-    // TODO: Improve name. Perhaps ModelBinding or ModelBinder?
-    //       The rename can be deferred up until this class is made public.
-    // TODO: Handle unsets properly.
-    var Arrow = function(sourceModel, destModel, options) {
-        var that = this;
-        
-        options = options || {};
-        var keyFilter = options.keyFilter || function(key) { return true; };
-        var keyTransform = options.keyTransform || function(key) { return key; };
-        var valueTransform = options.valueTransform || function(value, key) { return value; };
-        var didForward = options.didForward || function() { /* nothing */ };
-        
-        this.sourceModel = sourceModel;
-        this.destModel = destModel;
-        
-        // Forward changes on the source to the destination
-        sourceModel.on('change', this._sourceModelListener = function(model, options) {
-            var changedAttributes = {};
-            _.each(model.changed, function(value, key) {
-                if (keyFilter(key)) {
-                    var destKey = keyTransform(key);
-                    var destValue = valueTransform(value, key);
-                    changedAttributes[destKey] = destValue;
+    });
+
+    ScheduledView.Entry = ScheduledView.Entry.extend({});
+    ScheduledView.Entry.Content = ScheduledView.Entry.Content.extend({
+        validation: {
+            'action.email.to': [{
+                fn: 'validateEmailList'
+            }],
+            'action.email.subject': {
+                required: true,
+                msg: _('Subject is empty').t()
+            }
+        },
+        validateEmailList: function(value, attr, model) {
+            if(model.is_scheduled) {
+                if(!value) {
+                    return _("Email Address list is empty").t();
                 }
-            });
-            
-            destModel.set(changedAttributes);
-            
-            didForward();
+                if(_(value.split(/\s*,\s*/)).any(function(v){ return !Val.patterns.email.test(v); })) {
+                    return _("Email Address list is invalid").t();
+                }
+            }
+        }
+    });
+
+    return ScheduledView;
+});
+
+define('views/dashboards/table/controls/SchedulePDF',
+    [
+        'module',
+        'jquery',
+        'underscore',
+        'backbone',
+        'util/console',
+        'util/pdf_utils',
+        'models/services/ScheduledView',
+        'models/Cron',
+        'views/Base',
+        'views/shared/Modal',
+        'views/shared/controls/ControlGroup',
+        'views/shared/ScheduleSentence',
+        'views/shared/FlashMessages', 
+        'uri/route'
+    ],
+    function(
+        module, 
+        $, 
+        _, 
+        Backbone, 
+        console, 
+        pdfUtils, 
+        ScheduledViewModel, 
+        Cron, 
+        BaseView, 
+        Modal, 
+        ControlGroup, 
+        ScheduleSentence, 
+        FlashMessagesView, 
+        route
+    ){
+
+        var ControlWrapper = BaseView.extend({
+            render: function() {
+                if(!this.el.innerHTML) {
+                    this.$el.html(_.template(this.template, {
+                        label: this.options.label || '',
+                        controlClass: this.options.controlClass || '',
+                        body: _.template(this.options.body||'')(this.model ? (this.model.toJSON ? this.model.toJSON() : this.model) : {})
+                    }));
+                }
+                var target = this.$('.controls');
+                _.each(this.options.children, function(child){
+                    child.render().appendTo(target);
+                });
+                return this;
+            },
+            template: '<label class="control-label"><%- label %></label><div class="controls <%- controlClass %>"><%= body %></div>'
         });
-        
-        // Forward initial state of the source to the destination
-        this.forward();
-    };
-    _.extend(Arrow.prototype, {
-        /**
-         * Reforwards the specified attribute from the source model
-         * to the destination model. If no attribute is specified,
-         * the entire source model is forwarded.
-         * 
-         * This is useful if the value transformation rule for this
-         * arrow now would yield a different transformed value.
-         */
-        forward: function(attrName) {
-            var changedAttributes;
-            if (attrName === undefined) {
-                changedAttributes = this.sourceModel.attributes;
-            } else {
-                changedAttributes = {};
-                if (this.sourceModel.has(attrName)) {
-                    changedAttributes[attrName] = this.sourceModel.get(attrName);
-                }
-            }
-            
-            if (!_.isEmpty(changedAttributes)) {
-                // Trigger forwarding via listener
-                this.sourceModel.changed = changedAttributes;
-                this._sourceModelListener(this.sourceModel);
-            }
-        },
-        
-        /**
-         * Destroys this arrow.
-         * No further automatic forwarding will be performed.
-         */
-        // TODO: Call this automatically if either sourceModel or destModel is deleted
-        destroy: function() {
-            this.sourceModel.off('change', this._sourceModelListener);
-            this._sourceModelListener = null;
-        }
-    });
-    
-    return FormTokens;
-});
-define('splunkjs/mvc/simpleform/input/base',['require','underscore','jquery','../../basesplunkview','../formtokens','../../tokenutils'],function(require) {
-    var _ = require('underscore');
-    var $ = require('jquery');
-    var BaseSplunkView = require('../../basesplunkview');
-    var FormTokens = require('../formtokens');
-    var TokenUtils = require('../../tokenutils');
 
-    var BaseInput = BaseSplunkView.extend({
-        options: {
-            submitOnChange: false
-        },
-        initialize: function() {
-            this.configure();
-            this.settings.enablePush('value');
-            
-            // Register the output token, if specified
-            var outputTokenRef = this.settings.get('value', { tokens: true });
-            if (outputTokenRef !== undefined &&
-                TokenUtils.isToken(outputTokenRef))
-            {
-                // NOTE: Deliberately stripping the token namespace,
-                //       under the assumption that it is one of the 'form_*'
-                //       namespaces, which indicates that it is a normal form
-                //       token.
-                var outputTokenName = TokenUtils.getTokens(outputTokenRef)[0].name;
-                var outputTokenOptions = _.pick(
-                    this.settings.toJSON(),
-                    ['default', 'prefix', 'suffix']);
-                FormTokens.register(outputTokenName, outputTokenOptions);
-            }
-            
-            // Update self when settings change
-            this.bindToComponent(this.options.formManager, this.onFormManagerChange, this);
-            this.settings.on('change:token change:default change:prefix change:suffix', this.bindToFormManager, this);
-            this.settings.on('change:label', this.renderLabel, this);
-            
-            this.inputId = _.uniqueId((this.id || 'input') + '_');
-        },
-        onFormManagerChange: function(ctx, model) {
-            if(this.formModel) {
-                this.formModel.off(null, null, this);
-            }
-            this.formModel = model;
-            this.bindToFormManager();
-        },
-        bindToFormManager: function() {
-            if(!this.formModel) {
-                return;
-            }
-            var token = this.token = this.settings.get('token'), ctx = this.formModel, settings = this.settings;
-            if(settings.hasChanged('token')) {
-                ctx.unregister(settings.previous('token'));
-            }
-            ctx.register(token, _.pick(settings.toJSON(), ['default', 'prefix', 'suffix']), this.readyDfd());
-            ctx.on('change:' + token, this.onModelChange, this);
 
-            if(ctx.has(token)) {
-                this.setValue(ctx.get(token));
-            } else {
-                var v = this.getValue();
-                if(v) {
-                    ctx.set(token, v);
-                } else if(settings.has('seed')) {
-                    ctx.set(token, settings.get('seed'));
-                }
-            }
-        },
-        readyDfd: function() {
-            return null;
-        },
-        destroy: function() {
-            if(this.formModel) {
-                this.formModel.unregister(this.token);
-                this.formModel.off(null, null, this);
-            }
-            BaseSplunkView.prototype.destroy.apply(this, arguments);
-        },
-        handleChange: function() {
-            // Update form token
-            // TODO: Remove this logic. (SPL-67733)
-            if(this.formModel) {
-                this.formModel.set(this.token, this.getValue());
-                this.formModel.submit(this.settings.get('submitOnChange') ? 'soft' : 'change');
-            }
-            
-            // Update MVC token
-            this.settings.set('value', this.getValue());
-            if (this.settings.get('submitOnChange')) {
-                FormTokens.submit();
-            }
-        },
-        sendSoftSubmit: function() {
-            // Submit form tokens
-            if(this.formModel) {
-                this.formModel.submit('soft');
-            }
-            
-            // Submit MVC tokens
-            this.trigger('submit', this);
-        },
-        onModelChange: function() {
-            this.setValue(this.formModel.get(this.token));
-        },
-        setValue: function(v) {
-            throw 'setValue not implemented';
-        },
-        getValue: function() {
-            throw 'getValue not implemented';
-        },
-        renderLabel: function() {
-            var label = this.$('label');
-            if(!label.length) {
-                label = $('<label></label>').appendTo(this.el);
-            }
-            label.attr('for', this.inputId);
-            if(this.settings.has('label')) {
-                label.text(this.settings.get('label'));
-            } else {
-                var v = label.text();
-                if(v) {
-                    this.settings.set('label', v);
-                }
-            }
-        },
-        // For API compatibility with MVC controls.
-        val: function(newValue) {
-            // NOTE: Ignore parameters beyond the first one.
-            if (arguments.length >= 1) {
-                this.setValue(newValue);
-            }
-            return this.getValue();
-        },
-        on: function() {
-            return this._applyToWrappedView('on', arguments);
-        },
-        off: function() {
-            return this._applyToWrappedView('off', arguments);
-        },
-        trigger: function() {
-            return this._applyToWrappedView('trigger', arguments);
-        },
-        _applyToWrappedView: function(funcName, args) {
-            var wrappedView = this._getWrappedView();
-            if (wrappedView === this) {
-                return BaseSplunkView.prototype[funcName].apply(this, args);
-            } else {
-                return wrappedView[funcName].apply(wrappedView, args);
-            }
-        },
-        /*
-         * Subclasses should override if they delegate functionality
-         * to an underlying view.
-         */
-        _getWrappedView: function() {
-            return this;
-        }
-    });
-    
-    return BaseInput;
-});
+        return Modal.extend({
+            moduleId: module.id,
+            className: 'modal schedule-pdf',
+             /**
+             * @param {Object} options {
+             *     model: {
+             *         scheduledView: <models.services.ScheduledView>,
+             *         dashboard: <models.services.data.ui.Views>
+             *     }
+             * }
+             */
+            initialize: function() {
+                Modal.prototype.initialize.apply(this, arguments);
 
-define('splunkjs/mvc/simpleform/input/timerange',['require','underscore','jquery','backbone','./base','views/shared/timerangepicker/Master','models/TimeRange','../../simplexml/controller','../../mvc','util/console'],function(require) {
-    var _ = require('underscore'),
-            $ = require('jquery'),
-            Backbone = require('backbone'),
-            BaseInput = require('./base'),
-            TimeRangePickerView = require('views/shared/timerangepicker/Master'),
-            TimeRangeModel = require('models/TimeRange'),
-            Dashboard = require('../../simplexml/controller'),
-            mvc = require('../../mvc'),
-            console = require('util/console');
+                this.model.inmem = new ScheduledViewModel.Entry.Content(this.model.scheduledView.entry.content.toJSON());
+                 var cronModel = this.model.cron = Cron.createFromCronString(this.model.inmem.get('cron_schedule') || '0 6 * * 1');
+                 this.listenTo(cronModel, 'change', function(){
+                     this.model.inmem.set('cron_schedule', cronModel.getCronString());
+                 }, this);
 
-    var TimeRangePicker = BaseInput.extend({
-        initialize: function() {
-            this.configure();
-            this.settings.enablePush('earliest_time');
-            this.settings.enablePush('latest_time');
-            
-            this.model = new Backbone.Model({});
-            this._readyDfd = $.Deferred();
-            
-            var appModel = Dashboard.model.app;
-            var userModel = Dashboard.model.user;
-            var appLocalModel = Dashboard.model.appLocal;
-            var timesCollection = this.timesCollection = Dashboard.collection.times;
-            
-            // Pick up any initial values (usually from the URL)
-            if (this.settings.has('earliest') || this.settings.has('latest')) {
-                var set = false;
-                var earliest = this.settings.get('earliest');
-                var latest = this.settings.get('latest');
-                if (!_.isUndefined(earliest) && earliest !== '') {
-                    set = true;
-                    this.settings.set('earliest_time', this.settings.get('earliest'));
-                }
-                if (!_.isUndefined(latest) && latest !== '') {
-                    set = true;
-                    this.settings.set('latest_time', this.settings.get('latest'));
-                }
-                if (set) {
-                    this.setValue();    
-                }
-            }
-            
-            var that = this;
-            if(this.settings.has('default')) {
-                
-                // When the times collection finishes fetching, we will apply
-                // the default value
-                $.when(timesCollection.dfd).done(function() {
-                    that.applyDefaultValue(false);
-                });
-                
-                this.settings.on('change:default', this.applyDefaultValue, this);
-                if(!_.isString(this.settings.get('default'))) {
-                    this.applyDefaultValue(false);
-                }
-                
-            }
-            
-            this._pickerDfd = $.when(timesCollection.dfd, userModel.dfd, appLocalModel.dfd).done(function() {
-                that.picker = new TimeRangePickerView({
-                    el: $('<div></div>').appendTo(that.el),
+                 var helpLink = route.docHelp(
+                    this.model.application.get("root"),
+                    this.model.application.get("locale"),
+                    'learnmore.alert.email'
+                ); 
+
+                this.children.flashMessages = new FlashMessagesView({
                     model: {
-                        state: that.model,
-                        timeRange: new TimeRangeModel(),
-                        user: Dashboard.model.user,
-                        appLocal: Dashboard.model.appLocal,
-                        application: Dashboard.model.app
-                    },
-                    collection: timesCollection
+                        scheduledView: this.model.scheduledView,
+                        content: this.model.inmem
+                    }
                 });
-            });
-            
-            this.model.on('change', this.onChange, this);
-            this.bindToComponent(this.options.formManager, this.onFormManagerChange, this);
-            this.settings.on('change:token', function() {
-                this.onFormManagerChange(null, this.formModel);
-            }, this);
-            if(!this.settings.has('token')) {
-                Dashboard.getStateModel().on('change:edit', this.onEditStateChange, this);
+
+                this.children.name = new ControlGroup({
+                    controlType: 'Label',
+                    controlOptions: {
+                        modelAttribute: 'label',
+                        model: this.model.dashboard.entry.content
+                    },
+                    label: _('Dashboard').t()
+                });
+
+                this.children.schedule = new ControlGroup({
+                    controlType: 'SyntheticCheckbox',
+                    controlOptions: {
+                        modelAttribute: 'is_scheduled',
+                        model: this.model.inmem,
+                        save: false
+                    },
+                    label: _("Schedule PDF").t()
+                });
+
+
+                this.conditionalControls = [
+                    this.children.scheduleSentence = new ScheduleSentence({
+                        model: {
+                            cron: this.model.cron
+                        },
+                        lineOneLabel: _("Schedule").t(),
+                        popdownOptions: {
+                            attachDialogTo: '.modal:visible',
+                            scrollContainer: '.modal:visible .modal-body:visible'
+                        }
+                    }),
+                    this.children.emailAddresses = new ControlGroup({
+                       controlType: 'Textarea',
+                       controlOptions: {
+                           modelAttribute: 'action.email.to',
+                           model: this.model.inmem,
+                           save: false
+                       },
+                       label: _("Email Addresses").t(),
+                       help: _("Comma separated list.").t()+'<br/>'+_("Email must be configured in System&nbsp;Settings > Alert&nbsp;Email&nbsp;Settings.").t()+
+                               " <a href=" + helpLink + ">" +_("Learn More").t()+' <i class="icon-external"></i></a>'
+                    }),
+                    this.children.emailSubject = new ControlGroup({
+                        controlType: 'Text',
+                        controlOptions: {
+                            modelAttribute: 'action.email.subject',
+                            model: this.model.inmem,
+                            save: false
+                        },
+                        label: _("Email Subject Line").t()
+                    }),
+                    this.children.paperSize = new ControlGroup({
+                        className: 'control-group',
+                        controlType: 'SyntheticSelect',
+                        controlOptions: {
+                            modelAttribute: 'action.email.papersize',
+                            model: this.model.inmem,
+                            items: [
+                                { label: _("A2").t(), value: 'a2' },
+                                { label: _("A3").t(), value: 'a3' },
+                                { label: _("A4").t(), value: 'a4' },
+                                { label: _("A5").t(), value: 'a5' },
+                                { label: _("Letter").t(), value: 'letter' },
+                                { label: _("Legal").t(), value: 'legal' }
+                            ],
+                            save: false,
+                            toggleClassName: 'btn',
+                            popdownOptions: {
+                                attachDialogTo: '.modal:visible',
+                                scrollContainer: '.modal:visible .modal-body:visible'
+                            }
+                        },
+                        label: _("Paper Size").t()
+                    }),
+                    this.children.paperLayout = new ControlGroup({
+                        controlType: 'SyntheticRadio',
+                        controlOptions: {
+                            modelAttribute: 'action.email.paperorientation',
+                            model: this.model.inmem,
+                            items: [
+                                { label: _("Portrait").t(), value: 'portrait' },
+                                { label: _("Landscape").t(), value: 'landscape' }
+                            ],
+                            save: false
+                        },
+                        label: _("Paper Layout").t()
+                    }),
+                    this.children.previewLinks = new ControlWrapper({
+                        body: '<div class="preview-actions">' +
+                            '<div class="test-email"><a href="#" class="action-send-test">'+_("Send Test Email").t()+'</a></div> ' +
+                            '<a href="#" class="action-preview">'+_("Preview PDF").t()+'</a>' +
+                            '</div>'
+                    })
+                ];
+                 this.model.inmem.on('change:is_scheduled', this._toggle, this);
+            },
+            events: $.extend({}, Modal.prototype.events, {
+                'click .action-send-test': function(e) {
+                    e.preventDefault();
+                    this.model.inmem.validate();
+                    if(this.model.inmem.isValid()) {
+                        var $status = this.$('.test-email'), flashMessages = this.children.flashMessages.flashMsgCollection;
+                        $status.html(_("Sending...").t());
+                        pdfUtils.sendTestEmail(
+                                this.model.dashboard.entry.get('name'),
+                                this.model.dashboard.entry.acl.get('app'),
+                                this.model.inmem.get('action.email.to'),
+                                {
+                                    paperSize: this.model.inmem.get('action.email.papersize'),
+                                    paperOrientation: this.model.inmem.get('action.email.paperorientation')
+                                }
+                        ).done(function(){
+                                    $status.html('<i class="icon-check"></i> '+_("Email sent.").t());
+                        }).fail(function(error){
+                                    $status.html('<span class="error"><i class="icon-warning-sign"></i> '+_("Failed!").t()+'</span>');
+                                    if(error) {
+                                        flashMessages.add({
+                                            type: 'warning',
+                                            html: _("Sending the test email failed: ").t() + _.escape(error)
+                                        });
+                                    }
+                                }).always(function(){
+                                    setTimeout(function(){
+                                        $status.html('<a href="#" class="action-send-test">'+_("Send Test Email").t()+'</a>');
+                                    }, 5000);
+                                });
+                    }
+                },
+                'click .action-preview': function(e) {
+                    e.preventDefault();
+                    var orientationSuffix = '',
+                        orientation = this.model.inmem.get('action.email.paperorientation'),
+                        pageSize = this.model.inmem.get('action.email.papersize') || 'a2';
+                    if(orientation === 'landscape') {
+                        orientationSuffix = '-landscape';
+                    }
+                    pdfUtils.getRenderURL(
+                            this.model.dashboard.entry.get('name'), this.model.dashboard.entry.acl.get('app'),{
+                                'paper-size': pageSize + orientationSuffix
+                            }
+                    ).done(function(url){
+                        window.open(url);
+                    });
+                },
+                'click .modal-btn-primary': function(e){
+                    e.preventDefault();
+                    this.model.inmem.validate();
+                    if(this.model.inmem.isValid()) {
+                        //use == instead of === in first part of conditional to cover false and 0
+                        if(this.model.inmem.get('is_scheduled') == false && this.model.scheduledView.entry.content.get('is_scheduled') === false) {
+                            this.hide();
+                        } else {
+                            this.model.scheduledView.entry.content.set(this.model.inmem.toJSON());
+                            var modal = this;
+                            this.model.scheduledView.save({},{success: function(){
+                                modal.hide();
+                            }});
+                        }
+                    }
+                }
+            }),
+            _toggle: function() {
+                _.chain(this.conditionalControls).pluck('$el').invoke(
+                        this.model.inmem.get('is_scheduled') ? 'show' : 'hide'
+                );
+            },
+            render: function() {
+                this.$el.html(Modal.TEMPLATE);
+                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit PDF Schedule").t());
+                this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessages.render().el);
+                this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
+                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.name.render().el);
+                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.schedule.render().el); 
+                _.each(this.conditionalControls, function(c) { 
+                    this.$(Modal.BODY_FORM_SELECTOR).append(c.render().el); 
+                }, this);
+                this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
+                this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
+                this._toggle();
+                return this;
             }
-            
-            this._bindRangeToDefaultTokens();
-        },
-        events: {
-            'click .remove-timerange-picker a': function(e) {
+        });
+    }
+);
+
+define('views/dashboards/table/controls/CloneSuccess',['underscore', 'module', 'views/shared/Modal','uri/route','views/shared/documentcontrols/dialogs/permissions_dialog/Master','views/dashboards/table/controls/SchedulePDF','models/services/ScheduledView'],
+        function(_, module, Modal, route, PermissionsDialog, SchedulePDF, ScheduledViewModel){
+
+    return Modal.extend({
+        moduleId: module.id,
+        events: $.extend({}, Modal.prototype.events, {
+            'click .edit-perms': function(e) {
                 e.preventDefault();
+                var model = this.model, roles = this.collection.roles;
+                _.defer(function(){
+                    var permissionsDialog = new PermissionsDialog({
+                        model: {
+                            document: model.dashboard,
+                            nameModel: model.dashboard.entry.content,
+                            user: model.user
+                        },
+                        collection: roles,
+                        nameLabel:  "Dashboard",
+                        nameKey: 'label',
+                        onHiddenRemove: true
+                    });
+
+                    $("body").append(permissionsDialog.render().el);
+                    permissionsDialog.show();
+                });
+
+                this.hide();
+                this.remove();
+            },
+            'click .schedule-pdf': function(e) {
+                e.preventDefault();
+                var model = this.model;
+                var createDialog = function() {
+                    var schedulePDF = new SchedulePDF({
+                        model: {
+                            scheduledView: model.scheduledView,
+                            dashboard: model.dashboard,
+                            application: model.application,
+                            appLocal: model.appLocal
+                        },
+                        onHiddenRemove: true
+                    });
+                    $("body").append(schedulePDF.render().el);
+                    schedulePDF.show();
+                };
+                if(!this.model.scheduledView) {
+                    var scheduledView = model.scheduledView = new ScheduledViewModel(),
+                        dfd = scheduledView.findByName(this.model.dashboard.entry.get('name'), this.model.application.get('app'), this.model.application.get('owner'));
+                    dfd.done(createDialog);
+                } else {
+                    _.defer(createDialog);
+                }
+                this.hide();
                 this.remove();
             }
-        },
-        _bindRangeToDefaultTokens: function() {
-            var earliestTokenName;
-            var latestTokenName;
-            var tokenName = this.settings.has('token');
-            if (tokenName) {
-                earliestTokenName = tokenName + '.earliest';
-                latestTokenName = tokenName + '.latest';
-            } else {
-                earliestTokenName = 'earliest';
-                latestTokenName = 'latest';
-            }
-            
-            // Bind range settings to default tokens, if not already bound
-            var initialRangeTokens = {};
-            if (!this.settings.has('earliest_time')) {
-                initialRangeTokens['earliest_time'] = '$' + earliestTokenName + '$';
-            }
-            if (!this.settings.has('latest_time')) {
-                initialRangeTokens['latest_time'] = '$' + latestTokenName + '$';
-            }
-            if (!_.isEmpty(initialRangeTokens)) {
-                this.settings.set(initialRangeTokens, {tokens: true});
-            }
-            
-            // Update view when settings change
-            this.settings.on(
-                'change:earliest_time change:latest_time',
-                this.setValue, this);
-            
-            // Initialize range settings
-            var initialRangeValues = {};
-            initialRangeValues['earliest_time'] = 
-                this.settings.get('earliest_time') ||
-                this.model.get('dispatch.earliest_time');
-            initialRangeValues['latest_time'] = 
-                this.settings.get('latest_time') ||
-                this.model.get('dispatch.latest_time');
-            this.settings.set(initialRangeValues);
-        },
-        applyDefaultValue: function(force) {
-            if(force === true || !this.model.has('dispatch.earliest_time')) {
-                var def = this.settings.get('default');
-                if(def) {
-                    if(_.isString(def)) {
-                        var m = this.timesCollection.find(function(m) {
-                            return m.entry.content.get("label") === def;
-                        });
-                        if(m) {
-                            this.model.set({
-                                'dispatch.earliest_time': m.entry.content.get('earliest_time'),
-                                'dispatch.latest_time': m.entry.content.get('latest_time')
-                            });
-                        } else {
-                            console.warn('Could not find matching preset for time range picker default value=%o', def);
-                            this.model.set({"dispatch.earliest_time": "0", "dispatch.latest_time": "now"});
-                        }
-                    } else {
-                        this.model.set({
-                            'dispatch.earliest_time': def.earliestTime,
-                            'dispatch.latest_time': def.latestTime
-                        });
-                    }
-                }
-                this.updateGlobalDefaultTimeRange();
-            }
-            this._readyDfd.resolve();
-        },
-        onFormManagerChange: function(ctx, model) {
-            if(this.formModel) {
-                this.formModel.off(null, null, this);
-            }
-            this.formModel = model;
-            
-            // TODO: What is this?
-            this.formModel.register(null, null, this.readyDfd());
-        },
-        readyDfd: function() {
-            return this._readyDfd;
-        },
-        setValue: function() {
-            this.model.set({
-                'dispatch.earliest_time': this.settings.get('earliest_time'),
-                'dispatch.latest_time': this.settings.get('latest_time')
-            });
-        },
-        onChange: function() {
-            this.settings.set({
-                'earliest_time': this.model.get('dispatch.earliest_time'),
-                'latest_time': this.model.get('dispatch.latest_time')
-            });
-            this.trigger('change');
-            
-            if (this.formModel) {
-                this.formModel.submit(this.settings.get('submitOnChange') ? 'soft' : 'change');
-            }
-        },
-        getValue: function() {
-            var rawEarliestTime = this.model.get('dispatch.earliest_time');
-            var rawLatestTime = this.model.get('dispatch.latest_time');
-            
-            return {
-                earliest_time: rawEarliestTime,
-                latest_time: rawLatestTime
-            };
-        },
-        onEditStateChange: function(model) {
-            if(model.get('edit') && !this.settings.has('token')) {
-                $('<div class="remove-timerange-picker"><a href="#"><i class="icon-x-circle"></i></a></div>').appendTo(this.$el);
-                $('<div class="timerange-edit-hint"></div>')
-                        .html(_('Select default time range above. Time range only applies to <i class="icon-search-thin"></i> Inline Searches.').t())
-                        .appendTo(this.$el);
-                this.model.on('change', this.updateGlobalDefaultTimeRange, this);
-                this.applyDefaultValue(true);
-            } else {
-                this.model.off('change', this.updateGlobalDefaultTimeRange, this);
-                this.$('.remove-timerange-picker').remove();
-                this.$('.timerange-edit-hint').remove();
-            }
-        },
-        updateGlobalDefaultTimeRange: function() {
-            if(!this.settings.get('token')) {
-                var v = {
-                    earliestTime: this.model.get('dispatch.earliest_time'),
-                    latestTime: this.model.get('dispatch.latest_time')
-                };
-                Dashboard.getStateModel().set('default_timerange', v);
-                this.settings.set('default', v, { silent: true });
-            }
-        },
-        remove: function() {
-            var that = this;
-            
-            // We can't remove the timepicker until it is created
-            $.when(this._pickerDfd).done(function() {
-                that.picker.remove();
-            });
-            
-            Dashboard.getStateModel().off(null, null, this);
-            this.timesCollection.off(null, null, this);
-            this.model.off();
-            mvc.Components.revokeInstance(this.id);
-            BaseInput.prototype.remove.call(this);
-            if(!this.settings.get('token')) {
-                Dashboard.getStateModel().set('default_timerange', null);
-            }
-        },
+        }),
         render: function() {
-            this.renderLabel();
-            this._pickerDfd.done(_.bind(this.renderTimePicker, this));
-            this.onEditStateChange(Dashboard.getStateModel());
+            this.$el.html(Modal.TEMPLATE);
+            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Dashboard has been cloned.").t());
+            this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
+
+            var link = route.page(this.model.application.get("root"), this.model.application.get("locale"),
+                    this.model.dashboard.entry.acl.get("app"), this.model.dashboard.entry.get('name'));
+            var canChangePerms = this.model.dashboard.entry.acl.get('can_change_perms');
+            var canSchedule = this.model.user.canScheduleSearch() && !this.model.user.isFree() && (this.model.dashboard.isSimpleXML() ||
+                        (this.model.dashboard.isAdvanced() && this.model.state.get('pdfgen_type') === 'deprecated'));
+            this.$(Modal.BODY_FORM_SELECTOR).append(_.template(this.messageTemplate, {
+                dashboardLink: link,
+                canChangePerms: canChangePerms,
+                canSchedule: canSchedule
+            }));
+
+            this.$(Modal.FOOTER_SELECTOR).append(_.template(this.buttonTemplate, {
+                dashboardLink: link,
+                _: _
+            }));
+
+            this.$(Modal.FOOTER_SELECTOR).append('');
             return this;
         },
-        renderTimePicker: function(){
-            var cur = this.model.toJSON();
-            
-            // We can't render the timepicker until it is created
-            var that = this;
-            $.when(this._pickerDfd).done(function() {
-                that.picker.render();
-            });
-            
-            if(!_.isEmpty(cur)) {
-                this.model.clear({ silent: true });
-                this.model.set(cur);
-            }
-        }
+        buttonTemplate: '<a href="<%= dashboardLink %>/edit" class="btn edit-panels"><%- _("Edit Panels").t() %></a>' +
+                        '<a href="<%= dashboardLink %>" class="btn btn-primary modal-btn-primary"><%- _("View").t() %></a>',
+        messageTemplate: '<p><%- _("You may now view your dashboard, change additional settings, or edit the panels.").t() %></p>' +
+                        '<p><% if(canChangePerms || canSchedule){ %>' +
+                                '<%- _("Additional Settings").t() %>:' +
+                                '<ul>' +
+                                    '<% if(canChangePerms) { %><li><a href="#" class="edit-perms"><%- _("Permissions").t() %><% } %></a></li>' +
+                                    '<% if(canSchedule) { %><li><a href="#" class="schedule-pdf"><%- _("Schedule PDF Delivery").t() %><% } %></a></li>' +
+                                '</ul>' +
+                            '<% } %>' +
+                        '</p>'
     });
-    
-    return TimeRangePicker;
+
 });
 
-define('splunkjs/mvc/simpleform/formmanager',['require','underscore','jquery','../mvc','../basemanager','../utils','../simplexml/controller','backbone','util/console'],function(require) {
-    var _ = require('underscore');
-    var $ = require('jquery');
-    var mvc = require('../mvc');
-    var BaseManager = require('../basemanager');
-    var utils = require('../utils');
-    var Dashboard = require('../simplexml/controller');
-    var Backbone = require('backbone');
-    var console = require('util/console');
+define('views/dashboards/table/controls/CloneDashboard',[
+    'underscore',
+    'module',
+    'views/shared/Modal',
+    'views/shared/controls/ControlGroup',
+    'models/Base',
+    'models/Dashboard',
+    'views/shared/FlashMessages',
+    'util/splunkd_utils',
+    'views/dashboards/table/controls/CloneSuccess',
+    'views/shared/delegates/PairedTextControls',
+    'views/shared/controls/TextControl'
+],
 
-    var FormManager = BaseManager.extend({
-        defaultOptions: {
-            submitOnChange: false,
-            softSubmit: true,
-            triggerSearchOnSoftSubmit: false
-        },
-        constructor: function(options) {
-            BaseManager.prototype.constructor.call(this, {}, _.defaults(options || {}, this.defaultOptions));
-        },
-        initialize: function(attributes, options) {
-            this.meta = new BaseManager(options.metadata || {});
-            this._ready = [];
-            this.globalModel = options.globalModel ||  mvc.Global;
+    function (
+        _,
+        module,
+        Modal,
+        ControlGroup,
+        BaseModel,
+        DashboardModel,
+        FlashMessagesView,
+        splunkDUtils,
+        CloneSuccessView,
+        PairedTextControls,
+        TextControl
+    )
+{
 
-            if(console.DEBUG_ENABLED) {
-                this.on('change', function(m){
-                    _.each(m.changed, function(v, k){
-                        console.log('FORM MANAGER CHANGE key=%o value: %o -> %o', k , m.previous(k), v);
-                    });
-                });
-            }
+    return Modal.extend({
+        moduleId: module.id,
+        initialize: function () {
+            Modal.prototype.initialize.apply(this, arguments);
 
-            // A model containing the attributes of the global model and the unsubmitted form attributes
-            this.formModel = new Backbone.Model();
-            this.globalSyncer = utils.syncModels(this.globalModel, this.formModel, { auto: 'push', exclude: _.keys(this.toJSON()) });
-            this.on('change', function(m){
-                this.globalSyncer.exclude(_.keys(m.toJSON()));
-                this._applyMetadata(this.formModel);
-            }, this);
-
-            this.softSubmit = options.softSubmit;
-            this.submitOnChange = options.submitOnChange;
-            this.triggerSearchOnSoftSubmit = options.triggerSearchOnSoftSubmit;
-            if(options.persist) {
-                this.persistentStore = Dashboard.getPersistentStore(options.persist.storage);
-                this.persister = utils.bindModel({
-                    source: this,
-                    dest: this.persistentStore,
-                    prefix: options.persist.prefix,
-                    alias: {
-                        earliest: 'earliest',
-                        latest: 'latest'
-                    },
-                    save: true
-                }).auto('pull');
-            }
-        },
-        submit: function(type) {
-            console.log('FormManager.submit(%o)',type);
-            if(type === 'change' && this.submitOnChange !== true) {
-                return false;
-            }
-            if(type === 'soft' && this.softSubmit !== true) {
-                return false;
-            }
-            this._submit(type);
-            return true;
-        },
-        register: function(token, options, readyDfd) {
-            if(token) {
-                this.meta.set(token, options);
-                if((!this.has(token)) && options && options.hasOwnProperty('default')) {
-                    this.set(token, options['default']);
-                }
-            }
-            if(readyDfd) {
-                this._ready.push(readyDfd);
-            }
-        },
-        unregister: function(token) {
-            this.meta.unset(token);
-            this.unset(token);
-        },
-        _applyMetadata: function(destModel) {
-            var attributes = this.toJSON(), data = {}, meta = this.meta;
-            _(attributes).each(function(v,k){
-                if(meta.has(k)) {
-                    var m = meta.get(k), result = [];
-                    if((!v) && m['default']) {
-                        v = m['default'];
-                    }
-                    if(m.prefix) {
-                        result.push(m.prefix);
-                    }
-                    result.push(v);
-                    if(m.suffix) {
-                        result.push(m.suffix);
-                    }
-                    v = result.join('');
-                }
-                data[k] = v;
+            this.model.perms = new BaseModel({
+                'clonePermissions': false
             });
-            _(meta.toJSON()).each(function(v,k){
-                if((!attributes.hasOwnProperty(k))) {
-                    if(v['default']) {
-                        data[k] = [v.prefix||'',v['default'], v.suffix||''].join('');
-                    } else {
-                        data[k] = undefined;
-                    }
+
+            this.children.flashMessages = new FlashMessagesView({
+                model: {
+                    dashboard: this.model.dashboard,
+                    dashboardMeta: this.model.dashboard.meta
                 }
             });
-            destModel.set(data);
+
+            this.model.dashboard.meta.set({
+                label: this.model.dashboard.meta.get('label') + _(' Clone').t()
+            });
+
+             this.children.titleTextControl = new TextControl({
+                modelAttribute: 'label',
+                model: this.model.dashboard.meta,
+                placeholder: 'optional', 
+                save: false
+            });
+
+            this.children.filenameTextControl = new TextControl({
+                modelAttribute: 'name',
+                model: this.model.dashboard.entry.content,
+                save: false
+            });
+            this.children.filenameTextControl.setValue(
+                splunkDUtils.nameFromString(this.model.dashboard.meta.get('label'))
+            );
+
+            this.pairedTextControls = new PairedTextControls({
+                sourceDelegate: this.children.titleTextControl,
+                destDelegate: this.children.filenameTextControl,
+                transformFunction: splunkDUtils.nameFromString
+            });
+
+            this.children.title = new ControlGroup({
+                controls: this.children.titleTextControl,
+                label: _("Title").t()
+            });
+
+            this.children.filename = new ControlGroup({
+                controls: this.children.filenameTextControl,
+                label: _("ID").t(),
+                help: _("Can only contain letters, numbers and underscores.").t(),
+                tooltip: _("The ID is used as the filename on disk. Cannot be changed later.").t()
+            });
+
+            this.children.description = new ControlGroup({
+                controlType: 'Textarea',
+                controlOptions: {
+                    modelAttribute: 'description',
+                    model: this.model.dashboard.meta,
+                    placeholder: _("optional").t(),
+                    save: false
+                },
+                label: _("New Description").t()
+            });
+
+            this.children.permissions = new ControlGroup({
+                controlType: 'SyntheticRadio',
+                controlClass: 'controls-halfblock',
+                controlOptions: {
+                    className: "btn-group btn-group-2",
+                    modelAttribute: 'clonePermissions',
+                    model: this.model.perms,
+                    items: [
+                        { label: _("Private").t(), value: false },
+                        { label: _("Clone").t(), value: true }
+                    ],
+                    save: false
+                },
+                label: _("Permissions").t()
+            });
+
         },
-        _submit: _.debounce(function(type){
-            var attributes = this.toJSON();
-            if((type == 'soft' && this.triggerSearchOnSoftSubmit) || type === undefined){
-                this.trigger('submit', attributes, this);
-            }
-            if(this.persister) {
-                this.persister.push();
-            }
-            if(this.globalModel) {
-                this._applyMetadata(this.globalModel);
-            }
-        }),
-        submitOnReady: function() {
-            if(this._ready.length) {
-                var that = this, dfds = this._ready;
-                $.when.apply($, dfds).then(function(){
-                    that.submit();
-                });
-            } else {
+        events: $.extend({}, Modal.prototype.events, {
+            'click a.modal-btn-primary': function (e) {
+                e.preventDefault();
                 this.submit();
             }
+        }),
+        createSuccess: function() {
+            if(this.collection && this.collection.dashboards) {
+                this.collection.dashboards.add(this.model.dashboard);
+            }
+
+            _.defer(function(){
+                var successDialog = new CloneSuccessView({
+                    model: {
+                        dashboard: this.model.dashboard,
+                        application: this.model.application,
+                        scheduledView: this.model.scheduledView, 
+                        appLocal: this.model.appLocal, 
+                        state: this.model.state, 
+                        user: this.model.user
+                    },
+                    collection: this.collection
+                });
+                successDialog.render().show();
+            }.bind(this));
+
+            this.hide();
+            this.remove();
         },
-        save: function() {
-            this.set.apply(this, arguments);
-            this.submit('soft');
+        submit: function() {
+            var dashboard = this.model.dashboard;
+            dashboard.meta.validate();
+            if (dashboard.meta.isValid()) {
+                if(dashboard.entry.content.get('eai:type') === 'views'){
+                    dashboard.meta.apply();
+                }
+                var clonePermissions = this.model.perms.get('clonePermissions'),
+                    data = {app: this.model.application.get('app')};
+                data.owner = (clonePermissions && this.model.acl.get('sharing') !== splunkDUtils.USER) ?
+                    splunkDUtils.NOBODY : this.model.application.get("owner");
+                dashboard.save({}, {
+                    data: data,
+                    success: function(model, response) {
+                        if (clonePermissions) {
+                            var data = this.model.acl.toDataPayload();
+                            data.owner = this.model.application.get('owner');
+                            dashboard.acl.save({}, {
+                                data: data,
+                                success: function(model, response){
+                                    this.createSuccess();
+                                }.bind(this)
+                            });
+                        } else {
+                            this.createSuccess();
+                        }
+                    }.bind(this)
+                });
+            }
+        },
+        render: function () {
+            this.$el.html(Modal.TEMPLATE);
+            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Clone").t());
+            this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessages.render().el);
+            this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
+
+            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.title.render().el);
+            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.filename.render().el);
+            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.description.render().el);
+
+            var sharing = this.model.acl.get('sharing');
+            if ((sharing===splunkDUtils.APP && this.model.dashboard.entry.acl.get("can_share_app")) ||
+                (sharing===splunkDUtils.GLOBAL && this.model.dashboard.entry.acl.get("can_share_global"))) {
+                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.permissions.render().el);
+            }
+
+            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
+            this.$(Modal.FOOTER_SELECTOR).append('<a href="#" class="btn btn-primary modal-btn-primary">' + _("Clone Dashboard").t() + '</a>');
+            return this;
         }
     });
 
-    return FormManager;
 });
-define('splunkjs/mvc/simplexml/editdashboard',['require','exports','module','underscore','jquery','views/Base','views/shared/delegates/Popdown','collections/services/authorization/Roles','views/shared/documentcontrols/dialogs/permissions_dialog/Master','./dialog/dashboardtitle','./dialog/addpanel','views/dashboards/table/controls/SchedulePDF','models/services/ScheduledView','util/pdf_utils','views/dashboards/table/controls/CloneDashboard','views/dashboards/table/controls/ConvertDashboard','models/Dashboard','./controller','util/console','../../mvc','../utils','uri/route','views/shared/dialogs/TextDialog','../simpleform/input/timerange','../simpleform/formmanager','splunk.util','splunk.config','util/splunkd_utils'],function(require, exports, module) {
-    var _ = require('underscore');
-    var $ = require('jquery');
-    var BaseView = require('views/Base');
-    var PopdownView = require('views/shared/delegates/Popdown');
-    var Roles = require('collections/services/authorization/Roles');
-    var PermissionsDialog = require('views/shared/documentcontrols/dialogs/permissions_dialog/Master');
-    var TitleDialog = require('./dialog/dashboardtitle');
-    var AddPanelDialog = require('./dialog/addpanel');
-    var SchedulePDFDialog = require('views/dashboards/table/controls/SchedulePDF');
-    var ScheduledViewModel = require('models/services/ScheduledView');
-    var pdfUtils = require('util/pdf_utils');
-    var CloneDialog = require('views/dashboards/table/controls/CloneDashboard');
-    var ConvertDialog = require('views/dashboards/table/controls/ConvertDashboard');
-    var DashboardModel = require('models/Dashboard');
-    var Dashboard = require('./controller');
-    var console = require('util/console');
-    var mvc = require('../../mvc');
-    var utils = require('../utils');
-    var route = require('uri/route');
-    var TextDialog = require('views/shared/dialogs/TextDialog');
-    var TimeRangePickerInput = require('../simpleform/input/timerange');
-    var FormManager = require("../simpleform/formmanager");
-    var splunkUtils = require('splunk.util'); 
-    var config = require('splunk.config');
-    var splunkDUtils = require('util/splunkd_utils');
 
-    var MenuView = BaseView.extend({
+define('splunkjs/mvc/simplexml/dialog/dashboardtitle',[
+    'underscore',
+    'backbone',
+    'module',
+    'views/shared/Modal',
+    'views/shared/controls/ControlGroup',
+    'views/shared/FlashMessages'
+    ],
+    function(
+        _,
+        Backbone,
+        module,
+        Modal,
+        ControlGroup,
+        FlashMessage
+    ) {
+    return Modal.extend({
+        moduleId: module.id,
+        /**
+        * @param {Object} options {
+        *       model: <models.Report>
+        * }
+        */
+        initialize: function(options) {
+            Modal.prototype.initialize.apply(this, arguments);
+
+            this.workingModel = this.model.clone(); 
+
+            this.children.flashMessage = new FlashMessage({ model: this.model });
+
+            this.children.titleField = new ControlGroup({
+                controlType: 'Text',
+                controlOptions: {
+                    modelAttribute: 'label',
+                    model: this.workingModel,
+                    placeholder: "optional"
+                },
+                label: _("Title").t()
+            });
+
+            this.children.descriptionField = new ControlGroup({
+                controlType: 'Textarea',
+                controlOptions: {
+                    modelAttribute: 'description',
+                    model: this.workingModel,
+                    placeholder: "optional"
+                },
+                label: _("Description").t()
+            });
+
+        },
+        events: $.extend({}, Modal.prototype.events, {
+            'click .btn-primary': function(e) {
+                this.model.set('label', this.workingModel.get('label')); 
+                this.model.set('description', this.workingModel.get('description')); 
+                this.hide();
+                e.preventDefault();
+            }
+        }),
+        render : function() {
+            this.$el.html(Modal.TEMPLATE);
+
+            this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Title or Description").t());
+
+            this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessage.render().el);
+
+            this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL);
+
+            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.titleField.render().el);
+            this.$(Modal.BODY_FORM_SELECTOR).append(this.children.descriptionField.render().el);
+
+            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_CANCEL);
+            this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
+
+            return this;
+        }
+    });
+});
+
+define('splunkjs/mvc/simplexml/editdashboard/editmenu',
+    [
+        'module',
+        'jquery',
+        'underscore',
+        'models/classicurl',
+        'views/shared/PopTart',
+        'views/shared/documentcontrols/dialogs/TitleDescriptionDialog',
+        'views/shared/documentcontrols/dialogs/permissions_dialog/Master',
+        'views/shared/documentcontrols/dialogs/DeleteDialog',
+        'uri/route',
+        'bootstrap.modal', 
+        'models/Dashboard', 
+        'views/dashboards/table/controls/ConvertDashboard', 
+        'views/dashboards/table/controls/CloneDashboard', 
+        'views/dashboards/table/controls/SchedulePDF', 
+        'views/shared/dialogs/TextDialog', 
+        'splunk.util',  
+        '../dialog/dashboardtitle', 
+        'models/services/ScheduledView', 
+        '../../utils',
+        'models/ACLReadOnly'
+
+    ],
+    function(
+        module,
+        $,
+        _,
+        classicUrlModel,
+        PopTartView,
+        TitleDescriptionDialog,
+        PermissionsDialog,
+        DeleteDialog,
+        route,
+        undefined, 
+        DashboardModel, 
+        ConvertDialog, 
+        CloneDialog, 
+        SchedulePDFDialog, 
+        TextDialog, 
+        splunkUtils, 
+        TitleDialog, 
+        ScheduledViewModel, 
+        utils,
+        ACLReadOnlyModel
+    )
+    {
+        return PopTartView.extend({
             moduleId: module.id,
-            className: 'edit-menu',
+            className: 'dropdown-menu',
             initialize: function() {
-                BaseView.prototype.initialize.apply(this, arguments);
-                this.model.state.on('change:edit', this.onEditModeChange, this);
-                this.model.state.on('change:editable change:pdf_available', this.render, this);
-                this.model.state.on('change:default_timerange', this.handleDefaultTimeRangeChange, this);
-                this.model.state.user.on("change", this.render, this);
-                this._ready = false;
-                var that = this;
-                _.defer(function(){
-                    that._ready = true;
-                });
+                PopTartView.prototype.initialize.apply(this, arguments);
+                var defaults = {
+                        button: true,
+                        showOpenActions: true,
+                        deleteRedirect: false
+                    };
+
+                _.defaults(this.options, defaults);
             },
             events: {
                 'click a.edit-panels': function(e) {
                     e.preventDefault();
+                    this.hide(); 
+                    this.remove(); 
                     this.model.state.set('edit', true);
-                },
-                'click a.edit-done': function(e){
-                    e.preventDefault();
-                    this.model.state.set('edit', false);
-                },
-                'click a.print-dashboard': function(e){
-                    e.preventDefault();
-                    window.print();
-                },
-                'click a.generate-pdf': function(e){
-                    e.preventDefault();
-                    var view = this.model.dashboard.entry.get('name'),
-                        app = this.model.dashboard.entry.acl.get('app'),
-                        params = {}, idx = 0;
-
-                    // Collect SIDs for search jobs on the dashboard
-                    _.map(mvc.Components.get('dashboard').getElementIds(), function(id){
-                        var element = mvc.Components.get(id);
-                        if(element && element.getExportParams) {
-                            _.extend(params, element.getExportParams('sid_'+idx));
-                        }
-                        idx++;
-                    });
-
-
-                    pdfUtils.isPdfServiceAvailable().done(function(available, type){
-                        if(type === 'pdfgen') {
-                            var xml = Dashboard.model.view.getFlattenedXML({ useLoadjob: false, indent: false });
-                            if(console.DEBUG_ENABLED) {
-                                console.log(xml);
-                            }
-                            pdfUtils.downloadReportFromXML(xml, app, params);
-                        } else if(type === 'deprecated') {
-                            pdfUtils.getRenderURL(view, app, params).done(function(url){
-                                window.open(url);
-                            });
-                        }
-                    });
                 },
                 'click a.schedule-pdf': function(e){
                     e.preventDefault();
-                    var scheduledView = new ScheduledViewModel(),
-                        dfd = scheduledView.findByName(this.model.dashboard.entry.get('name'),
-                                                         this.model.application.get('app'),
-                                                         this.model.application.get('owner')),
-                        that = this;
-                     dfd.done(function(){
-                         var dialog = new SchedulePDFDialog({
-                             model: {
-                                 scheduledView: scheduledView,
-                                 dashboard: that.model.dashboard,
-                                 application: that.model.application
-                             },
-                             onHiddenRemove: true
-                         });
-                         dialog.render().appendTo($('body'));
-                         dialog.show();
-                     }).fail(function(){
-                        alert(_("Error loading PDF Schedule information").t());
+                    if ($(e.currentTarget).is('.disabled')) {
+                        return;
+                    }
+                    this.hide(); 
+                    this.remove(); 
+
+                     var dialog = new SchedulePDFDialog({
+                         model: {
+                             scheduledView: this.model.scheduledView,
+                             dashboard: this.model.dashboard,
+                             application: this.model.application, 
+                             appLocal: this.model.state.appLocal
+                         },
+                         onHiddenRemove: true
                      });
-                },
-                'click a.add-panel': function(e) {
-                    e.preventDefault();
-                    this.children.addPanelDialog = new AddPanelDialog({});
-                    this.children.addPanelDialog.render().appendTo($("body")).show();
-                },
-                'click a.add-trp': function(e) {
-                    e.preventDefault();
-                    var $trpEl = $('<div class="input input-timerangepicker" id="field3"><label>&nbsp;</label></div>');
-                    var fieldset = $('body>.dashboard-body>.fieldset');
+                     dialog.render().appendTo($('body'));
+                     dialog.show();
 
-                    var submitButton = fieldset.find('.form-submit');
-                    if(submitButton.length) {
-                        $trpEl.insertBefore(submitButton);
-                    } else {
-                        $trpEl.appendTo(fieldset);
-                    }
-
-                    var id = "timerange", seq = 1;
-                    while(mvc.Components.has(id)) {
-                        id = "timerange" + (seq++);
-                    }
-
-                    if(!mvc.Components.has('fieldset')) {
-                        new FormManager({
-                            id: 'fieldset',
-                            persist: {
-                                storage: 'uri',
-                                prefix: 'form.'
-                            },
-                            submitOnChange: false
-                        });
-                    }
-
-                    var trp = new TimeRangePickerInput({
-                        id: "timerange",
-                        submitOnChange: true,
-                        formManager: 'fieldset',
-                        el: $trpEl
-                    }).render();
-                    trp.on("change", function() {
-                        var newValue = trp.val();
-
-                        var urlTokenModel = mvc.Components.get('url');
-                        var submittedTokenModel = mvc.Components.get('submitted');
-                        var defaultTokenModel = mvc.Components.get('default');
-                        urlTokenModel.set('earliest', newValue.earliest_time);
-                        urlTokenModel.set('latest', newValue.latest_time);
-                        submittedTokenModel.set('earliest', newValue.earliest_time);
-                        submittedTokenModel.set('latest', newValue.latest_time);
-                        defaultTokenModel.set('earliest', newValue.earliest_time);
-                        defaultTokenModel.set('latest', newValue.latest_time);
-                    });
-
-                    Dashboard.trigger('formupdate');
                 },
                 'click a.delete': function(e){
                     e.preventDefault();
+                    this.hide(); 
+                    this.remove(); 
                     var dialog = new TextDialog({id: "modal-delete-dashboard"});
+                    //override DialogBase dialogShown to put focus on the Delete button
+                    dialog.dialogShown =  function() {
+                        this.trigger("show");
+                        // Apply focus to the first text input in the dialog. [JCS] Doesn't work without doing a debounce. Not sure why.
+                        _.debounce(function() {
+                            this.$('.btn-primary:first').focus();
+                        }.bind(this), 0)();
+                        return;
+                    };
                     dialog.settings.set("primaryButtonLabel",_("Delete").t());
                     dialog.settings.set("cancelButtonLabel",_("Cancel").t());
                     dialog.settings.set("titleLabel",_("Delete").t());
                     dialog.setText(splunkUtils.sprintf(_("Are you sure you want to delete %s?").t(), 
-                        this.model.dashboard.entry.content.get('label')));
+                        '<em>' + (this.model.state.get('label') !== "" ? this.model.state.get('label') : this.model.dashboard.entry.get('name')) + '</em>'));
                     dialog.render().appendTo(document.body);
 
                     dialog.once('click:primaryButton', function(){
@@ -10949,11 +11369,16 @@ define('splunkjs/mvc/simplexml/editdashboard',['require','exports','module','und
                         });
                     }, this);
 
+                    dialog.on("hidden", function(){
+                        dialog.remove();
+                    }, this);
+
                     dialog.show();
                 },
                 'click a.edit-title-desc': function(e){
                     e.preventDefault();
-
+                    this.hide(); 
+                    this.remove(); 
                     this.children.titleDialog = new TitleDialog({
                         model: this.model.state,
                         onHiddenRemove: true
@@ -10963,10 +11388,13 @@ define('splunkjs/mvc/simplexml/editdashboard',['require','exports','module','und
                 },
                 'click a.edit-perms': function(e) {
                     e.preventDefault();
+                    this.hide(); 
+                    this.remove(); 
                     this.children.permissionsDialog = new PermissionsDialog({
                         model: {
-                            document: this.model.dashboard, 
-                            nameModel: this.model.dashboard.entry.content 
+                            document: this.model.dashboard,
+                            nameModel: this.model.dashboard.entry.content,
+                            user: this.model.state.user
                         },
                         collection: this.collection,
                         nameLabel:  "Dashboard",
@@ -10978,7 +11406,8 @@ define('splunkjs/mvc/simplexml/editdashboard',['require','exports','module','und
                 },
                 'click a.convert-to-html': function(e) {
                     e.preventDefault();
-
+                    this.hide(); 
+                    this.remove(); 
                     var dashboard = new DashboardModel();
                     dashboard.meta.set(this.model.dashboard.meta.toJSON());
 
@@ -10986,7 +11415,8 @@ define('splunkjs/mvc/simplexml/editdashboard',['require','exports','module','und
                         model: {
                             dashboard: dashboard, 
                             currentDashboard: this.model.dashboard,
-                            application: this.model.application
+                            application: this.model.application,
+                            user: this.model.state.user
                         },
                         collection: {
                             roles: this.collection 
@@ -11001,138 +11431,572 @@ define('splunkjs/mvc/simplexml/editdashboard',['require','exports','module','und
                 },
                 'click a.clone': function(e) {
                     e.preventDefault();
-
+                    this.hide();
+                    this.remove();
                     var clone = new DashboardModel();
-                    clone.setXML(this.model.dashboard.entry.content.get('eai:data'));
-                    clone.meta.set(this.model.dashboard.meta.toJSON());
+                    clone.fetch({
+                        success: function() {
+                            if(this.model.dashboard.entry.content.get('eai:type') === 'html'){
+                                clone.setHTML(this.model.dashboard.entry.content.get('eai:data'));
+                            }else{
+                                clone.setXML(this.model.dashboard.entry.content.get('eai:data'));
+                            }
+                            clone.meta.set(this.model.dashboard.meta.toJSON());
 
-                    var cloneDialog  = this.children.cloneDialog = new CloneDialog({
-                        model: {
-                            dashboard: clone,
-                            application: this.model.application
-                        },
-                        collection: {
-                            roles: this.collection
-                        },
-                        onHiddenRemove: true
+                            var cloneDialog  = this.children.cloneDialog = new CloneDialog({
+                                model: {
+                                    dashboard: clone,
+                                    acl: new ACLReadOnlyModel($.extend(true, {}, this.model.dashboard.entry.acl.toJSON())),
+                                    application: this.model.application,
+                                    appLocal: this.model.state.appLocal,
+                                    state: this.model.state,
+                                    user: this.model.state.user
+                                },
+                                collection: {
+                                    roles: this.collection
+                                },
+                                onHiddenRemove: true
+                            });
+                            $("body").append(cloneDialog.render().el);
+                            cloneDialog.show();
+                        }.bind(this)
                     });
-                    $("body").append(cloneDialog.render().el);
-                    cloneDialog.show();
                 }
-            },
-            onEditModeChange: function() {
-                var edit = this.model.state.get('edit');
-                this.$('.dashboard-view-controls')[edit ? 'hide' : 'show']();
-                this.$('.dashboard-edit-controls')[edit ? 'show' : 'hide']();
-            },
-            handleDefaultTimeRangeChange: function(m) {
-                if(this._ready && this.model.state.get('edit')) {
-                    var isForm = $('body>.dashboard-body>.fieldset').children().length > 0,
-                        trp = m.get('default_timerange'), defaultValue;
-                    if(trp) {
-                        defaultValue = trp;
-                    }
-                    this.model.dashboard.saveFormSettings(isForm, !!trp, defaultValue);
-                }
-                this.render();
             },
             render: function() {
                 var app = this.model.application.toJSON();
                 var renderModel = {
                     dashboard: this.model.dashboard.isDashboard(),
                     editLinkViewMode: route.manager(app.root, app.locale, app.app, ['data','ui','views', app.page], {
-                                data: {
-                                    action: 'edit',
-                                    ns: app.app,
-                                    redirect_override: route.page(app.root, app.locale, app.app, app.page)
-                                }
-                            }),
+                        data: {
+                            action: 'edit',
+                            ns: app.app,
+                            redirect_override: route.page(app.root, app.locale, app.app, app.page)
+                        }
+                    }),
                     editLinkEditMode: route.manager(app.root, app.locale, app.app, ['data','ui','views', app.page], {
-                                data: {
-                                    action: 'edit',
-                                    ns: app.app,
-                                    redirect_override: route.page(app.root, app.locale, app.app, app.page) + '/edit'
-                                }
-                            }),
+                        data: {
+                            action: 'edit',
+                            ns: app.app,
+                            redirect_override: route.page(app.root, app.locale, app.app, app.page) + '/edit'
+                        }
+                    }),
                     dashboardType: this.model.dashboard.getViewType(),
                     editable: this.model.state.get('editable'),
                     canWrite: this.model.dashboard.entry.acl.canWrite(),
-                    canEditHtml: _.contains(this.model.state.user.getCapabilities(), 'edit_view_html'), 
+                    canCangePerms: this.model.dashboard.entry.acl.get('can_change_perms'),
+                    canEditHtml: this.model.state.user.canEditViewHtml(),
                     removable: this.model.dashboard.entry.acl.get('removable'),
+                    isXML: this.model.dashboard.isXML(),
+                    isForm: this.model.dashboard.isForm(),
                     isSimpleXML: this.model.dashboard.isSimpleXML(),
                     isHTML: this.model.dashboard.isHTML(),
+                    canSchedulePDF: this.model.state.user.canScheduleSearch() && !this.model.state.user.isFree() && (this.model.dashboard.isSimpleXML() ||
+                        (this.model.dashboard.isAdvanced() && this.model.state.get('pdfgen_type') === 'deprecated')),
                     isPdfServiceAvailable: this.model.state.get('pdf_available'),
                     showAddTRP: !this.model.state.get('default_timerange'),
                     _: _
                 };
 
-                this.$el.html(this.compiledTemplate(renderModel));
-                if(renderModel.canWrite) {
-                    this.children.popdown = new PopdownView({ el: this.$el.find('.dashboard-view-controls') });
-                }
-                this.$('.generate-pdf').tooltip({ animation:false, title: _("Export PDF").t() });
-                this.$('.print-dashboard').tooltip({ animation:false, title: _("Print").t() });
-                this.onEditModeChange();
+                var html = this.compiledTemplate(renderModel);
+                this.$el.html(PopTartView.prototype.template_menu);
+                this.$el.append(html);
+
                 return this;
             },
             template: '\
-                <span class="dashboard-view-controls">\
-                    <% if(canWrite) { %>\
-                    <a class="dropdown-toggle btn " href="#"><%- _("Edit").t() %> <span class="caret"></span></a><div class="dropdown-menu dropdown-menu-narrow">\
-                        <div class="arrow"></div>\
-                        <% if (editable || (!isHTML || canEditHtml) || (isSimpleXML && canEditHtml)) { %>\
-                        <ul class="first-group">\
-                            <% if(editable) { %>\
-                            <li><a href="#" class="edit-panels"><%- _("Edit Panels").t() %></a></li>\
-                            <% } %>\
-                            <% if (!isHTML || canEditHtml) { %>\
-                            <li><a href="<%- editLinkViewMode %>"><%- _("Edit Source").t() %> <span class="dashboard-source-type"><%= dashboardType %></span></a></li>\
-                            <% } %>\
-                            <% if (isSimpleXML && canEditHtml) { %>\
-                            <li><a href="#" class="convert-to-html"><%- _("Convert to HTML").t() %></a></li>\
-                            <% } %>\
-                        </ul>\
+                <% if (canWrite && (editable || (!isHTML || canEditHtml) || (isSimpleXML && canEditHtml))) { %>\
+                    <ul class="first-group">\
+                        <% if(editable) { %>\
+                        <li><a href="#" class="edit-panels"><%- _("Edit Panels").t() %></a></li>\
                         <% } %>\
-                        <% if(isSimpleXML || canWrite) { %>\
-                        <ul class="second-group">\
-                            <% if(isSimpleXML && editable) { %>\
-                            <li><a href="#" class="edit-title-desc"><%- _("Edit Title or Description").t() %></a></li>\
-                            <% } %>\
-                            <li><a href="#" class="edit-perms"><%- _("Edit Permissions").t() %></a></li>\
-                            <% if(isSimpleXML && isPdfServiceAvailable) { %>\
-                            <li><a class="schedule-pdf" href="#"><%- _("Schedule PDF Delivery").t() %></a></li>\
-                            <% } %>\
-                        </ul>\
+                        <% if (!isHTML || canEditHtml) { %>\
+                        <li><a href="<%- editLinkViewMode %>" class="edit-source"><%- _("Edit Source").t() %> <span class="dashboard-source-type"><%= dashboardType %></span></a></li>\
                         <% } %>\
-                        <% if ((!isHTML || canEditHtml) || (canWrite && removable)) { %>\
-                        <ul class="third-group">\
-                            <% if (!isHTML || canEditHtml) { %>\
-                            <li><a href="#" class="clone"><%- _("Clone").t() %></a></li>\
-                            <% } %>\
-                            <% if(canWrite && removable) { %>\
-                            <li><a href="#" class="delete"><%- _("Delete").t() %></a></li>\
-                            <% } %>\
-                        </ul>\
+                        <% if (isSimpleXML && canEditHtml) { %>\
+                        <li><a href="#" class="convert-to-html"><%- _("Convert to HTML").t() %></a></li>\
                         <% } %>\
-                    </div><% } %><div class="btn-group">\
-                    <% if(isSimpleXML && isPdfServiceAvailable) { %>\
-                        <a class="btn generate-pdf" href="#"><i class="icon-export"></i></a>\
+                    </ul>\
                     <% } %>\
-                        <a class="btn print-dashboard" href="#"><i class="icon-print"></i></a>\
-                    </div>\
-                    \
-                </span>\
-                <span class="dashboard-edit-controls" style="display:none;">\
-                    <div class="btn-group">\
-                        <a class="btn add-panel" href="#"><i class="icon-plus"></i> <%- _("Add Panel").t() %></a> \
-                        <% if(showAddTRP) { %>\
-                        <a class="btn add-trp" href="#"><i class="icon-clock"></i> <%- _("Add Time Range Picker").t() %></a> \
+                    <% if(canCangePerms || (canWrite && isXML) || canSchedulePDF) { %>\
+                    <ul class="second-group">\
+                        <% if(isXML && canWrite) { %>\
+                        <li><a href="#" class="edit-title-desc"><%- _("Edit Title or Description").t() %></a></li>\
                         <% } %>\
-                        <a class="btn edit-source" href="<%- editLinkEditMode %>"><i class="icon-code"></i> <%- _("Edit Source").t() %></a> \
-                    </div><a class="btn btn-primary edit-done" href="#"><%- _("Done").t() %></a>\
-                </span>\
+                        <% if(canCangePerms) { %>\
+                            <li><a href="#" class="edit-perms"><%- _("Edit Permissions").t() %></a></li>\
+                        <% } %>\
+                        <% if(canSchedulePDF) { %>\
+                        <li>\
+                        <% if(isForm) {%>\
+                            <a class="schedule-pdf disabled" href="#" title="<%- _("You cannot schedule PDF delivery for a dashboard with form elements.").t() %>">\
+                        <% } else { %>\
+                            <a class="schedule-pdf" href="#">\
+                        <% } %>\
+                                <%- _("Schedule PDF Delivery").t() %>\
+                            </a>\
+                        </li>\
+                        <% } %>\
+                    </ul>\
+                    <% } %>\
+                    <% if ((!isHTML || canEditHtml) || (canWrite && removable)) { %>\
+                    <ul class="third-group">\
+                        <% if (!isHTML || canEditHtml) { %>\
+                        <li><a href="#" class="clone"><%- _("Clone").t() %></a></li>\
+                        <% } %>\
+                        <% if(canWrite && removable) { %>\
+                        <li><a href="#" class="delete"><%- _("Delete").t() %></a></li>\
+                        <% } %>\
+                    </ul>\
+                <% } %>\
             '
         });
+    }
+);
+
+
+
+
+
+
+define('splunkjs/mvc/simplexml/editdashboard/moreinfomenu',
+    [
+        'module',
+        'jquery',
+        'underscore',
+        'models/classicurl',
+        'views/shared/PopTart',
+        'views/shared/documentcontrols/dialogs/TitleDescriptionDialog',
+        'views/shared/documentcontrols/dialogs/permissions_dialog/Master',
+        'views/shared/documentcontrols/dialogs/DeleteDialog',
+        'uri/route',
+        'bootstrap.modal',
+        'util/splunkd_utils',
+        'views/dashboards/table/controls/SchedulePDF',
+        'models/services/ScheduledView',
+        'models/Cron'
+    ],
+    function(
+        module,
+        $,
+        _,
+        classicUrlModel,
+        PopTartView,
+        TitleDescriptionDialog,
+        PermissionsDialog,
+        DeleteDialog,
+        route,
+        undefined,
+        splunkDUtils,
+        SchedulePDF,
+        ScheduledViewModel,
+        Cron
+    )
+    {
+        return PopTartView.extend({
+            moduleId: module.id,
+            className: 'dropdown-menu more-info popdown-dialog',
+            initialize: function() {
+                PopTartView.prototype.initialize.apply(this, arguments);
+                var defaults = {
+                        button: true,
+                        showOpenActions: true,
+                        deleteRedirect: false
+                    };
+
+                _.defaults(this.options, defaults);
+            },
+            events: {
+                'click .edit-schedule': function (e) {
+                        e.preventDefault();
+                        this.hide();
+                        this.remove();
+                        this.children.schedulePDF = new SchedulePDF({
+                            model: {
+                                scheduledView: this.model.scheduledView,
+                                dashboard: this.model.dashboard,
+                                application: this.model.application,
+                                appLocal: this.model.state.appLocal
+                            },
+                            onHiddenRemove: true
+                        });
+                        $("body").append(this.children.schedulePDF.render().el);
+                        this.children.schedulePDF.show();
+
+                },
+                'click a.edit-permissions': function(e) {
+                    e.preventDefault();
+                    this.hide();
+                    this.remove();
+                    this.children.permissionsDialog = new PermissionsDialog({
+                        model: {
+                            document: this.model.dashboard,
+                            nameModel: this.model.dashboard.entry.content,
+                            user: this.model.state.user
+                        },
+                        collection: this.collection,
+                        nameLabel:  "Dashboard",
+                        nameKey: 'label',
+                        onHiddenRemove: true
+                    });
+
+                    $("body").append(this.children.permissionsDialog.render().el);
+                    this.children.permissionsDialog.show();
+                }
+            },
+            render: function() {
+                var isScheduled = this.model.scheduledView.entry.content.get('is_scheduled'), schedule = '-', recipients = [],
+                    sharing = this.model.dashboard.entry.acl.get("sharing"),
+                    owner = this.model.dashboard.entry.acl.get("owner"),
+                    permissionString = splunkDUtils.getPermissionLabel(sharing, owner),
+                    appString = this.model.dashboard.entry.acl.get('app');
+                    if (isScheduled) {
+                        var expr = this.model.scheduledView.entry.content.get('cron_schedule'), cron = expr ? Cron.createFromCronString(expr) : null;
+                        if(cron) {
+                            switch (cron.get('cronType')) {
+                                case 'hourly':
+                                    schedule = _("Sent Hourly").t();
+                                    break;
+                                case 'daily':
+                                    schedule = _("Sent Daily").t();
+                                    break;
+                                case 'weekly':
+                                    schedule = _("Sent Weekly").t();
+                                    break;
+                                case 'monthly':
+                                    schedule = _("Sent Monthly").t();
+                                    break;
+                                case 'custom':
+                                    schedule = _("Sent on a custom schedule").t();
+                                    break;
+                            }
+                        }
+                        recipients = (this.model.scheduledView.entry.content.get('action.email.to')||'').split(/\s*,\s*/);
+                    }
+                var renderModel = {
+                    _:_,
+                    isScheduled: isScheduled,
+                    schedule: schedule,
+                    recipients: _(recipients).chain().filter(_.identity).map(function(recipient){
+                        return ['<a href="mailto:',encodeURIComponent(recipient),'">',_.escape(recipient),'</a>'].join('');
+                    }).value(),
+                    shared: this.model.dashboard.entry.acl.get("perms"),
+                    owner: owner,
+                    permissionString: permissionString,
+                    canChangePerms: this.model.dashboard.entry.acl.get('can_change_perms'),
+                    canSchedulePDF: this.model.state.user.canScheduleSearch() && !this.model.state.user.isFree() && ((this.model.dashboard.isSimpleXML() && !this.model.dashboard.isForm()) ||
+                        (this.model.dashboard.isAdvanced() && this.model.state.get('pdfgen_type') === 'deprecated')),
+                    isPdfServiceAvailable: this.model.state.get('pdf_available'),
+                    appString: appString
+                };
+
+                var html = this.compiledTemplate(renderModel);
+                this.$el.html(PopTartView.prototype.template_menu);
+                this.$el.append(html);
+
+                return this;
+            },
+            template: '\
+                <div class="popdown-dialog-body">\
+                    <div>\
+                        <dl class="list-dotted">\
+                            <dt class="app"><%- _("App").t() %></dt>\
+                            <dd>\
+                                <%= appString %>\
+                            </dd>\
+                            <dt class="schedule"><%- _("Schedule").t() %></dt>\
+                            <dd>\
+                                <% if(isScheduled) { %>\
+                                    <%= schedule %> <%- _("to").t() %> \
+                                    <%= recipients.join(", ") %>.\
+                                <% } else { %>\
+                                    <%- _("Not scheduled").t() %>.\
+                                <% } %> \
+                                <% if(canSchedulePDF && isPdfServiceAvailable) { %>\
+                                    <a href="#" class="edit-schedule"><%- _("Edit").t() %></a>\
+                                <% } %> \
+                            </dd>\
+                            <dt class="permissions"><%- _("Permissions").t() %></dt>\
+                            <dd class="edit-permissions">\
+                                <%- _(permissionString).t() %>\
+                                <% if(canChangePerms) { %>\
+                                    <a href="#" class="edit-permissions"><%- _("Edit").t() %></a>\
+                                <% } %> \
+                        </dl>\
+                    </div>\
+                </div>\
+            '
+        });
+    }
+);
+
+define('splunkjs/mvc/simplexml/editdashboard/menuview',['require','exports','module','underscore','jquery','views/Base','../dialog/addpanel','util/pdf_utils','models/Dashboard','../controller','util/console','../../../mvc','../../utils','uri/route','../../simpleform/input/timerange','splunk.config','util/splunkd_utils','./editmenu','./moreinfomenu'],function(require, exports, module) {
+    var _ = require('underscore');
+    var $ = require('jquery');
+    var BaseView = require('views/Base');
+    var AddPanelDialog = require('../dialog/addpanel');
+    var pdfUtils = require('util/pdf_utils');
+    var DashboardModel = require('models/Dashboard');
+    var Dashboard = require('../controller');
+    var console = require('util/console');
+    var mvc = require('../../../mvc');
+    var utils = require('../../utils');
+    var route = require('uri/route');
+    var TimeRangePickerInput = require('../../simpleform/input/timerange');
+    var config = require('splunk.config');
+    var splunkDUtils = require('util/splunkd_utils');
+    var EditMenu = require('./editmenu');
+    var MoreInfoMenu = require('./moreinfomenu');
+
+    var MenuView = BaseView.extend({
+        moduleId: module.id,
+        className: 'edit-menu',
+        initialize: function() {
+            BaseView.prototype.initialize.apply(this, arguments);
+            this.model.state.on('change:edit', this.onEditModeChange, this);
+            this.model.state.on('change:editable change:pdf_available', this.render, this);
+            this.model.state.on('change:default_timerange', this.handleDefaultTimeRangeChange, this);
+            this.model.state.user.on("change", this.render, this);
+            this._ready = false;
+            var that = this;
+            _.defer(function(){
+                that._ready = true;
+            });
+        },
+        events: {
+            'click a.edit-btn': function(e) {
+                e.preventDefault();
+                var $target = $(e.currentTarget);
+                if (this.children.editMenu && this.children.editMenu.shown) {
+                    this.children.editMenu.hide();
+                    return;
+                }
+                if (this.children.moreInfoMenu && this.children.moreInfoMenu.shown) {
+                    this.children.moreInfoMenu.hide();
+                }
+                $target.addClass('active');
+
+                this.children.editMenu = new EditMenu({
+                    model: {
+                        application: this.model.application,
+                        dashboard: this.model.dashboard,
+                        state: this.model.state, 
+                        scheduledView: this.model.scheduledView
+                    },
+                    collection: this.collection,
+                    showOpenActions: this.options.showOpenActions,
+                    deleteRedirect: this.options.deleteRedirect,
+                    onHiddenRemove: true
+                });
+                $('body').append(this.children.editMenu.render().el);
+                this.children.editMenu.show($target);
+                this.children.editMenu.on('hide', function() {
+                    $target.removeClass('active');
+                }, this);
+            },
+            'click a.more-info-btn': function(e) {
+                e.preventDefault();
+                var $target = $(e.currentTarget);
+                if (this.children.moreInfoMenu && this.children.moreInfoMenu.shown) {
+                    this.children.moreInfoMenu.hide();
+                    return;
+                }
+                if (this.children.editMenu && this.children.editMenu.shown) {
+                    this.children.editMenu.hide();
+                }
+                $target.addClass('active');
+                this.children.moreInfoMenu= new MoreInfoMenu({
+                    model: {
+                        application: this.model.application,
+                        dashboard: this.model.dashboard,
+                        state: this.model.state,
+                        scheduledView: this.model.scheduledView
+                    },
+                    collection: this.collection,
+                    onHiddenRemove: true
+                });
+                
+                $('body').append(this.children.moreInfoMenu.render().el);
+                this.children.moreInfoMenu.show($target);
+                this.children.moreInfoMenu.on('hide', function() {
+                    $target.removeClass('active');
+                }, this);
+            },
+            'click a.edit-done': function(e){
+                e.preventDefault();
+                this.model.state.set('edit', false);
+            },
+            'click a.add-panel': function(e) {
+                e.preventDefault();
+                this.children.addPanelDialog = new AddPanelDialog({
+                    controller: this.options.controller
+                });
+                this.children.addPanelDialog.render().appendTo($("body")).show();
+            },
+            'click a.add-trp': function(e) {
+                e.preventDefault();
+
+                var $trpEl = $('<div class="input input-timerangepicker" id="field3"><label>&nbsp;</label></div>');
+                var fieldset = $('body>.dashboard-body>.fieldset');
+
+                var submitButton = fieldset.find('.form-submit');
+                if(submitButton.length) {
+                    $trpEl.insertBefore(submitButton);
+                } else {
+                    $trpEl.appendTo(fieldset);
+                }
+
+                var id = "timerange", seq = 1;
+                while(mvc.Components.has(id)) {
+                    id = "timerange" + (seq++);
+                }
+
+                var trp = new TimeRangePickerInput({
+                    id: "timerange",
+                    isGlobal: true,
+                    earliest_time: "$earliest$",
+                    latest_time: "$latest$",
+                    el: $trpEl
+                }, {tokens: true}).render();
+                
+                // Simulate submitOnChange=true
+                trp.on('change', function() {
+                    var defaultTokenModel = mvc.Components.getInstance('default');
+                    var submittedTokenModel = mvc.Components.getInstance('submitted');
+                    
+                    // Simulate submitTokens()
+                    submittedTokenModel.set(defaultTokenModel.toJSON());
+                });
+
+                Dashboard.trigger('formupdate');
+            },
+            'click a.print-dashboard': function(e){
+                e.preventDefault();
+                window.print();
+            },
+            'click a.generate-pdf': function(e){
+                e.preventDefault();
+                var view = this.model.dashboard.entry.get('name'),
+                    app = this.model.dashboard.entry.acl.get('app'),
+                    params = {}, idx = 0;
+
+                // Collect SIDs for search jobs on the dashboard
+                _.map(mvc.Components.get('dashboard').getElementIds(), function(id){
+                    var element = mvc.Components.get(id);
+                    if(element && element.getExportParams) {
+                        _.extend(params, element.getExportParams('sid_'+idx));
+                    }
+                    idx++;
+                });
+
+                pdfUtils.isPdfServiceAvailable().done(function(available, type){
+                    if(type === 'pdfgen') {
+                        var xml = Dashboard.model.view.getFlattenedXML({ useLoadjob: false, indent: false });
+                        if(console.DEBUG_ENABLED) {
+                            console.log(xml);
+                        }
+                        pdfUtils.downloadReportFromXML(xml, app, params);
+                    } else if(type === 'deprecated') {
+                        pdfUtils.getRenderURL(view, app, params).done(function(url){
+                            window.open(url);
+                        });
+                    }
+                });
+            }
+        },
+        onEditModeChange: function() {
+            var edit = this.model.state.get('edit');
+            this.$('.dashboard-view-controls')[edit ? 'hide' : 'show']();
+            this.$('.dashboard-edit-controls')[edit ? 'show' : 'hide']();
+        },
+        handleDefaultTimeRangeChange: function(m) {
+            if(this._ready && this.model.state.get('edit')) {
+                var isForm = $('body>.dashboard-body>.fieldset').children().length > 0,
+                    trp = m.get('default_timerange'), defaultValue;
+                if(trp) {
+                    defaultValue = trp;
+                }
+                this.model.dashboard.saveFormSettings(isForm, trp, defaultValue);
+            }
+            this.render();
+        },
+        render: function() {
+            var app = this.model.application.toJSON();
+            var renderModel = {
+                dashboard: this.model.dashboard.isDashboard(),
+                editLinkViewMode: route.manager(app.root, app.locale, app.app, ['data','ui','views', app.page], {
+                            data: {
+                                action: 'edit',
+                                ns: app.app,
+                                redirect_override: route.page(app.root, app.locale, app.app, app.page)
+                            }
+                        }),
+                editLinkEditMode: route.manager(app.root, app.locale, app.app, ['data','ui','views', app.page], {
+                            data: {
+                                action: 'edit',
+                                ns: app.app,
+                                redirect_override: route.page(app.root, app.locale, app.app, app.page) + '/edit'
+                            }
+                        }),
+                dashboardType: this.model.dashboard.getViewType(),
+                editable: this.model.state.get('editable'),
+                canWrite: this.model.dashboard.entry.acl.canWrite(),
+                removable: this.model.dashboard.entry.links.get('remove') ? true : false,
+                isSimpleXML: this.model.dashboard.isSimpleXML(),
+                isHTML: this.model.dashboard.isHTML(),
+                isPdfServiceAvailable: this.model.state.get('pdf_available'),
+                showAddTRP: !this.model.state.get('default_timerange'),
+                _: _
+            };
+
+            this.$el.html(this.compiledTemplate(renderModel));
+
+            this.$('.generate-pdf').tooltip({ animation:false, title: _("Export PDF").t() });
+            this.$('.print-dashboard').tooltip({ animation:false, title: _("Print").t() });
+            this.onEditModeChange();
+            return this;
+        },
+        template: '\
+            <span class="dashboard-view-controls">\
+                <% if(canWrite) { %>\
+                    <div class="btn-group">\
+                        <a class="btn edit-btn" href="#"><%- _("Edit").t() %> <span class="caret"></span></a>\
+                        <a class="btn more-info-btn" href="#"><%- _("More Info").t() %> <span class="caret"></span></a>\
+                    </div>\
+                <% }else{ %>\
+                    <div class="btn-group">\
+                        <a class="btn edit-btn" href="#"><%- _("Edit").t() %> <span class="caret"></span></a>\
+                    </div>\
+                <% } %>\
+                <div class="btn-group">\
+                    <% if(isSimpleXML && isPdfServiceAvailable) { %>\
+                        <a class="btn generate-pdf" href="#"><i class="icon-export icon-large"></i></a>\
+                    <% } %>\
+                        <a class="btn print-dashboard" href="#"><i class="icon-print icon-large"></i></a>\
+                </div>\
+            </span>\
+            <span class="dashboard-edit-controls" style="display:none;">\
+                <div class="btn-group">\
+                    <a class="btn add-panel" href="#"><i class="icon-plus"></i> <%- _("Add Panel").t() %></a> \
+                    <% if(showAddTRP) { %>\
+                        <a class="btn add-trp" href="#"><i class="icon-clock"></i> <%- _("Add Time Range Picker").t() %></a> \
+                    <% } %>\
+                    <a class="btn edit-source" href="<%- editLinkEditMode %>"><i class="icon-code"></i> <%- _("Edit Source").t() %></a> \
+                </div>\
+                <a class="btn btn-primary edit-done" href="#"><%- _("Done").t() %></a>\
+            </span>\
+        '
+    });
+    
+    return MenuView;
+}); 
+
+define('splunkjs/mvc/simplexml/editdashboard/master',['require','exports','module','underscore','jquery','views/Base','collections/services/authorization/Roles','./menuview'],function(require, exports, module) {
+    var _ = require('underscore');
+    var $ = require('jquery');
+    var BaseView = require('views/Base');
+    var Roles = require('collections/services/authorization/Roles');
+    var MenuView = require('./menuview'); 
 
     return BaseView.extend({
         className: "splunk-dashboard-controls",
@@ -11142,17 +12006,19 @@ define('splunkjs/mvc/simplexml/editdashboard',['require','exports','module','und
             this.rolesCollection = new Roles();
             this.rolesCollection.fetch();
 
-            this.children.editMenu = new MenuView({
+            this.children.menuView = new MenuView({
                 model: {
                     state: this.model.state,
                     dashboard: this.model.dashboard,
-                    application: this.model.application
+                    application: this.model.application,
+                    scheduledView: this.model.scheduledView
                 },
-                collection: this.rolesCollection
+                collection: this.rolesCollection, 
+                controller: this.options.controller 
             });
         },
         render: function(){
-            this.$el.append(this.children.editMenu.render().el);
+            this.$el.append(this.children.menuView.render().el);
             return this;
         }
     });
@@ -11340,9 +12206,11 @@ define('splunkjs/mvc/simplexml/dashboard/description',['require','underscore','b
             this.listenTo(this.model, 'change:edit', this.render, this);
         },
         render: function() {
-            var txt = _(this.model.get('description') || '').t(),
-                edit = this.model.get('edit');
-            this.$el.text(txt)[ txt && !edit ? 'show' : 'hide' ]();
+            if(this.model.has('description')) {
+                var txt = _(this.model.get('description') || '').t(),
+                    edit = this.model.get('edit');
+                this.$el.text(txt)[ txt && !edit ? 'show' : 'hide' ]();
+            }
             return this;
         }
     });
@@ -11363,7 +12231,7 @@ define('splunkjs/mvc/simplexml/dashboard/row',['require','underscore','jquery','
         onEditStateChange: function() {
             this.$el.off('DOMSubtreeModified');
             if((!this.model.get('edit')) && this.$('.dashboard-panel').length > 1) {
-                var fn = _.debounce(this.alignItemHeights.bind(this), 100);
+                var fn = _.debounce(this.alignItemHeights.bind(this), 1000);
                 this.$el.bind('DOMSubtreeModified', fn);
                 fn();
             }
@@ -11374,7 +12242,10 @@ define('splunkjs/mvc/simplexml/dashboard/row',['require','underscore','jquery','
             if(cells.length === 0) {
                 return this.remove();
             }
-            cells.css({ width: String(100 / cells.length) + '%' });
+            cells.css({ width: String(100 / cells.length) + '%' }).find('.panel-element-row').each(function(){
+                var elements = $(this).find('.dashboard-element');
+                elements.css({ width: String(100 / elements.length) + '%' });
+            });
             if(cells.length > 1) {
                 this.alignItemHeights();
             }
@@ -11393,6 +12264,7 @@ define('splunkjs/mvc/simplexml/dashboard/row',['require','underscore','jquery','
     });
 
 });
+
 define('splunkjs/mvc/simplexml/dashboard/panel',['require','jquery','backbone'],function(require) {
     var $ = require('jquery'),
         Backbone = require('backbone');
@@ -11424,14 +12296,13 @@ define('splunkjs/mvc/simplexml/dashboard/panel',['require','jquery','backbone'],
     });
 
 });
-define('splunkjs/mvc/simplexml/dashboard',['require','../basesplunkview','backbone','../mvc','underscore','jquery','./controller','./editdashboard','./dragndrop','util/console','../simpleform/fieldsetview','./dashboard/title','./dashboard/description','./dashboard/row','./dashboard/panel'],function(require) {
+define('splunkjs/mvc/simplexml/dashboard',['require','../basesplunkview','../mvc','underscore','jquery','./controller','./editdashboard/master','./dragndrop','util/console','../simpleform/fieldsetview','./dashboard/title','./dashboard/description','./dashboard/row','./dashboard/panel','models/services/ScheduledView'],function(require) {
     var BaseSplunkView = require('../basesplunkview');
-    var Backbone = require('backbone');
     var mvc = require('../mvc');
     var _ = require('underscore');
     var $ = require('jquery');
-    var Dashboard = require('./controller');
-    var EditControls = require('./editdashboard');
+    var controller = require('./controller');
+    var EditControls = require('./editdashboard/master');
     var DragnDropView = require('./dragndrop');
     var console = require('util/console');
     var FieldsetView = require('../simpleform/fieldsetview');
@@ -11440,22 +12311,34 @@ define('splunkjs/mvc/simplexml/dashboard',['require','../basesplunkview','backbo
     var DashboardDescriptionView = require('./dashboard/description');
     var DashboardRowView = require('./dashboard/row');
     var DashboardPanel = require('./dashboard/panel');
+    var ScheduledView = require('models/services/ScheduledView');
 
     var DashboardView = BaseSplunkView.extend({
         initialize: function() {
-            this.model = Dashboard.getStateModel();
+            this.model = controller.getStateModel();
+            this.model.scheduledView = new ScheduledView(); 
+                    
+            this.scheduledViewDfd = $.Deferred();
+            controller.onViewModelLoad(function(){
+                var dfd = this.model.scheduledView.findByName(this.model.view.entry.get('name'),
+                    this.model.app.get('app'),
+                    this.model.app.get('owner'));
+                dfd.done(_.bind(this.scheduledViewDfd.resolve, this.scheduledViewDfd));
+                dfd.fail(_.bind(this.scheduledViewDfd.reject, this.scheduledViewDfd));
+            }, this);
+
             this.editControls = new EditControls({
                 model: {
                     state: this.model,
                     dashboard: this.model.view,
-                    application: this.model.app
-                }
+                    application: this.model.app,
+                    scheduledView: this.model.scheduledView
+                }, 
+                controller: controller 
             });
-
             this.model.on('change:edit', this.onEditStateChange, this);
         },
         render: function() {
-            this.editControls.render().appendTo(this.$('.edit-dashboard-menu'));
             var model = this.model;
             this.rows = _.map(this.$('.dashboard-row'), function(row) {
                 return new DashboardRowView({
@@ -11486,8 +12369,10 @@ define('splunkjs/mvc/simplexml/dashboard',['require','../basesplunkview','backbo
                 el: fieldsetEl
             }).render();
 
-            var editEl = $('<div class="edit-dashboard-menu pull-right"></div>').prependTo(this.$('.dashboard-header'));
-            this.editControls.render().appendTo(editEl);
+            var editEl = $('<div class="edit-dashboard-menu pull-right"></div>').prependTo(this.$('.dashboard-header'));            
+            $.when(this.scheduledViewDfd).then(function() {
+                this.editControls.render().appendTo(editEl);
+            }.bind(this));            
 
             this.panels = _(this.$('.dashboard-panel')).map(function(el){
                 return new DashboardPanel({ el: el, model: model }).render();
@@ -11504,7 +12389,7 @@ define('splunkjs/mvc/simplexml/dashboard',['require','../basesplunkview','backbo
             return this;
         },
         getController: function() {
-            return Dashboard;
+            return controller;
         },
         getStateModel: function() {
             return this.model;
@@ -11550,14 +12435,23 @@ define('splunkjs/mvc/simplexml/dashboard',['require','../basesplunkview','backbo
         },
         onEditStateChange: function() {
             if(this.model.get('edit')) {
-                Dashboard.onViewModelLoad(this.enterEditMode, this);
+                controller.onViewModelLoad(this.enterEditMode, this);
             } else {
                 this.leaveEditMode();
             }
         },
         removeElement: function(id) {
-            var cell = this.$('#' + id).parents('.dashboard-cell'), parentRow = cell.parents('.dashboard-row');
-            cell.remove();
+            var cur = this.$('#' + id), parentRow = cur.parents('.dashboard-row');
+            if(cur.siblings('.dashboard-element').length) {
+                cur.remove();
+            } else {
+                var elRow = cur.parents('.panel-element-row');
+                if(elRow.siblings('.panel-element-row').length) {
+                    elRow.remove();
+                } else {
+                    cur.parents('.dashboard-cell').remove();
+                }
+            }
             parentRow.trigger('cellRemoved');
         },
         createNewElement: function(options) {
@@ -11577,10 +12471,12 @@ define('splunkjs/mvc/simplexml/dashboard',['require','../basesplunkview','backbo
         },
         rowTemplate: '  <div class="dashboard-row">\
                             <div class="dashboard-cell" style="width: 100%;">\
-                                <div class="dashboard-panel">\
-                                    <div class="dashboard-element" id="<%= id %>">\
-                                        <div class="panel-head"><h3><%- title %></h3></div>\
-                                        <div class="panel-body"></div>\
+                                <div class="dashboard-panel clearfix">\
+                                    <div class="panel-element-row">\
+                                        <div class="dashboard-element" id="<%= id %>" style="width: 100%">\
+                                            <div class="panel-head"><h3><%- title %></h3></div>\
+                                            <div class="panel-body"></div>\
+                                        </div>\
                                     </div>\
                                 </div>\
                             </div>\
@@ -11589,11 +12485,12 @@ define('splunkjs/mvc/simplexml/dashboard',['require','../basesplunkview','backbo
 
     return DashboardView;
 });
+
 define('splunkjs/mvc/simplexml/element/table',['require','underscore','jquery','backbone','../../../mvc','./base','../../tableview','util/console','../mapper','splunk.util'],function(require){
     var _ = require('underscore'), $ = require('jquery'), Backbone = require('backbone');
     var mvc = require('../../../mvc');
     var DashboardElement = require('./base');
-    var ResultTableView = require('../../tableview');
+    var TableView = require('../../tableview');
     var console = require('util/console');
     var Mapper = require('../mapper');
     var SplunkUtil = require('splunk.util');
@@ -11602,14 +12499,18 @@ define('splunkjs/mvc/simplexml/element/table',['require','underscore','jquery','
         tagName: 'table',
         map: function(report, result, options) {
             result.options.wrap = String(SplunkUtil.normalizeBoolean(report.get('display.statistics.wrap', options)));
-            result.options.displayRowNumbers = String(SplunkUtil.normalizeBoolean(report.get('display.statistics.rowNumbers', options)));
+            result.options.rowNumbers = String(SplunkUtil.normalizeBoolean(report.get('display.statistics.rowNumbers', options)));
             result.options.dataOverlayMode = report.get('display.statistics.overlay', options);
             result.options.drilldown = report.get('display.statistics.drilldown', options);
+            result.options.count = report.get('display.prefs.statistics.count', options);
 
             result.options.labelField = null;
             result.options.valueField = null;
 
-            result.tags = { fields: report.get('display.statistics.fields', options)  };
+            var fields = report.get('display.statistics.fields', options);
+            result.tags.fields = _.isArray(fields) ?
+                    (_.isEmpty(fields) ? null : JSON.stringify(fields)) :
+                    (fields === '[]' ? null : fields);
 
             if(result.options.drilldown === false) {
                 delete result.options.drilldown;
@@ -11620,11 +12521,12 @@ define('splunkjs/mvc/simplexml/element/table',['require','underscore','jquery','
     });
     Mapper.register('statistics', TableMapper);
 
-    var TableVisualization = ResultTableView.extend({
+    var TableVisualization = TableView.extend({
+        panelClassName: 'table',
         prefix: 'display.statistics.',
         reportDefaults: {
             'display.general.type': 'statistics',
-            'display.statistics.count' : 10,
+            'display.prefs.statistics.count' : 10,
             'display.statistics.drilldown': 'cell'
         },
         getResultsLinkOptions: function(options) {
@@ -11663,11 +12565,15 @@ define('splunkjs/mvc/simplexml/element/chart',['require','underscore','jquery','
     }));
 
     var ChartViz = ChartView.extend({
+        panelClassName: 'chart',
         reportDefaults: {
             "display.visualizations.show": true,
             "display.visualizations.type": "charting",
             "display.general.type": "visualizations"
         },
+        options: _.defaults({
+            resizable: true
+        }, ChartView.prototype.options),
         getResultsLinkOptions: function() {
             return {};
         }
@@ -11694,9 +12600,13 @@ define('splunkjs/mvc/simplexml/element/event',['require','underscore','jquery','
     var EventMapper = Mapper.extend({
         tagName: 'event',
         map: function(report, result, options) {
+            result.options.count = report.get('display.prefs.events.count', options);
             _(report.toJSON(options)).each(function(v, key){
-                if(key.substring(0, eventsPrefix.length) === eventsPrefix) {
+                if(key.indexOf(eventsPrefix) === 0) {
                     var value = report.get(key, options);
+                    if(_.isArray(value)) {
+                        value = JSON.stringify(value);
+                    }
                     result.options[key.substring(eventsPrefix.length)] = (value != null) ? String(value) : null;
                 }
             });
@@ -11709,16 +12619,16 @@ define('splunkjs/mvc/simplexml/element/event',['require','underscore','jquery','
     var EventsVisualization = EventsViewer.extend({
         reportDefaults: {
             'display.general.type': 'events',
-            'display.events.count' : 10
+            'display.prefs.events.count' : 10
         },
         getResultsLinkOptions: function() {
             return {};
         }
     });
     DashboardElement.registerVisualization('events', EventsVisualization);
-    //DashboardElement.registerVisualization('events:raw', EventsVisualization);
-    //DashboardElement.registerVisualization('events:list', EventsVisualization);
-    //DashboardElement.registerVisualization('events:table', EventsVisualization);
+    DashboardElement.registerVisualization('events:raw', EventsVisualization);
+    DashboardElement.registerVisualization('events:list', EventsVisualization);
+    DashboardElement.registerVisualization('events:table', EventsVisualization);
 
     var EventElement = DashboardElement.extend({
         initialVisualization: 'events'
@@ -11734,7 +12644,7 @@ define('splunkjs/mvc/simplexml/element/single',['require','underscore','../../..
     var Mapper = require('../mapper');
     var console = require('util/console');
 
-    Mapper.register('visualizations:singleValue', Mapper.extend({
+    Mapper.register('visualizations:singlevalue', Mapper.extend({
         tagName: 'single',
         map: function(report, result, options) {
             var prefix = 'display.visualizations.singlevalue.';
@@ -11749,19 +12659,20 @@ define('splunkjs/mvc/simplexml/element/single',['require','underscore','../../..
     }));
 
     var SingleViz = SingleView.extend({
+        panelClassName: 'single',
         reportDefaults: {
             "display.visualizations.show": true,
-            "display.visualizations.type": "singleValue",
+            "display.visualizations.type": "singlevalue",
             "display.general.type": "visualizations"
         },
         getResultsLinkOptions: function(options) {
             return { "link.visible": false };
         }
     });
-    DashboardElement.registerVisualization('visualizations:singleValue', SingleViz);
+    DashboardElement.registerVisualization('visualizations:singlevalue', SingleViz);
 
     var SingleElement = DashboardElement.extend({
-        initialVisualization: 'visualizations:singleValue'
+        initialVisualization: 'visualizations:singlevalue'
     });
     
     return SingleElement;
@@ -11787,9 +12698,11 @@ define('splunkjs/mvc/simplexml/element/map',['require','underscore','jquery','ba
     }));
 
     var MapViz = SplunkMapView.extend({
-        options: _.extend({}, SplunkMapView.prototype.options, {
-            drilldown: true
-        }),
+        panelClassName: 'map',
+        options: _.defaults({
+            drilldown: true,
+            resizable: true
+        }, SplunkMapView.prototype.options),
         reportDefaults: {
             "display.visualizations.show": true,
             "display.visualizations.type": "mapping",
@@ -11857,7 +12770,6 @@ define('splunkjs/mvc/simplexml/element/html',['require','underscore','jquery','b
             this.reportReady = $.Deferred();
             this.reportReady.resolve(this.model);
             this.model.mapToXML = _.bind(this.mapToXML, this);
-            mvc.enableDynamicTokens(this.settings, utils.escapeFn('html'));
             this.settings.on("change", this.render, this);
             this.listenTo(Dashboard.getStateModel(), 'change:edit', this.onEditModeChange, this);
         },
@@ -11874,7 +12786,7 @@ define('splunkjs/mvc/simplexml/element/html',['require','underscore','jquery','b
         updateTitle: function() {
             this.$('.panel-head').remove();
             if(Dashboard.isEditMode()) {
-                $('<div class="panel-head"><h3><span class="untitled">&lt;HTML&gt;</span></h3></div>').prependTo(this.$el);
+                $('<div class="panel-head"><h3><span class="untitled">HTML Panel</span></h3></div>').prependTo(this.$el);
             }
         },
         createPanelElementEditor: function() {
@@ -11915,9 +12827,12 @@ define('splunkjs/mvc/simplexml/element/html',['require','underscore','jquery','b
     
     return HtmlElement;
 });
-define('splunkjs/mvc/simplexml/urltokenmodel',['require','exports','module','../basetokenmodel','models/classicurl'],function(require, exports, module) {
+define('splunkjs/mvc/simplexml/urltokenmodel',['require','exports','module','../basetokenmodel','models/classicurl','./controller','underscore','util/general_utils'],function(require, exports, module) {
     var BaseTokenModel = require('../basetokenmodel');
     var classicurl = require('models/classicurl');
+    var DashboardController = require("./controller");
+    var _ = require('underscore');
+    var general_utils = require('util/general_utils');
 
     /**
      * Automatically mirrors the current URL query parameters.
@@ -11926,124 +12841,44 @@ define('splunkjs/mvc/simplexml/urltokenmodel',['require','exports','module','../
         moduleId: module.id,
         
         initialize: function() {
-            var that = this;
-            
             classicurl.on('change', function(model, options) {
-                that.set(model.changed);
+                this.set(model.toJSON());
+            }, this);
+
+            this.set(classicurl.toJSON());
+
+            DashboardController.router.on('route', function() {
+                this.trigger("url:navigate");
+            }, this);
+        },
+        /** Saves this model's current attributes to the URL. */
+        save: function(attributes, options) {
+            var simpleAttributes = {};
+            this.set(attributes);
+            _.each(this.toJSON(), function(value, key) {
+                // Don't try to persist complex values to the URL
+                if (!_.isObject(value)) {
+                    simpleAttributes[key] = value;
+                }
             });
-            this.on('change', function(model, options) {
-                classicurl.set(model.changed);
-                classicurl.save();
-            });
-            
-            this.set(classicurl.attributes);
+
+            classicurl.save(simpleAttributes, options);
+        },
+        saveOnlyWithPrefix: function(prefix, attributes, options){
+            var filter =["^"+prefix+".*", "^earliest$", "^latest$"];
+            this.save(general_utils.filterObjectByRegexes(attributes, filter,  { allowEmpty: true } ), options);
         }
     });
     
     return UrlTokenModel;
 });
-
-define('splunkjs/mvc/postprocess',['require','exports','module','underscore','./mvc','./utils','./searchmanager','./basemanager','./searchmodel','./splunkresultsmodel','./settings'],function(require, exports, module) {
-    var _ = require("underscore");
-    var mvc = require('./mvc');
-    var utils = require('./utils');
-    var SearchManager = require('./searchmanager');
-    var BaseManager = require('./basemanager');
-    var SearchModels = require('./searchmodel');
-    var SplunkResultsModel = require('./splunkresultsmodel');
-    var Settings = require('./settings');
-
-    function mergeSearch(base, sub) {
-        if(!sub) {
-            return base;
-        }
-        return [ base.replace(/[\|\s]$/g,''), sub.replace(/^[\|\s]/g,'') ].join(' | ');
-    }
-
-    var PostProcessResultsModel = SplunkResultsModel.extend({
-        _requestOptions: function(){
-            var options = SplunkResultsModel.prototype._requestOptions.call(this);
-            var manager = this.get('manager');
-            
-            var postProcessSearch = manager.query.postProcessResolve();
-            if(postProcessSearch) {
-                options.search = mergeSearch(postProcessSearch, options.search);
-            }
-            return options;
-        }
-    });
-    
-    var PostProcessSearchQueryModel = SearchModels.SearchQuery.extend({
-        resolve: function() {
-            var parentSearch = this._manager.parent.query.resolve();
-            var thisSearch = SearchModels.SearchQuery.prototype.resolve.apply(this, arguments);
-            return mergeSearch(parentSearch, thisSearch);
-        },
-        
-        postProcessResolve: function() {
-            return SearchModels.SearchQuery.prototype.resolve.apply(this, arguments);
-        }
-    });
-
-    var PostProcessSearchManager = BaseManager.extend({
-        moduleId: module.id,
-        
-        isPostProcess: true,
-        initialize: function(attrs, options) {
-            this.set(options||{});
-            mvc.Components.bind('change:'+attrs.manager, this.onManagerChange, this);
-            if(mvc.Components.has(attrs.manager)) {
-                this.onManagerChange(mvc.Components, mvc.Components.get(attrs.manager));
-            }
-
-            // Drilldown calls manager.query.resolve to get the base search, so we artificially add this here
-            this.query = new PostProcessSearchQueryModel({search: this.get('postProcess')}, options);
-            this.query._manager = this;
-            
-            this.query.on('change', function(){
-                this.trigger('change:data', this, this.job && this.job.properties());
-            }, this);
-        },
-        onManagerChange: function(x, ctx) {
-            if(this.parent) {
-                this.parent.off(null, null, this);
-                delete this.job;
-            }
-            this.parent = ctx;
-            this.search = this.parent.search;
-            ctx.on('search:start', this.onSearchStart, this);
-            ctx.on('all', this.trigger, this);
-        },
-        get: function(k) {
-            if(this.parent && this.parent.has(k)) {
-                return this.parent.get(k);
-            }
-            return BaseManager.prototype.get.apply(this, arguments);
-        },
-        onSearchStart: function(job) {
-            this.job = job;
-        },
-        data: function(source, args) {
-            args = _.defaults({ manager: this, source: source }, args);
-            return new PostProcessResultsModel(args);
-        },
-        replayLastSearchEvent: function() {
-            if (this.parent) {
-                this.parent.replayLastSearchEvent.apply(this.parent, arguments);
-            }
-        }
-    });
-
-    return PostProcessSearchManager;
-});
-define('splunkjs/mvc/simpleform/input/submit',['require','underscore','jquery','../../basesplunkview','../formtokens','../../mvc'],function(require) {
+define('splunkjs/mvc/simpleform/input/submit',['require','underscore','jquery','../../basesplunkview','../../mvc'],function(require) {
     var _ = require('underscore'),
             $ = require('jquery'),
             BaseSplunkView = require('../../basesplunkview'),
-            FormTokens = require('../formtokens'),
             mvc = require('../../mvc');
 
-    var Submit = BaseSplunkView.extend({
+    var SubmitButton = BaseSplunkView.extend({
         className: 'splunk-submit-button',
         options: {
             text: _('Search').t(),
@@ -12055,26 +12890,9 @@ define('splunkjs/mvc/simpleform/input/submit',['require','underscore','jquery','
         },
         initialize: function() {
             this.configure();
-            mvc.enableDynamicTokens(this.settings);
             this.settings.on('change', this.render, this);
-            this.bindToComponent(this.options.formManager, this.onFormManagerChange, this);
         },
-        onFormManagerChange: function(ctx, model) {
-            if(this.formModel) {
-                this.formModel.off(null, null, this);
-            }
-            this.formModel = model;
-        },
-        onButtonClick: function() {
-            // Submit form tokens
-            // TODO: Remove this logic. (SPL-67733)
-            if(this.formModel) {
-                this.formModel.submit(this.options.submitType);
-            }
-            
-            // Submit MVC tokens
-            FormTokens.submit();
-            
+        onButtonClick: function() {            
             // Notify listeners
             this.trigger("submit", this);
         },
@@ -12094,13 +12912,13 @@ define('splunkjs/mvc/simpleform/input/submit',['require','underscore','jquery','
         }
     });
     
-    return Submit;
+    return SubmitButton;
 });
-define('splunkjs/mvc/simpleform/input/text',['require','underscore','jquery','./base','../../textboxview'],function(require) {
+define('splunkjs/mvc/simpleform/input/text',['require','underscore','jquery','./base','../../textinputview'],function(require) {
     var _ = require('underscore');
     var $ = require('jquery');
     var BaseInput = require('./base');
-    var TextBoxView = require('../../textboxview');
+    var TextInputView = require('../../textinputview');
 
     var TextInput = BaseInput.extend({
         initialize: function() {
@@ -12108,9 +12926,12 @@ define('splunkjs/mvc/simpleform/input/text',['require','underscore','jquery','./
                 el: $('<div class="splunk-view"></div>').appendTo(this.el),
                 id: _.uniqueId(this.id + '-input')
             }, this.options);
-            this.textbox = new TextBoxView(inputOptions);
+            this.textbox = new TextInputView(inputOptions);
             this.textbox.on('change', this.handleChange, this);
-            BaseInput.prototype.initialize.call(this);
+            
+            // Always use the inner view's settings, so we don't have two of them
+            this.options.settings = this.textbox.settings;
+            BaseInput.prototype.initialize.call(this, {inputId: this.textbox.getInputId()});
             
             // Special events for text box
             this.delegateEvents({
@@ -12135,20 +12956,20 @@ define('splunkjs/mvc/simpleform/input/text',['require','underscore','jquery','./
         
         checkEnterKey: function(e) {
             if (e.keyCode === 13) {
-                this.sendSoftSubmit();
+                this.submit();
             }
         }
     });
     
     return TextInput;
 });
-define('splunkjs/mvc/simpleform/input/dropdown',['require','underscore','jquery','./base','../../selectview'],function(require) {
+define('splunkjs/mvc/simpleform/input/dropdown',['require','underscore','jquery','./base','../../dropdownview'],function(require) {
     var _ = require('underscore');
     var $ = require('jquery');
     var BaseInput = require('./base');
-    var SelectView = require('../../selectview');
+    var SelectView = require('../../dropdownview');
 
-    var Dropdown = BaseInput.extend({
+    var DropdownInput = BaseInput.extend({
         initialize: function() {
             var inputOptions = _.defaults({
                 el: $('<div class="splunk-view"></div>').appendTo(this.el),
@@ -12156,7 +12977,10 @@ define('splunkjs/mvc/simpleform/input/dropdown',['require','underscore','jquery'
             }, this.options);
             this.select = new SelectView(inputOptions);
             this.select.on('change', this.handleChange, this);
-            BaseInput.prototype.initialize.call(this);
+            
+            // Always use the inner view's settings, so we don't have two of them
+            this.options.settings = this.select.settings;
+            BaseInput.prototype.initialize.call(this, {inputId: inputOptions.id});
         },
         getValue: function() {
             return this.select.val();
@@ -12174,16 +12998,16 @@ define('splunkjs/mvc/simpleform/input/dropdown',['require','underscore','jquery'
         }
     });
     
-    return Dropdown;
+    return DropdownInput;
 });
 
-define('splunkjs/mvc/simpleform/input/radio',['require','underscore','jquery','./base','../../radiogroupview'],function(require) {
+define('splunkjs/mvc/simpleform/input/radiogroup',['require','underscore','jquery','./base','../../radiogroupview'],function(require) {
     var _ = require('underscore'),
             $ = require('jquery'),
             BaseInput = require('./base'),
             RadioGroupView = require('../../radiogroupview');
 
-    var Radio = BaseInput.extend({
+    var RadioGroupInput = BaseInput.extend({
         events: {
             'change input': 'handleChange'
         },
@@ -12193,7 +13017,10 @@ define('splunkjs/mvc/simpleform/input/radio',['require','underscore','jquery','.
                 id: _.uniqueId(this.id + '-input')
             }, this.options);
             this.radiogroup = new RadioGroupView(inputOptions);
-            BaseInput.prototype.initialize.call(this);
+            
+            // Always use the inner view's settings, so we don't have two of them
+            this.options.settings = this.radiogroup.settings;
+            BaseInput.prototype.initialize.call(this, {inputId: inputOptions.id});
         },
         getValue: function() {
             return this.radiogroup.val();
@@ -12212,23 +13039,29 @@ define('splunkjs/mvc/simpleform/input/radio',['require','underscore','jquery','.
         }
     });
     
-    return Radio;
+    return RadioGroupInput;
 });
 
-define('splunkjs/mvc/simpleform/input',['require','./input/submit','./input/text','./input/dropdown','./input/radio','./input/timerange'],function(require) {
-
+define('splunkjs/mvc/simpleform/input',['require','./input/submit','./input/text','./input/dropdown','./input/radiogroup','./input/timerange','./input/submit','./input/text','./input/dropdown','./input/radiogroup','./input/timerange'],function(require) {
     return {
+        SubmitButton: require('./input/submit'),
+        TextInput: require('./input/text'),
+        DropdownInput: require('./input/dropdown'),
+        RadioGroupInput: require('./input/radiogroup'),
+        TimeRangeInput: require('./input/timerange'),
+        
+        /* Deprecated */
         Submit: require('./input/submit'),
         Text: require('./input/text'),
         Dropdown: require('./input/dropdown'),
-        Radio: require('./input/radio'),
+        Radio: require('./input/radiogroup'),
         TimeRangePicker: require('./input/timerange')
     };
-
 });
-define('splunkjs/mvc/simplexml',['require','./simplexml/controller','./simplexml/dashboard','./simplexml/element/table','./simplexml/element/chart','./simplexml/element/event','./simplexml/element/single','./simplexml/element/map','./simplexml/element/list','./simplexml/element/html','./simplexml/urltokenmodel','./searchmanager','./savedsearchmanager','./searchtemplate','./postprocess','./drilldown','./headerview','./footerview','./simpleform/formmanager','./simpleform/formtokens','./simpleform/input','./simpleform/input/submit','./simpleform/input/text','./simpleform/input/dropdown','./simpleform/input/radio','./simpleform/input/timerange','./utils'],function(require){
+define('splunkjs/mvc/simplexml',['require','./simplexml/controller','./simplexml/dashboard','./simplexml/element/table','./simplexml/element/chart','./simplexml/element/event','./simplexml/element/single','./simplexml/element/map','./simplexml/element/list','./simplexml/element/html','./simplexml/urltokenmodel','./searchmanager','./savedsearchmanager','./postprocessmanager','./drilldown','./headerview','./footerview','./simpleform/input','./simpleform/input/submit','./simpleform/input/text','./simpleform/input/dropdown','./simpleform/input/radiogroup','./simpleform/input/timerange','./utils'],function(require){
 
-    require("./simplexml/controller");
+    var Controller = require("./simplexml/controller");
+    
     require("./simplexml/dashboard");
     require("./simplexml/element/table");
     require("./simplexml/element/chart");
@@ -12240,19 +13073,17 @@ define('splunkjs/mvc/simplexml',['require','./simplexml/controller','./simplexml
     require("./simplexml/urltokenmodel");
     require("./searchmanager");
     require("./savedsearchmanager");
-    require("./searchtemplate");
-    require("./postprocess");
+    require("./postprocessmanager");
     require("./drilldown");
     require("./headerview");
     require("./footerview");
-    require("./simpleform/formmanager");
-    require("./simpleform/formtokens");
     require("./simpleform/input");
     require('./simpleform/input/submit');
     require('./simpleform/input/text');
     require('./simpleform/input/dropdown');
-    require('./simpleform/input/radio');
+    require('./simpleform/input/radiogroup');
     require('./simpleform/input/timerange');
     require("./utils");
 
+    return Controller;
 });

@@ -12,8 +12,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-"""Helper functions for wrinting unit tests for apps build using the Splunk
-   app framework."""
+"""Helper functions for wrinting unit tests for apps built using the
+   Splunk Django Bindings."""
 
 from os import path
 import sys

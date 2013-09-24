@@ -1,127 +1,36 @@
-/*!
- * Splunk shoestrap
- * import and override bootstrap vars & mixins
- */
-.clearfix {
-  *zoom: 1;
-}
-.clearfix:before,
-.clearfix:after {
-  display: table;
-  content: "";
-  line-height: 0;
-}
-.clearfix:after {
-  clear: both;
-}
-.hide-text {
-  font: 0/0 a;
-  color: transparent;
-  text-shadow: none;
-  background-color: transparent;
-  border: 0;
-}
-.input-block-level {
-  display: block;
-  width: 100%;
-  min-height: 26px;
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
-  box-sizing: border-box;
-}
-.ie7-force-layout {
-  *min-width: 0;
-}
-/* time range picker dialog
-
-	FIXME: markup missing
-
-*/
-.shared-timerangepicker-dialog {
-  width: 640px;
-}
-.shared-timerangepicker-dialog td {
-  vertical-align: top;
-}
-.timeRangeMenu,
-.trpCustomDateTime {
-  display: none;
-}
-.help-block-timestamp {
-  min-height: 1em;
-  line-height: 1em;
-  padding: 3px;
-  margin-top: 5px;
-  margin-right: 15px;
-  border-radius: 3px;
-  background-color: #eeeeee;
-}
-.timerangepicker-range-type {
-  margin-right: 25px;
-  float: left;
-}
-.timerangepicker-range-type .btn {
-  min-width: 65px;
-}
-input.timerangepicker-earliest-date {
-  margin-right: 0;
-}
-input.timerangepicker-real-time-earliest-time,
-input.timerangepicker-relative-earliest-time {
-  margin-right: 0;
-}
-.timerangepicker-realtime_range_type,
-.timerangepicker-relative_range_type {
-  display: inline-block;
-  vertical-align: middle;
-  margin-right: 25px;
-}
-.shared-timerangepicker-dialog-daterange-betweendates > tr:first-child > td {
-  padding-bottom: 0;
-}
-.shared-timerangepicker-dialog-daterange-betweendates > tr:first-child > td > .alerts {
-  margin-top: 0;
-}
-.form-inline .radio {
-  line-height: 18px;
-  padding-top: 5px;
-  padding-bottom: 5px;
-  display: block;
-}
-.form-inline .radio + .radio {
-  padding-top: 0;
-}
-input.date-before-time {
-  margin-right: 5px;
-}
-.advanced-time-documentation {
-  clear: left;
-  margin: 10px 0 0 55px;
-  display: block;
-  float: left;
-}
-/* Presets */
-.presets-group {
-  float: left;
-  width: 130px;
-}
-.presets-group + .presets-group {
-  margin-left: 10px;
-}
-.presets-divider-wrap {
-  float: left;
-  margin: 10px;
-}
-.presets-divider {
-  position: absolute;
-  top: 10px;
-  bottom: 10px;
-  border-right: 1px solid #cccccc;
-}
-.presets-group li {
-  color: #999999;
-  padding-left: 20px;
-  text-indent: -20px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+.clearfix{*zoom:1;}.clearfix:before,.clearfix:after{display:table;content:"";line-height:0;}
+.clearfix:after{clear:both;}
+.hide-text{font:0/0 a;color:transparent;text-shadow:none;background-color:transparent;border:0;}
+.input-block-level{display:block;width:100%;min-height:26px;-webkit-box-sizing:border-box;-moz-box-sizing:border-box;box-sizing:border-box;}
+.ie7-force-layout{*min-width:0;}
+.shared-timerangepicker-dialog{width:640px;}.shared-timerangepicker-dialog td{vertical-align:top;}
+.timeRangeMenu,.trpCustomDateTime{display:none;}
+.help-block-timestamp{min-height:1em;line-height:1em;padding:3px;margin-top:5px;margin-right:15px;border-radius:3px;background-color:#eeeeee;}
+.timerangepicker-range-type{margin-right:25px;float:left;}
+.timerangepicker-range-type .btn{min-width:65px;}
+.btn.timerange-control>.icon-triangle-right-small{padding-left:5px;}
+input.timerangepicker-earliest-date{margin-right:0;}
+input.timerangepicker-real-time-earliest-time,input.timerangepicker-relative-earliest-time{margin-right:0;}
+.timerangepicker-realtime_range_type,.timerangepicker-relative_range_type{display:inline-block;vertical-align:middle;margin-right:25px;}
+.shared-timerangepicker-dialog-daterange-betweendates>tr:first-child>td{padding-bottom:0;}.shared-timerangepicker-dialog-daterange-betweendates>tr:first-child>td>.alerts{margin-top:0;}
+.form-inline .radio{line-height:18px;padding-top:5px;padding-bottom:5px;display:block;}
+.form-inline .radio+.radio{padding-top:0;}
+input.date-before-time{margin-right:5px;}
+.advanced-time-documentation{clear:left;margin:10px 0 0 55px;display:block;float:left;}
+.presets-group{float:left;width:130px;}
+.presets-group+.presets-group{margin-left:10px;}
+.presets-divider-wrap{float:left;margin:10px;}
+.presets-divider{position:absolute;top:10px;bottom:10px;border-right:1px solid #cccccc;}
+.presets-group li{color:#999999;padding-left:20px;text-indent:-20px;overflow:hidden;text-overflow:ellipsis;}
+.vis-area{*zoom:1;}.vis-area:before,.vis-area:after{display:table;content:"";line-height:0;}
+.vis-area:after{clear:both;}
+.slide-area{width:1090px;}
+.content-wrapper{width:450px;float:left;}
+.modal .timerange-picker-wrapper{float:left;}.modal .timerange-picker-wrapper .shared-timerangepicker-dialog{width:640px;}
+.modal .timerange-picker-wrapper .accordion .accordion-heading .accordion-toggle{border-left:none;border-right:none;}
+.modal .timerange-picker-wrapper .accordion .accordion-body{border:none;}
+.modal .timerange-picker-wrapper .accordion .accordion-group.active:last-child .accordion-body{border:none;}
+.modal .timerange-picker-wrapper .accordion .accordion-group:last-child .accordion-toggle{border-bottom:none;border-radius:0px;}
+.modal .timerange-picker-wrapper .accordion .accordion-group:first-child .accordion-toggle{border-top:none;border-radius:0px;}
+.popdown-dialog .accordion-body .shared-timerangepicker-dialog-dateandtimerange{padding-left:18px;padding-right:18px;}
+.shared-timerangepicker .btn{max-width:99%;}.shared-timerangepicker .btn .time-label{display:inline-block;*display:inline;vertical-align:middle;max-width:99%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}

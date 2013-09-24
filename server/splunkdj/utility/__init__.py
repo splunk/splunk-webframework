@@ -4,8 +4,7 @@ from splunklib.client import Service
 import time
 
 def get_current_app_name(request):
-    resolved = resolve(request.path_info)
-    return resolved.app_name
+    return request.app_name
 
 def create_derived_service(old_service, owner=None, app=None):
     new_service = Service(
@@ -54,6 +53,15 @@ def format_local_tzoffset(t=None):
     return "%s%0.2i%0.2i" % (plus_minus, hours, minutes)
 
 def make_splunkweb_url(path):
+    """
+    Given a path on Splunkweb, create the absolute URL, taking into account
+    the mount.
+    
+    For example:
+        path = "/en-US/foo" with mount/root_endpoint as /root
+        returns
+        "/root/en-US/foo"
+    """
     splunkweb_mount = ""
     if settings.SPLUNK_WEB_MOUNT:
         splunkweb_mount = "/%s" % settings.SPLUNK_WEB_MOUNT

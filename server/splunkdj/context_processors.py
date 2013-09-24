@@ -2,12 +2,11 @@ from django.conf import settings
 from django.core.urlresolvers import resolve
 
 def splunkdj(request):
-    """Add various fields used by the Splunk app framework."""
-    match = resolve(request.path_info)
+    """Add various fields used by the Splunk Django Bindings."""
     built_files_root = None
     
-    if not match.app_name and hasattr(match, 'kwargs'):
-        match.app_name = match.kwargs.get('app', None)
+    app_name = request.app_name
+    url_name = request.url_name
     
     if settings.SPLUNK_WEB_INTEGRATED:
         built_files_root = "js/build/splunkjs"
@@ -20,8 +19,8 @@ def splunkdj(request):
     
     return { 
         # Add common names used by various templates
-        'app_name': match.app_name,
-        'url_name': match.url_name,
+        'app_name': app_name,
+        'url_name': url_name,
         
         'USE_BUILT_FILES': settings.USE_BUILT_FILES,
         'USE_MINIFIED_FILES': settings.USE_MINIFIED_FILES,

@@ -4566,7 +4566,7 @@ define('splunk/parsers/ObjectParser',['require','jg_global','jgatt','splunk/pars
 
 });
 
-define('views/shared/Map',['require','exports','module','jquery','splunk.i18n','splunk.util','jgatt','jgatt','splunk/charting/ExternalLegend','splunk/mapping/Map','splunk/mapping/layers/PieMarkerLayer','splunk/mapping/parsers/LatLonBoundsParser','splunk/mapping/parsers/LatLonParser','splunk/palettes/FieldColorPalette','splunk/palettes/ListColorPalette','splunk/parsers/ArrayParser','splunk/parsers/BooleanParser','splunk/parsers/NumberParser','splunk/parsers/ObjectParser','splunk/parsers/StringParser','views/Base'],function(require, exports, module) {
+define('views/shared/Map',['require','exports','module','jquery','splunk.i18n','splunk.util','jgatt','jgatt','splunk/charting/ExternalLegend','splunk/mapping/Map','splunk/mapping/layers/PieMarkerLayer','splunk/mapping/parsers/LatLonBoundsParser','splunk/mapping/parsers/LatLonParser','splunk/palettes/FieldColorPalette','splunk/palettes/ListColorPalette','splunk/parsers/ArrayParser','splunk/parsers/BooleanParser','splunk/parsers/NumberParser','splunk/parsers/ObjectParser','splunk/parsers/StringParser','views/Base','util/console'],function(require, exports, module) {
 
 	var $ = require('jquery');
 	var SplunkI18N = require('splunk.i18n');
@@ -4588,6 +4588,7 @@ define('views/shared/Map',['require','exports','module','jquery','splunk.i18n','
 	var ObjectParser = require('splunk/parsers/ObjectParser');
 	var StringParser = require('splunk/parsers/StringParser');
 	var Base = require('views/Base');
+    var console = require('util/console');
 
 	var _DEFAULT_PROPERTY_VALUES = {
 		"fieldColors": "",
@@ -4719,6 +4720,7 @@ define('views/shared/Map',['require','exports','module','jquery','splunk.i18n','
 			else if (this.model.searchResultsColumn)
 				extractedData = this._extractColumnData(this.model.searchResultsColumn);
 
+            console.debug('Updating map data to', extractedData);
 			this._markerLayer.set("data", extractedData ? extractedData.data : null);
 			this._markerLayer.set("fields", extractedData ? this._filterFields(extractedData.fields) : null);
 		},
@@ -5070,13 +5072,13 @@ define('views/shared/Map',['require','exports','module','jquery','splunk.i18n','
 
 });
 
-define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','underscore','./mvc','models/Base','./basesplunkview','./settings','splunk.util','views/shared/Map','backbone','./utils','uri/route','JS_CACHE/config','util/console','jquery.ui.resizable'],function(require, exports, module) {
+define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','underscore','./mvc','models/Base','./basesplunkview','./messages','splunk.util','views/shared/Map','backbone','./utils','uri/route','JS_CACHE/config','util/console','jquery.ui.resizable','splunk.util','./tokenawaremodel'],function(require, exports, module) {
     var $ = require("jquery");
     var _ = require("underscore");
     var mvc = require("./mvc");
     var BaseModel = require("models/Base");
     var BaseSplunkView = require("./basesplunkview");
-    var Settings = require("./settings");
+    var Messages = require("./messages");
     var SplunkUtil = require("splunk.util");
     var Map = require("views/shared/Map");
     var Backbone = require('backbone');
@@ -5085,6 +5087,8 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
     var config = require('JS_CACHE/config');
     var console = require('util/console');
     var resizable = require('jquery.ui.resizable');
+    var util = require('splunk.util');
+    var TokenAwareModel = require('./tokenawaremodel');
 
     var TileSources = {
         openStreetMap: {
@@ -5096,7 +5100,7 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
 
     var SplunkMapView = BaseSplunkView.extend({
         moduleId: module.id,
-        
+
         className: "splunk-map",
 
         options: {
@@ -5105,15 +5109,16 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
             tileSource: undefined,
             tileUrl: undefined,
             maxZoom: undefined,
-            drilldown: false
+            drilldown: true,
+            drilldownRedirect: true,
+            resizable: false
         },
-        
+
         omitFromSettings: ['el', 'reportModel'],
 
         initialize: function() {
             this.configure();
-            mvc.enableDynamicTokens(this.settings);
-            this.model = this.options.reportModel || new BaseModel();
+            this.model = this.options.reportModel || TokenAwareModel._createReportModel();
 
             this.settings._sync = utils.syncModels(this.settings, this.model, {
                 auto: true,
@@ -5122,7 +5127,7 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
                     tileUrl: 'display.visualizations.mapping.tileLayer.url',
                     maxZoom: 'display.visualizations.mapping.tileLayer.maxZoom'
                 },
-                exclude: ['managerid','data','tileSource','drilldown','type']
+                exclude: ['managerid','data','tileSource','drilldown','type', 'drilldownRedirect']
             });
 
             this.results = new Backbone.Model({
@@ -5130,11 +5135,17 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
                 fields: []
             });
 
+            this._currentHeight = parseInt(this.settings.get('height'), 10);
+
+            // initialize containers as detached DOM
+            this.$map = $('<div></div>');
+            this.$msg = $('<div></div>');
+
             this.createMap = _.debounce(_.bind(this.createMap, this), 0);
             this.createMap();
             this.settings.on('change:tileSource', this._updateTileSource, this);
             this._updateTileSource();
-            this.bindToComponent(this.options.managerid, this._onManagerChange, this);
+            this.bindToComponentSetting('managerid', this._onManagerChange, this);
         },
 
         _updateTileSource: function() {
@@ -5162,7 +5173,7 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
         createMap: function() {
             this.destroyMap();
             this.map = new Map({
-                el: $('<div></div>').appendTo(this.el),
+                el: this.$map.appendTo(this.el),
                 model: {
                     searchResultsColumn: this.results,
                     state: this.model
@@ -5175,22 +5186,45 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
             // force data to update according to new map bounds
             this._onBoundsChanged();
 
-            this.enableResize();
-        },
-
-        enableResize: function() {
-            if (!($.browser.safari && $.browser.version < "526")) {  // disable resizing for safari 3 and below only
-                this.map.$el.resizable({autoHide: true, handles: "s", stop: this.onResizeStop.bind(this)});
-                this.map.$el.mouseup(  // workaround until jquery ui is updated
-                    function(event) {
-                        $(this).width("100%");
-                    }
-                );
+            // Setup resizing
+            this._onResizeMouseup = _.bind(this._onResizeMouseup, this);
+            this.settings.on('change:resizable', function(model, value, options) {
+                value ? this._enableResize() : this._disableResize();
+            }, this);
+            if (this.settings.get('resizable')) {
+                this._enableResize();
             }
         },
 
-        onResizeStop: function(event, ui) {
+        _enableResize: function() {
+            if (this._canEnableResize()) {
+                this.map.$el.resizable({autoHide: true, handles: "s", stop: this._onResizeStop.bind(this)});
+                // workaround until jquery ui is updated
+                this.map.$el.on('mouseup', this._onResizeMouseup);
+            }
+        },
+        
+        _disableResize: function() {
+            if (this._canEnableResize()) {
+                this.map.$el.resizable('destroy');
+                this.map.$el.off('mouseup', this._onResizeMouseup);
+            }
+        },
+        
+        // NOTE: Bound to 'this' by createMap
+        _onResizeMouseup: function(event) {
+            $(this).width("100%");
+        },
+
+        _onResizeStop: function(event, ui) {
             $(event.target).width("100%");
+            this._currentHeight = parseInt(this.settings.get('height'), 10);
+            this.$msg.height(this._currentHeight).css('overflow', 'hidden');
+        },
+        
+        _canEnableResize: function() {
+            // Disable resizing for safari 3 and below only
+            return (!($.browser.safari && $.browser.version < "526"));
         },
 
         _onManagerChange: function(managers, manager) {
@@ -5206,11 +5240,17 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
             this._clearResults();
 
             if (!manager) {
+                this.message("no-search");
                 return;
             }
 
             this.manager = manager;
             this.manager.on("search:start", this._onSearchStart, this);
+            this.manager.on("search:progress", this._onSearchProgress, this);
+            this.manager.on("search:cancelled", this._onSearchCancelled, this);
+            this.manager.on("search:fail", this._onSearchFail, this);
+            this.manager.on("search:error", this._onSearchError, this);
+
             this.resultsModel = this.manager.data(this.settings.get("data"), {
                 serialfetch: true,
                 output_mode: "json_cols",
@@ -5220,21 +5260,45 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
                 search: this.map ? this.map.getPostProcessSearch() : ''
             });
             this.resultsModel.on("data", this._onDataUpdate, this);
-        },
+            this.resultsModel.on("error", this._onSearchError, this);
 
-        _clearResults: function() {
-            this.results.set({
-                columns: [],
-                fields: []
-            });
+            this.manager.replayLastSearchEvent(this);
         },
 
         _onSearchStart: function() {
             this._clearResults();
         },
 
+        _onSearchProgress: function(properties) {
+            // No action require on progress at the moment
+        },
+
+        _onSearchCancelled: function() {
+            this.message('cancelled');
+        },
+
+        _onSearchFail: function(state) {
+            var msg = Messages.getSearchFailureMessage(state);
+            this.message({
+                level: "error",
+                icon: "warning-sign",
+                message: msg
+            });
+        },
+
+        _onSearchError: function(message, err) {
+            var msg = Messages.getSearchErrorMessage(err) || message;
+            this.message({
+                level: "error",
+                icon: "warning-sign",
+                message: msg
+            });
+        },
+
         _onDataUpdate: function() {
             if (this.resultsModel.hasData()) {
+                this.$msg.detach();
+                this.$map.css("visibility", "");
                 this.results.set(this.resultsModel.data());
             } else {
                 this._clearResults();
@@ -5249,9 +5313,30 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
         },
 
         _onMapClicked: function(e) {
-            this.trigger('clicked:marker', e);
-            if(this.settings.get('drilldown')) {
-                this._doDrilldown(e, this.manager);
+            if (!this.settings.get('drilldown')) {
+                return;
+            }
+
+            e = e || {};
+
+            // Set up the handlers for default drilldown behavior and preventing
+            // the default behavior
+            var preventRedirect = false;
+            var defaultDrilldown = _.once(_.bind(this._doDrilldown, this, e, this.manager));
+            var preventDefault = function() {
+                preventRedirect = true;
+            };
+
+            e.preventDefault = preventDefault;
+            e.drilldown = defaultDrilldown;
+
+            this.trigger('drilldown click click:marker', e, this);
+
+            // Now that the event is trigged, if there is a default action of
+            // redirecting, we will execute it (depending on whether the user
+            // executed preventDefault()).
+            if (this.settings.get("drilldownRedirect") && !preventRedirect) {
+                defaultDrilldown();
             }
         },
 
@@ -5276,15 +5361,24 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
             if (event.altKey)
                 options.negate = "true";
 
-            var earliest = manager.job.properties().searchEarliestTime;
-            var latest = manager.job.properties().searchLatestTime;
+            var earliest, latest;
+            if (manager.job) {
+                earliest = manager.job.properties().searchEarliestTime;
+                latest = manager.job.properties().searchLatestTime;
+                if (!earliest && manager.job.properties().earliestTime){
+                    earliest = util.getEpochTimeFromISO(manager.job.properties().earliestTime);
+                }
+                if (!latest && manager.job.properties().latestTime){
+                    latest = util.getEpochTimeFromISO(manager.job.properties().latestTime);
+                }
+            }
 
             this._parseIntentions(manager.query.resolve(), "geoviz", options).done(function(searchString) {
-                var params = { q: searchString };
-                if (earliest !== undefined)
-                    params.earliest = earliest;
-                if (latest !== undefined)
-                    params.latest = latest;
+                var params = { 
+                    q: searchString,
+                    earliest: earliest || '',
+                    latest: latest || ''
+                };
 
                 var pageInfo = utils.getPageInfo();
                 var url = route.search(pageInfo.root, pageInfo.locale, pageInfo.app, { data: params });
@@ -5311,7 +5405,7 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
                 dataType: "json",
                 async: true,
                 success: function(data) {
-                    dfd.resolve(SplunkUtil.stripLeadingSearchCommand(data.eventsSearch));
+                    dfd.resolve(SplunkUtil.stripLeadingSearchCommand(data.fullSearch));
                 },
                 error: function(xhr, status, error) {
                     dfd.reject(error);
@@ -5321,8 +5415,26 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
             return dfd.promise();
         },
 
+        _clearResults: function() {
+            this.results.set({
+                columns: [],
+                fields: []
+            });
+        },
+
+        message: function(info) {
+            // Cannot use .hide() on map container because it screws up initial map rendering.
+            // Map container dimensions must always evaluate to non-zero.
+            // Using visibility hidden instead.
+            this.$map.css("visibility", "hidden");
+            this.$msg.detach();
+            Messages.render(info, this.$msg);
+            this.$msg.prependTo(this.$el);
+        },
+
         render: function() {
-            this.$el.css('overflow-y', 'hidden');
+            this.$el.css({ 'overflow': 'hidden', 'position': 'relative' });
+            this.$msg.height(this._currentHeight).css({ 'overflow': 'hidden', 'position': 'absolute', 'width': '100%' });
             return this;
         },
 
@@ -5337,6 +5449,6 @@ define('splunkjs/mvc/splunkmapview',['require','exports','module','jquery','unde
             BaseSplunkView.prototype.remove.call(this);
         }
     });
-        
+
     return SplunkMapView;
 });

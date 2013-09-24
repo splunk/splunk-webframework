@@ -1,7 +1,7 @@
 import json
 from splunkdj.tokens import TokenSafeString
 
-def component_context(context, type, id, component_type, require_file, kwargs, tag="div"):
+def component_context(context, type, id, component_type, require_file, kwargs, tag="div", classes=""):
     """Returns a component template context constructed from the given args."""
     
     options = { 'app': context['app_name'] }

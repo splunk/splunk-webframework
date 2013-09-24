@@ -80,10 +80,10 @@ class CachedFilesMixin(object):
         """
         if content is None:
             return None
-        md5 = hashlib.md5()
+        sha1 = hashlib.sha1()
         for chunk in content.chunks():
-            md5.update(chunk)
-        return md5.hexdigest()[:12]
+            sha1.update(chunk)
+        return sha1.hexdigest()[:12]
 
     def hashed_name(self, name, content=None):
         parsed_name = urlsplit(unquote(name))
@@ -119,7 +119,7 @@ class CachedFilesMixin(object):
         return urlunsplit(unparsed_name)
 
     def cache_key(self, name):
-        return 'staticfiles:%s' % hashlib.md5(force_bytes(name)).hexdigest()
+        return 'staticfiles:%s' % hashlib.sha1(force_bytes(name)).hexdigest()
 
     def url(self, name, force=False):
         """

@@ -40,10 +40,13 @@ def login(request, template_name=settings.LOGIN_TEMPLATE,
     """
     Displays the login form and handles the login action.
     """
-    if settings.SPLUNK_WEB_INTEGRATED:
-        return HttpResponseRedirect(settings.LOGIN_URL)
-    
     redirect_to = request.REQUEST.get(redirect_field_name, '')
+    
+    if settings.SPLUNK_WEB_INTEGRATED:
+        # In integrated mode, we don't do anything here, but when we redirect,
+        # make sure we redirect using the return_to information.
+        return HttpResponseRedirect(settings.LOGIN_URL + "?%s=%s" % (redirect_field_name, redirect_to))
+        
     if not redirect_to:
         redirect_to = request.REQUEST.get(ORIGINAL_REDIRECT_FIELD_NAME, '')
 

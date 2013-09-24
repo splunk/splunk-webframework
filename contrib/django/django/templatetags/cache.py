@@ -27,7 +27,7 @@ class CacheNode(Node):
             raise TemplateSyntaxError('"cache" tag got a non-integer timeout value: %r' % expire_time)
         # Build a key for this fragment and all vary-on's.
         key = ':'.join([urlquote(resolve_variable(var, context)) for var in self.vary_on])
-        args = hashlib.md5(force_bytes(key))
+        args = hashlib.sha1(force_bytes(key))
         cache_key = 'template.cache.%s.%s' % (self.fragment_name, args.hexdigest())
         value = cache.get(cache_key)
         if value is None:

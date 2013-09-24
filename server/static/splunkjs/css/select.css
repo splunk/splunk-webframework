@@ -1,11 +1,11 @@
-.splunk-select div.select2-container {
+.splunk-dropdown div.select2-container {
     margin-bottom: 9px;
 }
 
-.splunk-select .select2-container .select2-choice {
+.splunk-dropdown .select2-container .select2-choice {
     height: 24px;
     line-height: 24px;
 }
-.splunk-select .select2-container .select2-choice div b {
+.splunk-dropdown .select2-container .select2-choice div b {
 
 }

@@ -1,100 +1,15 @@
-/*!
- * Splunk shoestrap
- * import and override bootstrap vars & mixins
- */
-.clearfix {
-  *zoom: 1;
-}
-.clearfix:before,
-.clearfix:after {
-  display: table;
-  content: "";
-  line-height: 0;
-}
-.clearfix:after {
-  clear: both;
-}
-.hide-text {
-  font: 0/0 a;
-  color: transparent;
-  text-shadow: none;
-  background-color: transparent;
-  border: 0;
-}
-.input-block-level {
-  display: block;
-  width: 100%;
-  min-height: 26px;
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
-  box-sizing: border-box;
-}
-.ie7-force-layout {
-  *min-width: 0;
-}
-/* component for displaying a single value with some annotations
-
-	<div class="single-value shared-singlevalue" data-view="views/shared/SingleValue">
-	    <span class="before-label">before</span>
-	    <span class="single-result">Single Value Result</span>
-	    <span class="after-label">after</span>
-	    <br>
-	    <span class="under-label">under</span>
-	</div>
-
-*/
-.single-value {
-  margin: 20px;
-  display: inline-block;
-  *display: inline;
-  /* IE7 inline-block hack */
-
-  *zoom: 1;
-  text-align: center;
-}
-.single-value .single-result {
-  font-size: 24px;
-  font-weight: bold;
-  word-wrap: break-word;
-}
-.single-value .under-label {
-  text-transform: uppercase;
-  color: #999;
-  font-size: 11px;
-}
-.single-value .severe {
-  color: #ff1f24;
-}
-.single-value .high {
-  color: #ff7e00;
-}
-.single-value .elevated {
-  color: #ffb800;
-}
-.single-value .guarded {
-  color: #4da6df;
-}
-.single-value .low {
-  color: #00b932;
-}
-.single-value .None {
-  color: #999;
-}
-.single-value.severe .single-result {
-  color: #ff1f24;
-}
-.single-value.high .single-result {
-  color: #ff7e00;
-}
-.single-value.elevated .single-result {
-  color: #ffb800;
-}
-.single-value.guarded .single-result {
-  color: #4da6df;
-}
-.single-value.low .single-result {
-  color: #00b932;
-}
-.single-value.None .single-result {
-  color: #999;
-}
+.clearfix{*zoom:1;}.clearfix:before,.clearfix:after{display:table;content:"";line-height:0;}
+.clearfix:after{clear:both;}
+.hide-text{font:0/0 a;color:transparent;text-shadow:none;background-color:transparent;border:0;}
+.input-block-level{display:block;width:100%;min-height:26px;-webkit-box-sizing:border-box;-moz-box-sizing:border-box;box-sizing:border-box;}
+.ie7-force-layout{*min-width:0;}
+.single-value{margin:20px;display:inline-block;*display:inline;*zoom:1;text-align:center;}.single-value .single-result{font-size:24px;font-weight:bold;word-wrap:break-word;}
+.single-value .before-label{margin-right:1em;}
+.single-value .after-label{margin-left:1em;}
+.single-value .under-label{text-transform:uppercase;color:#999999;font-size:11px;}
+.single-value .severe,.single-value.severe .single-result{color:#d85d3c;}
+.single-value .high,.single-value.high .single-result{color:#f7902b;}
+.single-value .elevated,.single-value.elevated .single-result{color:#fac51c;}
+.single-value .guarded,.single-value.guarded .single-result{color:#6ab7c7;}
+.single-value .low,.single-value.low .single-result{color:#65a637;}
+.single-value .None,.single-value.None .single-result{color:#999999;}

@@ -550,7 +550,7 @@ function NumberPattern(pattern, prefix, suffix, grouping, int_prec, frac_prec, e
             d = this._format_frac(d, locale);
             num = c + d;
         }
-        retval = '' + this.prefix[is_negative] + num + this.suffix[is_negative];
+        var retval = '' + this.prefix[is_negative] + num + this.suffix[is_negative];
         return retval;
     };
 

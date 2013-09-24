@@ -4,6 +4,7 @@ define(function(require, exports, module) {
     var BaseManager = require('./basemanager');
     var BaseSplunkView = require('./basesplunkview');
     var BaseTokenModel = require('./basetokenmodel');
+    var SearchModels = require('./searchmodel');
     var console = window.console;
 
     var indent = function(count) {
@@ -57,6 +58,7 @@ define(function(require, exports, module) {
                 var registryElement = that.registry.getInstance(elementID);
                 var type = that._getComponentType(registryElement);
                 var category = that._getComponentCategory(registryElement);
+                var validOptions = [];
                 
                 var elementMetaData = { 
                     'id' : elementID,
@@ -69,7 +71,7 @@ define(function(require, exports, module) {
                 if (category === categoryEnum.VIEW) {
                     var managerid = null;
                     var settings = {};
-                    var validOptions = that._getValidViewOptions(registryElement);
+                    validOptions = that._getValidViewOptions(registryElement);
 
                     // If the view has settings we inspect them for issues
                     // TODO: Investigate why some components don't have settings model. (DVPL-####)
@@ -91,8 +93,10 @@ define(function(require, exports, module) {
                             }
                         });
                     }
+                    
                     elementMetaData.managerid = managerid;
                     elementMetaData.settings = settings;
+                    elementMetaData.el = registryElement.el || "no element set";
                 }
                 // Add data to token namespaces
                 if (category === categoryEnum.NAMESPACE) {
@@ -109,11 +113,30 @@ define(function(require, exports, module) {
                         elementMetaData.tokens.push(tokenData);
                     });
                 }    
+                // Add data to managers
+                if (category === categoryEnum.MANAGER) {
+                    validOptions = that._getValidManagerOptions(registryElement);
+                    
+                    if (registryElement.attributes) {
+                        var attributes = _.clone(registryElement.attributes);
+                        
+                        _.each(_.keys(attributes), function(key) {
+                            // If a setting is not known to be valid we add a warning
+                            if (!_.contains(validOptions, key)) {
+                                elementMetaData.warnings.push(warn(key + " is not a recognized attribute"));
+                            }
+                        });
+                    }
+                    
+                    elementMetaData.attributes = registryElement.attributes;
+                    elementMetaData.query = registryElement.query;
+                    elementMetaData.search = registryElement.search;
+                }
 
                 // Add token data to everything but namespaces
                 if (category !== categoryEnum.NAMESPACE) {
-                    elementMetaData.Bindings = that._getComponentTokenBindings(elementID);
-                }            
+                    elementMetaData.bindings = that._getComponentBindings(elementID);
+                }
                 components.push(elementMetaData);                
             });
                 
@@ -150,11 +173,13 @@ define(function(require, exports, module) {
                 _.each(namespace.tokens, function(token) {
                     // Look through views and managers and find those that watch this
                     // token's name
-
-
                     var listeners = _.filter(_.union(managers, views), function(item) {
-                        return _.some(item.Bindings, function(binding) {
-                            return (binding.namespace === namespace.id && binding.name === token.name);
+                        return _.some(item.bindings, function(binding) {
+                            if (binding && binding.observes && binding.observes.length > 0) {
+                                return _.some(binding.observes, function(observes) {
+                                    return (observes.namespace === namespace.id && observes.name === token.name);        
+                                });
+                            }
                         });
                     });
 
@@ -167,13 +192,24 @@ define(function(require, exports, module) {
         },
 
         _getValidViewOptions: function(element) {
-            var options = ['id', 'name', 'managerid', 'app', 'el', 'data'];
+            var options = ['id', 'name', 'managerid', 'manager', 'app', 'el', 'data'];
 
             // Again we check this is valid.
             if (element.constructor.prototype.options) {
                 options = _.union(options, _.keys(element.constructor.prototype.options));
             }
             return options;
+        },
+
+        _getValidManagerOptions: function(element) {
+            var validOptions = _.union(
+                ['app', 'id', 'owner', 'name', 'data'], 
+                _.keys(element.constructor.prototype.defaults) || [], 
+                SearchModels.SearchQuery.ALLOWED_ATTRIBUTES,
+                SearchModels.SearchJob.ALLOWED_ATTRIBUTES
+            );
+            
+            return validOptions;
         },
 
         _getComponentType: function(component) {
@@ -207,17 +243,6 @@ define(function(require, exports, module) {
             var bindings = this._getComponentBindings(componentId);
             tokenBoundProperties = _.keys(bindings);
             return tokenBoundProperties;
-        },
-
-        _getComponentTokenBindings: function(componentId) {
-            var tokenNames = [];
-            var bindings = this._getComponentBindings(componentId);
-            _.each(bindings, function(binding) {
-                if (binding && binding.observes && binding.observes.length > 0) {
-                    tokenNames = _.union(tokenNames, _.clone(binding.observes));
-                }
-            });
-            return tokenNames; 
         },
 
         _getComponentBindings: function(componentId) {
@@ -257,9 +282,18 @@ define(function(require, exports, module) {
                 console.log(indent(1) + "ID: " + view.id);
                 console.log(indent(2) + "Type: " + view.type);
                 console.log(indent(2) + "Manager: " + view.managerid);
+                console.log(indent(2) + "Element: ", view.el);
                 console.log(indent(2) + "Settings: ");
                 _.each(_.keys(view.settings), function(key) {
-                    console.log(indent(3) + key + ": " + view.settings[key]); 
+                    var tokenInfo = "";
+                    var binding = view.bindings[key];
+                    var hasTokens = binding && binding.observes && binding.observes.length > 0;
+                    if (hasTokens) {
+                        var template = JSON.stringify(binding.template);
+                        var partiallyResolvedValue = JSON.stringify(binding.computeValue(/*_retainUnmatchedTokens=*/true));
+                        tokenInfo = " [bound: " + template + ", resolved: " + partiallyResolvedValue + "]";    
+                    }
+                    console.log(indent(3) + key + ": " + JSON.stringify(view.settings[key]) + tokenInfo); 
                 });
                 if(view.warnings.length>0) {
                     console.log(indent(2) + "WARNINGS: ");
@@ -278,6 +312,52 @@ define(function(require, exports, module) {
             _.each(managers, function(manager) {
                 console.log(indent(1) + "ID: " + manager.id);
                 console.log(indent(2) + "Type: " + manager.type);
+                if (manager.attributes) {
+                    console.log(indent(2) + "Attributes: " );
+                    var propertiesToSkip = _.union(
+                        SearchModels.SearchJob.ALLOWED_ATTRIBUTES,
+                        SearchModels.SearchQuery.ALLOWED_ATTRIBUTES
+                    );
+                    _.each(manager.attributes, function(value, key) {
+                        if (_.contains(propertiesToSkip, key)) {
+                            return;
+                        }
+                        console.log(indent(3) + key + ": " + JSON.stringify(value)); 
+                    });
+                }
+                if (manager.query && manager.query.attributes) {
+                    console.log(indent(2) + "Search Query: " );
+                    _.each(manager.query.attributes, function(value, key) {
+                        // Skip non-search keys for now.
+                        if (key !== "search") {
+                            return;
+                        }
+                        
+                        var tokenInfo = "";
+                        var binding = manager.bindings[key];
+                        var hasTokens = binding && binding.observes && binding.observes.length > 0;
+                        if (hasTokens) {
+                            var template = JSON.stringify(binding.template);
+                            var partiallyResolvedValue = JSON.stringify(binding.computeValue(/*_retainUnmatchedTokens=*/true));
+                            tokenInfo = " [bound: " + template + ", resolved: " + partiallyResolvedValue + "]";    
+                        }
+                        console.log(indent(3) + key + ": " + JSON.stringify(value) + tokenInfo); 
+                    });
+                }
+                if (manager.search && manager.search.attributes) {
+                    console.log(indent(2) + "Search Properties: " );
+                    _.each(manager.search.attributes, function(value, key) {
+                        var tokenInfo = "";
+                        var binding = manager.bindings[key];
+                        var hasTokens = binding && binding.observes && binding.observes.length > 0;
+                        if (hasTokens) {
+                            var template = JSON.stringify(binding.template);
+                            var partiallyResolvedValue = JSON.stringify(binding.computeValue(/*_retainUnmatchedTokens=*/true));
+                            tokenInfo = " [bound: " + template + ", resolved: " + partiallyResolvedValue + "]";    
+                        }
+                        console.log(indent(3) + key + ": " + JSON.stringify(value) + tokenInfo); 
+                    });
+                }
                 console.log(indent(2) + "Views bound to manager: ");
                 _.each(manager.viewIds, function(id) {
                     console.log(indent(3) + id);
@@ -302,7 +382,7 @@ define(function(require, exports, module) {
                 console.log(indent(2) + "Tokens: ");
                 _.each(namespace.tokens, function(token) {
                     console.log(indent(3) + token.name + ": ");
-                    console.log(indent(4) + "value: " + token.value);
+                    console.log(indent(4) + "value: " + JSON.stringify(token.value));
                     console.log(indent(4) + "listeners: " + token.listenerIds.join(', '));
                 });
             });

@@ -2,13 +2,14 @@
 from django.middleware.csrf import get_token
 from django.conf import settings
 from django.middleware.locale import LocaleMiddleware
-from django.core.urlresolvers import is_valid_path
+from django.core.urlresolvers import is_valid_path, resolve, reverse
 from django.http import HttpResponseRedirect
 from django.utils.cache import patch_vary_headers
 from django.utils import translation
+from django.http import Http404
 
 from splunkdj.auth.backends import get_user
-from splunkdj.utility import format_local_tzoffset
+from splunkdj.utility import format_local_tzoffset, create_derived_service
 
 import datetime
 import time
@@ -23,6 +24,52 @@ class SplunkCsrfMiddleware(object):
     def process_view(self, request, *args, **kwargs):
         get_token(request)
         return None
+        
+class SplunkResolvedUrlMiddleware(object):
+    def process_request(self, request):
+        # Set a default so we don't have to ensure it has the attribute
+        request.app_name = None
+        request.url_name = None
+        
+        resolved = None
+        try:
+            resolved = resolve(request.path_info)
+        except:
+            # If we had an error in resolution, then we can continue, we don't
+            # need to do anything
+            pass
+            
+        # If we don't have a resolved match, there is nothing for us to do. 
+        # We can just go ahead and return.
+        if resolved:
+            request.app_name = resolved.app_name
+            request.url_name = resolved.url_name
+                
+        return
+        
+class SplunkAppEnabledMiddleware(object):
+    """
+    Ensure that when a URL pattern is accessed in a particular app-scope,
+    that the app in question is enabled.
+    """
+    
+    def _verify_app_is_enabled(self, service, app_name):
+        # We need to use the most general service as the app may be disabled.
+        service = create_derived_service(service, app=None, owner=None)
+        try:
+            app = service.apps[app_name]
+            if app['disabled'] == '1' or app['visible'] == '0':
+                raise Http404("Application '%s' is disabled." % app_name)
+        except:
+            raise Http404("Application '%s' is disabled." % app_name)
+    
+    def process_request(self, request):
+        if request.app_name and request.user.is_authenticated():
+            # Now that we have a name for the app, we can go ahead and
+            # try and see if that app is enabled.
+            return self._verify_app_is_enabled(request.service, request.app_name)
+                
+        return
         
 class SplunkLocaleMiddleware(LocaleMiddleware):
     # The base LocaleMiddleware class in Django core does not seem to properly
@@ -98,7 +145,11 @@ class SplunkWebSessionMiddleware(object):
         try:
             from lib.sessions import FileSession
             
-            splunkweb_cookie = request.COOKIES['session_id_%s' % settings.SPLUNK_WEB_PORT]
+            cookie_name = 'session_id_%s' % settings.SPLUNK_WEB_PORT
+            if cookie_name not in request.COOKIES:
+                return
+                
+            splunkweb_cookie = request.COOKIES[cookie_name]
             
             session = FileSession(
                 splunkweb_cookie,

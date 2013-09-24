@@ -9646,7 +9646,7 @@ Splunk.util = {
             equalsSegments = parts[i].split('=');
             key = decodeURIComponent(equalsSegments.shift());
             value = equalsSegments.join("=");
-            output[key] = decodeURIComponent(value);
+            output[key] = decodeURIComponent(value.replace(/\+/g, ' '));
         }
         return output;
     },
@@ -9784,7 +9784,10 @@ Splunk.util = {
 
     getConfigValue: function(configKey, optionalDefault) {
         if (window.$C && window.$C.hasOwnProperty(configKey)) return window.$C[configKey];
-        else {
+        else if (configKey === 'FORM_KEY') {
+            // maintain backwards compatibility now that we've moved the form_key from config endpoint to cookie
+            return this.getFormKey();
+        } else {
             if (typeof optionalDefault != 'undefined') { // ensure optionalDefault can be set to 'false'
                 // util.logger will have been swapped out by the Logger when Logger
                 // has already been setup, but still works when its not.
@@ -9795,6 +9798,31 @@ Splunk.util = {
 
             throw new Error('getConfigValue - ' + configKey + ' not set, no default provided');
         }
+    },
+
+    getCookie: function(name) {
+        var cookieValue = null;
+        if (document.cookie && document.cookie != '') {
+            var cookies = document.cookie.split(';');
+            for (var i = 0; i < cookies.length; i++) {
+                var cookie = $.trim(cookies[i]);
+                // Does this cookie string begin with the name we want?
+                if (cookie.substring(0, name.length + 1) == (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    },
+
+    getFormKey: function() {
+        var cookieName = "splunkweb_csrf_token_" + Splunk.util.getConfigValue('MRSPARKLE_PORT_NUMBER');
+        var cookieValue = Splunk.util.getCookie(cookieName);
+        if (cookieValue) {
+            return cookieValue;
+        }
+        return "";
     },
 
     /**
@@ -10285,10 +10313,10 @@ Splunk.util = {
         return output.join(',');
     },
     searchEscape: function(str) {
-    if (!str.match(/[\s\,=|\[\]\"]/))
-        return str;
+        if (!str.match(/[\s\,=|\[\]\"]/))
+            return str;
 
-    return '"' + str.replace(/(\"|\\)/g, "\\$1") + '"';
+        return '"' + str.replace(/(\"|\\)/g, "\\$1") + '"';
     },
 
     /**
@@ -10955,17 +10983,20 @@ define('splunk.i18n',['strftime', 'splunk.util'], function() {
         var i, replacements,
             locale = window.locale_name();
 
-        if(format && window.locale_uses_day_before_month()) {
-            replacements = DAY_FIRST_FORMATS;
-            for(i = 0; i < replacements.length; i++) {
-                format = format.replace(replacements[i][0], replacements[i][1]);
+        // only modify format if format is not a preset
+        if(!(format in { full: true, long: true, medium: true, short: true })) {
+            if(format && window.locale_uses_day_before_month()) {
+                replacements = DAY_FIRST_FORMATS;
+                for(i = 0; i < replacements.length; i++) {
+                    format = format.replace(replacements[i][0], replacements[i][1]);
+                }
             }
-        }
-        if(format && locale in CUSTOM_LOCALE_FORMATS) {
-            replacements = CUSTOM_LOCALE_FORMATS[locale];
+            if(format && locale in CUSTOM_LOCALE_FORMATS) {
+                replacements = CUSTOM_LOCALE_FORMATS[locale];
 
-            for(i = 0; i < replacements.length; i++) {
-                format = format.replace(replacements[i][0], replacements[i][1]);
+                for(i = 0; i < replacements.length; i++) {
+                    format = format.replace(replacements[i][0], replacements[i][1]);
+                }
             }
         }
         return oldFormatDate(date, format);
@@ -13746,17 +13777,322 @@ define("backbone", ["jquery","underscore"], (function (global) {
     };
 }(this)));
 
-define('util/console',[],function(){
-    var CONSOLE_METHODS = ['log','trace','error','warn'],
-        EMPTY = function(){},
-        console = {}, i;
-
-    for (i = 0; i < CONSOLE_METHODS.length; i++) {
-        console[CONSOLE_METHODS[i]] = EMPTY;
+define('util/console_dev',[],function(){
+    function bind(fn, context) {
+        return function(){ fn.apply(context, arguments);  };
     }
-    console.DEBUG_ENABLED = false;
-
+    var orig = window.console, console = orig,
+        CONSOLE_METHODS = ['log','trace','error','warn', 'info', 'debug'],
+        EMPTY = function(){},i;
+    try {
+        console.DEBUG_ENABLED = true;
+    } catch(e) {
+        console = { DEBUG_ENABLED: true };
+    }
+    for (i = 0; i < CONSOLE_METHODS.length; i++) {
+        var fn = CONSOLE_METHODS[i];
+        if(typeof console[fn] !== 'function') {
+            if(orig !== undefined && typeof orig[fn] == 'function') {
+                console[fn] = bind(orig[fn], orig);
+            } else {
+                console[fn] = EMPTY;
+            }
+        }
+    }
     return console;
+});
+
+Splunk.namespace("Splunk.Logger");
+/**
+ * The getLogger factory provides a standard interface for implementing a logger program mode. Dependency on utils.js
+ *
+ * var logger = Splunk.Logger.getLogger("logger.js");
+ * logger.info("This is a log message at ", new Date(), "showing a log!");
+ *
+ *
+ * @param {String} fileName The name of the source file to log.
+ * @param {Function} mode (Optional) The logging programming interface you wish to implement, defaults to Splunk.Logger.mode.Default if not defined.
+ */
+Splunk.Logger.getLogger = function(fileName, mode){
+    var self;
+    mode = mode || Splunk.Logger.mode.Default;
+    try {
+        self = new (mode)(fileName);
+    }catch(err){
+        self = this;
+        throw(new Error("Splunk.Logger mode is undefined, not callable or thrown an exception. mode=" + mode + " and fileName=" + fileName + ". Check to make sure the mode you are defining exist (see: web.conf js_logger_mode) and is a proper closure. Stack trace:" + err));
+    }
+    return self;
+};
+
+/**
+ * Exposes if a browser has firebug installed or not.
+ *
+ * @method hasFirebug
+ * @return Boolean
+ */
+Splunk.Logger.hasFirebug = function(){
+    return (typeof(console)!="undefined" && console.firebug)?true:false;
+};
+/**
+ * Exposes if a browser has a window console object.
+ *
+ * @method hasConsole
+ * @return Boolean
+ */
+Splunk.Logger.hasConsole = function(){
+    return (typeof(console)!="undefined")?true:false;
+};
+/**
+ * Object to store logger program mode.
+ */
+Splunk.Logger.mode = {};
+/**
+ * A mode logger program that does nothing.
+ */
+Splunk.Logger.mode.None = function(){
+    var self = this;
+    self.info = self.log = self.debug = self.warn = self.error = self.trace = function(){};
+};
+/**
+ * A mode logger program that calls a console object and a closure matching method if defined.
+ */
+Splunk.Logger.mode.Firebug = function(fileName){    
+    var self = this;
+    var generateArguments = function(args){
+        var arr = [];
+        for(var i=0; i<args.length; i++){
+            arr.push(args[i]);
+        }
+        arr.push(fileName);
+        return arr;
+    };
+    var bindConsole = function(args, method){
+        args = generateArguments(args);
+        if(Splunk.Logger.hasConsole()){
+            method = console[method] || console.info || function(){};
+            //>=ie8 console object does not have an apply method (they are not instanceof functions!)
+            if(method.apply){
+                method.apply(console, args);
+            }else{
+                method(args.join(" "));
+            }
+        }
+    };
+
+    if (Splunk.Logger.hasFirebug() && console.firebug != '1.3.0') {
+        self.log = console.log;
+        self.info = console.info;
+        self.debug = console.debug;
+        self.warn = console.warn;
+        self.error = console.error;
+        self.trace = console.trace;
+    }
+    else {
+        self.info = function(){
+            bindConsole(arguments, "info");
+        };
+        self.log = function(){
+            bindConsole(arguments, "log");
+        };
+        self.debug = function(){
+            bindConsole(arguments, "debug");
+        };
+        self.warn = function(){
+            bindConsole(arguments, "warn");
+        };
+        self.error = function(){
+            bindConsole(arguments, "error");
+        };
+        self.trace = function(){
+            bindConsole(arguments, "trace");
+        };
+    }
+};
+/**
+ * A mode logger program that implements logging to a server/splunk. Dependency on contrib/swfobject.js
+ */
+Splunk.Logger.mode.Server = function(fileName){
+    var self = this,
+        buffer = Splunk.Logger.mode.Server.Buffer.getInstance();
+    /**
+     * Formats a console call and pushes it to buffer.
+     *
+     * @method bufferPush
+     * @param {arguments} args The arguments object from the original closure handler.
+     * @param {String} level The console level called.
+     */
+    var bufferPush = function(args, level){
+        args = args || [];
+        for(var i = 0; i < args.length; i++) {
+            if(typeof args[i] === 'object') {
+                try {
+                    args[i] = JSON.stringify(args[i]);
+                }
+                catch(e) { }
+            }
+        }
+        var message = Array.apply(null, args).join(" ");
+        var data = {level: level, 'class': fileName, message: message};
+        buffer.push(data);
+    };
+    /**
+     * The handlers for (new Splunk.Logger(fileName, [mode]))[level](arguments) calls.
+     */
+    self.info = function(){
+        bufferPush(arguments, "info");
+    };
+    self.log = function(){
+        bufferPush(arguments, "log");
+    };
+    self.debug = function(){
+        bufferPush(arguments, "debug");
+    };
+    self.warn = function(){
+        bufferPush(arguments, "warn");
+    };
+    self.error = function(){
+        bufferPush(arguments, "error");
+    };
+    self.trace = function(){
+        // try to generate a stack trace that can be sent to the server with log-level DEBUG
+        // this will not actually give any meaningful information in IE, in which case this is a no-op
+        var trace = '';
+        try {
+            var e = new Error();
+            trace = e.stack.replace(/^Error/, '');
+        }
+        catch(e) { }
+        if(trace) {
+            bufferPush([trace], "debug");
+        }
+    };
+};
+/**
+ * A buffer class to take care of purging and posting of logged messages.
+ */
+Splunk.Logger.mode.Server.Buffer = function(){
+    var self = this,
+        thread,
+        buffer = [];
+    /**
+     * Posts buffer asynchronously to Splunk.Logger.Mode.Server.END_POINT,
+     *
+     * @method serverPost
+     */
+    var serverPost = function(){
+        var data = JSON.stringify(buffer);
+        $.post(Splunk.Logger.mode.Server.END_POINT, {"data":data});
+    };
+    /**
+     * Posts and purges the existing buffer.
+     *
+     * @method purge
+     */
+    var purge = function(){
+        serverPost();
+        buffer = [];
+    };
+    /**
+     * Checks the buffer, posts and purges if necessary.
+     *
+     * @method check
+     */
+    var check = function(){
+        if(buffer.length>Splunk.Logger.mode.Server.MAX_BUFFER){
+            purge();
+        }
+    };
+    self.push = function(str){
+        buffer.push(str);
+        check();
+    };
+    /**
+     * Checks the buffer at set interval and posts and purges if data exists.
+     *
+     * @method poller
+     */
+    self.poller = function(){
+        if(buffer.length>0){
+            purge();
+        }
+    };
+    self.size = function(){
+        return buffer.length;
+    };
+    self.Buffer = function(){
+        thread = setInterval(self.poller, Splunk.Logger.mode.Server.POLL_BUFFER);
+    }();
+};
+Splunk.Logger.mode.Server.Buffer.instance = null;
+/**
+ * Singleton reference to a shared buffer.
+ *
+ * @method getInstance
+ */
+Splunk.Logger.mode.Server.Buffer.getInstance = function(){
+    if(Splunk.Logger.mode.Server.Buffer.instance==null){
+        Splunk.Logger.mode.Server.Buffer.instance = new Splunk.Logger.mode.Server.Buffer();
+    }
+    return Splunk.Logger.mode.Server.Buffer.instance;
+};
+Splunk.Logger.mode.Server.END_POINT = Splunk.util.make_url(Splunk.util.getConfigValue("JS_LOGGER_MODE_SERVER_END_POINT", "util/log/js"));
+Splunk.Logger.mode.Server.POLL_BUFFER = Splunk.util.getConfigValue("JS_LOGGER_MODE_SERVER_POLL_BUFFER", 1000);
+Splunk.Logger.mode.Server.MAX_BUFFER = Splunk.util.getConfigValue("JS_LOGGER_MODE_SERVER_MAX_BUFFER", 100);
+/**
+ * The default system mode logger program, see web.conf js_logger_mode.
+ */
+Splunk.Logger.mode.Default = Splunk.Logger.mode[Splunk.util.getConfigValue("JS_LOGGER_MODE", "None")];
+/**
+ * Legacy Splunk.log compatibility
+ */
+Splunk.log = function(msg, category, src){
+    Splunk.Logger.getLogger("logger.js").warn("WARNING! Splunk.log is now deprecated. See Splunk.Logger class for more details.", "Original Message:", msg, " Original Category:", category, "Original Source:", src);
+};
+/**
+ * Legacy Backwards compatibility with 3.X
+ */
+var D = {};
+D.logger = Splunk.Logger.getLogger("logger.js");
+D.wrapper = function(str, level){
+    D.logger.warn("WARNING! D.", level, "is now deprecated. See Splunk.Logger class for more details.", str);
+};
+D.debug = function(str){D.wrapper(str, "debug");};
+D.error = function(str){D.wrapper(str, "error");};
+D.warn = function(str){D.wrapper(str, "warn");};
+/**
+ * Augment util.logger to standard logger.
+ */
+Splunk.util.logger = Splunk.Logger.getLogger("util.js");
+
+
+define("splunk.logger", ["splunk","splunk.util"], (function (global) {
+    return function () {
+        var ret, fn;
+        return ret || global.Splunk.Logger;
+    };
+}(this)));
+
+define('util/console',[
+            'jquery',
+            'util/console_dev',
+            'splunk.logger',
+            'splunk.util'
+        ],
+        function(
+            $,
+            devConsole,
+            SplunkLogger,
+            splunkUtils
+        ) {
+
+    var LOG_MODE = splunkUtils.getConfigValue("JS_LOGGER_MODE", "None");
+
+    if(LOG_MODE === 'Firebug') {
+        return devConsole;
+    }
+    return SplunkLogger.getLogger(splunkUtils.getConfigValue('USERNAME', '') + ':::' + window.location.href);
+
 });
 define('splunkjs/mvc/basetokenmodel',['require','exports','module','backbone'],function(require, exports, module) {
     var Backbone = require('backbone');
@@ -13978,63 +14314,74 @@ define('splunkjs/mvc/registry',['require','exports','module','underscore','backb
 }(jQuery));
 define("splunkjs/contrib/jquery.deparam", function(){});
 
-define('splunkjs/mvc/protections',['require','exports','module'],function(require, exports, module) {    
+define('splunkjs/mvc/protections',['require','exports','module','splunk.util'],function(require, exports, module) {
+    var splunkUtils = require("splunk.util");
+
     function enableCSRFProtection($) {
         // Most of this code is taken verbatim from Django docs:
         // https://docs.djangoproject.com/en/dev/ref/contrib/csrf/
-        
-        // Utility function to get cookie values
-        function getCookie(name) {
-            var cookieValue = null;
-            if (document.cookie && document.cookie != '') {
-                var cookies = document.cookie.split(';');
-                for (var i = 0; i < cookies.length; i++) {
-                    var cookie = $.trim(cookies[i]);
-                    // Does this cookie string begin with the name we want?
-                    if (cookie.substring(0, name.length + 1) == (name + '=')) {
-                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                        break;
-                    }
-                }
-            }
-            return cookieValue;
-        }
-                    
+
         // Add CSRF info
         function csrfSafeMethod(method) {
             // these HTTP methods do not require CSRF protection
             return (/^(GET|HEAD|OPTIONS|TRACE)$/.test(method));
         }
-        
+
+        var djangoPort = splunkUtils.getConfigValue('DJANGO_PORT_NUMBER', null);
+        var splunkwebPort = splunkUtils.getConfigValue('MRSPARKLE_PORT_NUMBER');
+        var portNumber = djangoPort || splunkwebPort;
+        var cookieName = "django_csrftoken_" + portNumber;
+        var djangoCookie = splunkUtils.getCookie(cookieName);
+        var splunkwebCookie = splunkUtils.getFormKey();
+
         $.ajaxPrefilter(function(options, originalOptions, xhr) {
             if (!options.hasOwnProperty("crossDomain")) {
                 options.crossDomain = false;
             }
-            
+
             var type = options["type"] || "";
             if (!csrfSafeMethod(type)) {
-                xhr.setRequestHeader("X-CSRFToken", getCookie("csrftoken"));
+                if (djangoCookie) {
+                    xhr.setRequestHeader("X-CSRFToken", djangoCookie);
+                }
+                if (splunkwebCookie) {
+                    xhr.setRequestHeader("X-Splunk-Form-Key", splunkwebCookie);
+                }
             }
         });
     }
-    
+
     function enableUnauthorizationRedirection($, loginURL, logoutURL) {
         $(document).bind('ajaxError', function(ev, xhr, opts, err) {
             var pathname = window.location.pathname;
-            
+
             if (xhr.status === 401 && pathname.indexOf(logoutURL) === -1) {
                 var returnTo = encodeURIComponent(pathname + document.location.search);
                 document.location = loginURL + "?return_to=" + returnTo;
-                return;
-            } 
+            }
         });
     }
-    
+
     return {
         enableCSRFProtection: enableCSRFProtection,
         enableUnauthorizationRedirection: enableUnauthorizationRedirection
     };
 });
+define('splunkjs/mvc/tokenescapestring',['require','exports','module'],function(require, exports, module) {
+    /**
+     * Wraps a string to mark it to be interpreted as a literal.
+     * 
+     * @see splunkjs.mvc.tokenEscape
+     */
+    // Historical Note: The name of this class is inspired by
+    //                  Django's 'EscapeString' class.
+    var TokenEscapeString = function(value) {
+        this.value = value;
+    };
+
+    return TokenEscapeString;
+});
+
 define('splunkjs/mvc/tokensafestring',['require','exports','module'],function(require, exports, module) {
     /**
      * Wraps a string to mark it to be interpreted as a template
@@ -14042,21 +14389,13 @@ define('splunkjs/mvc/tokensafestring',['require','exports','module'],function(re
      * 
      * @see splunkjs.mvc.tokenSafe
      */
+    // Historical Note: The name of this class is inspired by
+    //                  Django's 'SafeString' class.
     var TokenSafeString = function(value) {
         this.value = value;
     };
 
     return TokenSafeString;
-});
-
-// 
-
-define('splunkjs/mvc/basemodel',['require','exports','module','backbone'],function(require, exports, module) {
-    var Backbone = require('backbone');
-
-    var BaseModel = Backbone.Model.extend({});
-    
-    return BaseModel;
 });
 
 define('splunkjs/mvc/tokenutils',['require','exports','module','underscore','./registry'],function(require, exports, module) {
@@ -14079,6 +14418,28 @@ define('splunkjs/mvc/tokenutils',['require','exports','module','underscore','./r
         u: ValueEscaper.url,
         s: ValueEscaper.search
     });
+    
+    // NOTE: The regular expressions here for parsing tokens should attempt to
+    //       be backward-compatible with the token parsing methods in
+    //       exposed/js/utils.js such as discoverReplacementTokens() and
+    //       replaceTokens().
+    
+    // ex: ns:
+    var TOKEN_NAMESPACE_PREFIX_PATTERN = /(\w+:)?/.source;
+    // ex: token.name|suh
+    var TOKEN_NAME_CHARS_PATTERN = /([^$|:]+?)(\|[suh]+)?/.source;
+    // ex: $ns:token.name|suh$
+    var TOKEN_PATTERN = /\$/.source + TOKEN_NAMESPACE_PREFIX_PATTERN + TOKEN_NAME_CHARS_PATTERN + /\$/.source;
+    
+    var TOKEN_OR_DOLLAR_RE = new RegExp(TOKEN_PATTERN + '|' + /\$\$/.source, 'g');
+    
+    /**
+     * Duplicates a RegExp literal so that it can be used safely for
+     * operations like test() that mutate the RegExp object.
+     */
+    var r = function(regexp) {
+        return new RegExp(regexp);
+    };
     
     /**
      * Contains utilities for processing template strings that can contain tokens.
@@ -14121,25 +14482,46 @@ define('splunkjs/mvc/tokenutils',['require','exports','module','underscore','./r
          *                          unqualified token references.
          *                          Defaults to 'default'.
          */
+        /*
+         * Private API:
+         * 
+         * @param options._isToken  If specified, alters return value to
+         *                          indicate whether the specified template
+         *                          string contains exactly one token
+         *                          (and nothing else).
+         */
         getTokens: function(searchTemplate, options) {
             options = options || {};
             var defaultTokenNamespace = options.tokenNamespace || 'default';
             
-            // Match tokens that appear at the beginning of the string
-            searchTemplate = "-" + searchTemplate;
-            
-            // Looks for: <no backslash> $ns:token.name|suh$ (token)
+            /*
+             * Looks for:
+             *     (1a) $$ (literal $)
+             *     (1b) $ns:token.name|suh$ (tokens)
+             */
             var tokens = [];
-            var rex = /[^\\]\$(\w+:)?([\w\.]+?)(\|[suh]+)?\$/g;
+            var rex = r(TOKEN_OR_DOLLAR_RE);
             while (true) {
                 var match = rex.exec(searchTemplate);
+                if (options._isToken) {
+                    return match && 
+                        (match.index === 0) &&
+                        (match[0].length === searchTemplate.length);
+                }
                 if (!match) {
                     break;
                 }
                 var tokenNamespace = match[1];
                 var tokenName = match[2];
                 
-                if (tokenNamespace === undefined) {
+                // NOTE: Some browsers return '' and others return undefined
+                //       when there is no match.
+                if (!tokenNamespace && !tokenName) {
+                    // Matched '$$'
+                    continue;
+                }
+                
+                if (!tokenNamespace) {
                     tokenNamespace = defaultTokenNamespace;
                 } else {
                     // Chop trailing ':'
@@ -14216,20 +14598,21 @@ define('splunkjs/mvc/tokenutils',['require','exports','module','underscore','./r
             
             /*
              * Looks for:
-             *     (1a) \\
-             *     (1b) \$
-             *     (2)  $ns:token.name|suh$ (tokens)
+             *     (1a) $$ (literal $)
+             *     (1b) $ns:token.name|suh$ (tokens)
              *
              * Replaces with:
-             *     (1a) \
-             *     (1b) $
-             *     (2)  <token value, after optional escaping>
+             *     (1a) $
+             *     (1b) <token value, after optional escaping>
              */
-            return str.replace(/\\([\\$])|\$(\w+:)?([\w\.]+?)(\|[suh]+)?\$/g, function (
-                match, literal, tokenNamespace, tokenName, esc)
+            return str.replace(r(TOKEN_OR_DOLLAR_RE), function (
+                match, tokenNamespace, tokenName, esc)
             {
-                if (literal) {
-                    return literal;
+                // NOTE: Some browsers return '' and others return undefined
+                //       when there is no match.
+                if (!tokenNamespace && !tokenName) {
+                    // Matched '$$'
+                    return '$';
                 }
                 
                 if (!tokenNamespace) {
@@ -14297,11 +14680,7 @@ define('splunkjs/mvc/tokenutils',['require','exports','module','underscore','./r
          *      TokenUtils.hasToken('$ns:fullName$') == true
          */
         hasToken: function(str) {
-            // Match tokens that appear at the beginning of the string
-            str = "-" + str;
-
-            // Looks for: <no backslash> $ns:token.name|suh$ (token)
-            return ( /[^\\]\$(\w+:)?([\w\.]+?)(\|[suh]+)?\$/g ).test(str);
+            return TokenUtils.getTokens(str).length > 0;
         },
         
         /**
@@ -14315,11 +14694,9 @@ define('splunkjs/mvc/tokenutils',['require','exports','module','underscore','./r
          *      TokenUtils.hasToken('$ns:fullName$') == false
          */
         hasTokenName: function(str) {
-            // Match tokens that appear at the beginning of the string
-            str = "-" + str;
-
-            // Looks for: <no backslash> $token.name|suh$ (token)
-            return ( /[^\\]\$([\w\.]+?)(\|[suh]+)?\$/g ).test(str);
+            return _.some(TokenUtils.getTokens(str), function(token) {
+                return token.namespace === 'default';
+            });
         },
         
         /**
@@ -14333,8 +14710,7 @@ define('splunkjs/mvc/tokenutils',['require','exports','module','underscore','./r
          *      TokenUtils.isToken('$ns:fullName$') == true
          */
         isToken: function(p) {
-            // Looks for exact match: $ns:token.name|suh$ (token)
-            return ( /^\$(\w+:)?([\w\.]+?)(\|[suh]+)?\$$/g ).test(p);
+            return TokenUtils.getTokens(p, {_isToken: true});
         },
         
         /**
@@ -14348,8 +14724,8 @@ define('splunkjs/mvc/tokenutils',['require','exports','module','underscore','./r
          *      TokenUtils.isToken('$ns:fullName$') == false
          */
         isTokenName: function(p) {
-            // Looks for exact match: $token.name|suh$ (token)
-            return ( /^\$([\w\.]+?)(\|[suh]+)?\$$/g ).test(p);
+            return TokenUtils.isToken(p) &&
+                TokenUtils.getTokens(p)[0].namespace === 'default';
         },
         
         /**
@@ -14372,17 +14748,17 @@ define('splunkjs/mvc/tokenutils',['require','exports','module','underscore','./r
          * Quotes a literal string as a template string.
          * 
          * Example:
-         *      TokenUtils.quoteAsTokenString('$1.00') == '\\$1.00'
-         *      TokenUtils.quoteAsTokenString('C:\Windows') == 'C:\\\\Windows'
+         *      TokenUtils.quoteAsTokenString('$1.00') == '$$1.00'
+         *      TokenUtils.quoteAsTokenString('C:\Windows') == 'C:\Windows'
          *      TokenUtils.quoteAsTokenString('identifier') == 'identifier'
          */
         quoteAsTokenString: function(literalStr) {
-            if (literalStr === undefined || literalStr === null) {
+            if (!_.isString(literalStr)) {
                 return literalStr;
             } else {
-                // Replaces \ and $ with \\ and \$ respectively
-                return literalStr.replace(/[\$\\]/g, function(match) {
-                    return "\\" + match;
+                // Replaces $ with $$
+                return literalStr.replace(/\$/g, function(match) {
+                    return '$$';
                 });
             }
         },
@@ -14423,7 +14799,8 @@ define('splunkjs/mvc/utils',['require','exports','module','underscore','jquery',
     });
 
     /**
-     * ModelSyncer - sync attributes between 2 models
+     * Syncs attributes between 2 models, including templates like "$token$".
+     * 
      * @param options {
      *      source: <Backbone.Model>
      *      dest: <Backbone.Model>
@@ -14436,11 +14813,6 @@ define('splunkjs/mvc/utils',['require','exports','module','underscore','jquery',
      */
     var ModelSyncer = function(options) {
         options = options || {};
-        
-        // By default template values (containing $tokens$) should be synced.
-        // Therefore if old code is trying to sync new-style TokenAwareModels,
-        // reinterpret the request to sync the templates instead of the
-        // replaced literal values.
 
         this.source = options.source;
         this.prefix = options.prefix||'';
@@ -14668,11 +15040,6 @@ define('splunkjs/mvc/utils',['require','exports','module','underscore','jquery',
             return TokenUtils.quoteAsTokenString(literalStr);
         },
         
-        // Deprecated - to be removed soon
-        bindModel: function() {
-            return Utils.syncModels.apply(Utils, arguments);
-        },
-        
         syncModels: function(src, dest, o) {
             var options = o;
             if(arguments.length == 1) {
@@ -14683,6 +15050,7 @@ define('splunkjs/mvc/utils',['require','exports','module','underscore','jquery',
             }
             return new ModelSyncer(options);
         },
+        
         redirect: function(url, newWindow, target) {
             if(newWindow) {
                 window.open(url, '_blank');
@@ -14695,103 +15063,6 @@ define('splunkjs/mvc/utils',['require','exports','module','underscore','jquery',
     };
 
     return Utils;
-});
-define('splunkjs/mvc/contextbound',['require','exports','module','underscore','./basemodel','./mvc','./utils'],function (require, exports, module) {
-    var _ = require('underscore');
-    var BaseModel = require('./basemodel');
-    var mvc = require('./mvc');
-    var utils = require('./utils');
-    
-    var TokenAwareModel = BaseModel.extend({
-        constructor: function(attributes, options) {
-            this._tokenAttributes = {};
-            this._tokenModel = (options && options.tokenModel) || mvc.Global;
-            this._originalSet = BaseModel.prototype.set;
-            this._originalDestroy = BaseModel.prototype.destroy;
-            this._tokenEscaper = (options && options.tokenEscape);
-            BaseModel.prototype.constructor.apply(this, arguments);
-        },
-        set: function (key, value, options) {
-            var attrs, attr, val;
-            if (_.isObject(key) || key == null) {
-                attrs = key;
-                options = value;
-            } else {
-                attrs = {};
-                attrs[key] = value;
-            }
-
-            var tokenAttrs = this._tokenAttributes, tokenModel = this._tokenModel, esc = this._tokenEscaper;
-
-            tokenModel.off(null, null, this);
-
-            _(attrs).each(function(v,k){
-                if(options && options.unset) {
-                    delete tokenAttrs[k];
-                } else {
-                    if(v && utils.hasToken(v)) {
-                        tokenAttrs[k] = v;
-                        attrs[k] = utils.replaceTokens(v, tokenModel.attributes, esc);
-                    } else {
-                        delete tokenAttrs[k];
-                    }
-                }
-            });
-            var origSet = this._originalSet || BaseModel.prototype.set, that = this;
-            _(tokenAttrs).each(function(tpl, k){
-                var tokens = _(utils.discoverReplacementTokens(tpl)).unique();
-                _(tokens).each(function(t) {
-
-                    tokenModel.on('change:' + t, function(){
-                        var v = utils.replaceTokens(tpl, tokenModel.attributes, esc);
-                        origSet.call(that, k, v);
-                    });
-
-                }, this);
-            }, this);
-
-            return origSet.call(this, attrs, options);
-        },
-        isSatisfied: function() {
-            return !utils.containsToken(this.toJSON());
-        },
-        destroy: function() {
-            this._tokenModel.off(null, null, this);
-            this._originalDestroy.apply(this, arguments);
-        }
-    });
-
-    // Mixes the token-replacement into an existing model
-    TokenAwareModel.wrap = function(model, tokenModel, escape) {
-        if(model._tokenAttributes) {
-            return model;
-        }
-        model._tokenAttributes = {};
-        model._tokenModel = tokenModel || mvc.Global;
-        model._originalSet = model.set;
-        model._originalDestroy = model.destroy;
-        model._tokenEscaper = escape;
-        model.set = TokenAwareModel.prototype.set;
-        model.isSatisfied = TokenAwareModel.prototype.isSatisfied;
-        // NOTE: Retroactive token replacement interferes with MVC's
-        //       TokenAwareModel when push properties (like 'value')
-        //       are being used. Therefore suppress this behavior when
-        //       both form and MVC token binding are in use simultaneously.
-        if (!model._isTokenAwareModel) {
-            // Replace token values that existed prior to the model being
-            // enabled for automatic token replacement
-            model.set(model.toJSON());
-        }
-        return model;
-    };
-
-    // Returns true if any of the values in the model contains a replacement-token
-    TokenAwareModel.checkForTokens = function(model){
-        return _(model.toJSON()).some(function(v){ return utils.hasToken(v); });
-    };
-
-    return TokenAwareModel;
-
 });
 (function() {
 
@@ -16347,7 +16618,7 @@ require.define("/lib/paths.js", function (require, module, exports, __dirname, _
         views: "data/ui/views",
         
         currentUser: "/services/authentication/current-context",
-        submitEvent: "receivers/simple"
+        submitEvent: "/services/receivers/simple"
     };
 })();
 
@@ -17030,7 +17301,7 @@ require.define("/lib/service.js", function (require, module, exports, __dirname,
         
         /**
          * Gets the `Views` collection, which lets you create,
-         * list, and retrieve views (custom UIs built in Splunk's app framework). 
+         * list, and retrieve views (custom UIs built in Splunk's app framework).
          *
          * @example
          *
@@ -20989,6 +21260,123 @@ define("splunkjs/splunk", ["jquery"], (function (global) {
     };
 }(this)));
 
+Splunk.namespace("Splunk.Error");
+Splunk.Error.PROPAGATE = true; //if error should propagate or not
+Splunk.Error.loggerMode = Splunk.Logger.mode.Server; //the desired Splunk.Logger.mode
+/**
+ * The Handler singleton provides a standard interface for handling all thrown exceptions.
+ * Dependency on splunk.js, logger.js
+ */
+Splunk.Error.Handler = new function(){
+    var self = this,
+        logger = Splunk.Logger.getLogger("Splunk.Error", Splunk.Error.loggerMode);
+    /**
+     * Interface for handling window.onerror events, first log it to standard logger, second re-throw the original exception if PROPAGATE set to true.
+     *
+     * @param {String} msg The error message
+     * @param {String} url The error source url
+     * @param {String} line The error line reference
+     */
+    self.onerror = function(message, fileName, lineNumber){
+        var output = format(message, fileName, lineNumber);
+        logger.error(output);
+        return !Splunk.Error.PROPAGATE; //return true to stop error propagation, false to allow propagation
+    };
+    /**
+     * Interface for throwing an error, first log it to standard logger, second re-throw the original exception if PROPAGATE set to true.
+     *
+     * @param {Error} error The error object caught
+     */
+    self.raise = function(error){
+        var output = format(error.message, error.fileName, error.lineNumber);
+        logger.error(output);
+        if(Splunk.Error.PROPAGATE){
+            throw error;
+        }
+    };
+    /**
+     * Format a logger message.
+     * 
+     * @param {String} message Human-readable description of the error.
+     * @param {String} fileName The name of the file containing the code that caused the exception.
+     * @param {Number} lineNumber The line number of the code that caused the exception.
+     */
+    var format = function(message, fileName, lineNumber){
+        return "lineNumber=" + lineNumber + ", message=" + message + ", fileName=" + fileName;
+    };
+    /**
+     * In Firefox if an error is thrown in an event handler attached using addEventListener
+     * it will not make it to the window.onerror handler, see: https://bugzilla.mozilla.org/show_bug.cgi?id=312448
+     * Override jQuery.fn.bind with a handler in a try/catch block.
+     *
+     * Note: This is currently broken, event exceptions in ff will not be caught.
+     */
+    var jQueryHandler = function(){
+        var bindCopy = jQuery.fn.bind;
+        jQuery.fn.bind = function(type, data, fn){
+            if(!fn && data && typeof(data)=='function'){
+                fn = data;
+                data = null;
+            }
+            if(fn){
+                var fnCopy = fn;
+                var handler = function(){
+                    try{
+                        fnCopy.apply(this, arguments);
+                    }catch(e){
+                        self.raise(e);
+                    }
+                };
+                fn = handler;
+            }
+            return bindCopy.call(this, type, data, fn);
+        };
+    };
+    /**
+     * Constructor for Handler interface
+     */   
+    self.Error = function(){
+        window.onerror = self.onerror; //use onerror instead of $(window).error( ... ) for proper stack trace, Webkit does not support window.onerror, see: https://bugs.webkit.org/show_bug.cgi?id=8519
+        //jQueryHandler();
+    }();
+};
+define("splunk.error", ["jquery","splunk","splunk.logger"], (function (global) {
+    return function () {
+        var ret, fn;
+        return ret || global.Splunk.Error;
+    };
+}(this)));
+
+define('util/ajax_logging',[
+            'jquery',
+            'underscore',
+            'splunk.logger'
+        ],
+        function(
+            $,
+            _,
+            SplunkLogger
+        ) {
+
+    var logger = SplunkLogger.getLogger('ajax_logging.js');
+
+    // black-list of AJAX URLs that should not be logged
+    var URL_BLACKLIST = [
+        SplunkLogger.mode.Server.END_POINT,
+        'services/messages'
+    ];
+
+    $.ajaxPrefilter(function(options, originalOptions, jqXHR) {
+        var passesBlacklist = _(URL_BLACKLIST).every(function(blacklistUrl) {
+            return options.url.indexOf(blacklistUrl) === -1;
+        });
+        if(passesBlacklist) {
+            logger.debug('sending AJAX request to ', options.url);
+            logger.trace();
+        }
+    });
+
+});
 require.config({
     shim: {
         "splunkjs/contrib/jquery.deparam": {
@@ -20998,7 +21386,7 @@ require.config({
     }
 });
 
-define('splunkjs/mvc/mvc',['require','exports','module','underscore','backbone','./registry','JS_CACHE/urlresolver','JS_CACHE/config','../contrib/jquery.deparam','./protections','./tokensafestring','./contextbound','./utils','splunkjs/splunk','util/console'],function(require, exports, module) {    
+define('splunkjs/mvc/mvc',['require','exports','module','underscore','backbone','./registry','JS_CACHE/urlresolver','JS_CACHE/config','../contrib/jquery.deparam','./protections','./tokenescapestring','./tokensafestring','./utils','splunkjs/splunk','util/console','splunk.config','splunk.error','util/ajax_logging'],function(require, exports, module) {    
     var _ = require("underscore");
     var Backbone = require("backbone");
     var Registry = require("./registry");
@@ -21006,17 +21394,20 @@ define('splunkjs/mvc/mvc',['require','exports','module','underscore','backbone',
     var config = require("JS_CACHE/config");
     var deparam = require("../contrib/jquery.deparam");
     var protections = require("./protections");
+    var TokenEscapeString = require("./tokenescapestring");
     var TokenSafeString = require("./tokensafestring");
-    var TokenAwareModel = require('./contextbound');
     var utils = require("./utils");
     var sdk = require("splunkjs/splunk");
     var console = require("util/console");
+    var splunkConfig = require('splunk.config');
+    
+    require('splunk.error');
+    require('util/ajax_logging');
 
     var DEBUG = false;
     
     var MVCConstructor = function(options) {
         this.Components = new Registry();
-        this.Global = new Backbone.Model();
         this.initialize.apply(this, arguments);
         this.STATIC_PREFIX = config.STATIC_URL;
     };
@@ -21033,10 +21424,6 @@ define('splunkjs/mvc/mvc',['require','exports','module','underscore','backbone',
             }
             
             window.location = path;
-        },
-
-        enableDynamicTokens: function(model, escape) {
-            return TokenAwareModel.wrap(model, this.Global, escape);
         },
 
         loadDebugger: function(callback) {
@@ -21079,6 +21466,7 @@ define('splunkjs/mvc/mvc',['require','exports','module','underscore','backbone',
             var http = options.http || new sdk.ProxyHttp(config.PROXY_PATH);
             options.version = options.version || "5.0";
             options.app = options.app || utils.getPageInfo().app || "-";
+            options.owner = options.owner || splunkConfig.USERNAME;
             
             return new sdk.Service(http, options);
         },
@@ -21161,20 +21549,49 @@ define('splunkjs/mvc/mvc',['require','exports','module','underscore','backbone',
          * Marks the specified bare string to be interpreted as a
          * template with token values.
          * 
-         * For example the value 'mvc.tokenSafe("$search$")' could be
-         * passed as the property value for a TokenAwareModel. If only
-         * the bare string "$search$" was passed instead, it would be
-         * interpreted as a literal string.
+         * Since the default interpretation of a bare string is to be
+         * treated as a literal string you must use mvc.tokenSafe() or
+         * a {tokens: true} option to mark strings that you wish to be
+         * interpreted as a template instead.
+         * 
+         * For example:
+         *      new SearchManager({
+         *          id: 'indexSize',
+         *          search: mvc.tokenSafe('index=$indexName$ | stats count')
+         *      });
          */
+        // Historical Note: The name of this function is inspired by
+        //                  Django's built-in 'safe' filter.
         tokenSafe: function(template) {
             return new TokenSafeString(template);
+        },
+        
+        /**
+         * Marks the specified bare string to be interpreted as a
+         * literal string.
+         * 
+         * Bare strings are interpreted as literals by default so
+         * this marking is only useful when a bare string is being
+         * passed in a context when the default interpretation is
+         * being overridden by a {tokens: true} option.
+         * 
+         * For example:
+         *      new SingleView({
+         *          id: 'costReport',
+         *          beforeLabel: mvc.tokenEscape('USD $'),
+         *          managerid: 'cost'
+         *      }, {tokens: true});
+         */
+        // Historical Note: The name of this function is inspired by
+        //                  Django's built-in 'escape' filter.
+        tokenEscape: function(literal) {
+            return new TokenEscapeString(literal);
         }
     });
 
-    // Bootstrap onto the 'splunkjs' object if one exists, or create a new
-    // one. 
-    // TOOD: what if one already exists with the '.mvc' namespace? Should
-    // we noConflict() it?
+    // Bootstrap onto the 'splunkjs' object if one exists, or create a new one.
+    // TODO: What if one already exists with the '.mvc' namespace?
+    //       Should we noConflict() it?
     if (!window.splunkjs) {
         window.splunkjs = {};
     }
@@ -30923,7 +31340,7 @@ define('highcharts.runtime_patches',['underscore'], function(_) {
     };
 
     /**
-     * Expose a post-hook for the setting of the axis tick positions
+     * Expose a hook for the setting of the axis tick positions
      *
      * @param Axis (Highcharts axis constructor)
      */
@@ -30931,6 +31348,9 @@ define('highcharts.runtime_patches',['underscore'], function(_) {
     var patchAxisSetTickPositions = function(Axis) {
         Axis.prototype.setTickPositions = _(Axis.prototype.setTickPositions).wrap(function(originalFn, secondPass) {
             var options = this.options;
+            if(typeof options.setTickPositionsPreHook === 'function') {
+                options.setTickPositionsPreHook(this, secondPass);
+            }
             originalFn.call(this, secondPass);
             if(typeof options.setTickPositionsPostHook === 'function') {
                 options.setTickPositionsPostHook(this, secondPass);
@@ -33876,18 +34296,24 @@ SVGRenderer.prototype = {
 	init: function (container, width, height, forExport) {
 		var renderer = this,
 			loc = location,
+			element,
 			boxWrapper;
 
 		boxWrapper = renderer.createElement('svg')
 			.attr({
-				xmlns: SVG_NS,
 				version: '1.1'
 			});
-		container.appendChild(boxWrapper.element);
+		element = boxWrapper.element;
+		container.appendChild(element);
+
+		// For browsers other than IE, add the namespace attribute (#1978)
+		if (container.innerHTML.indexOf('xmlns') === -1) {
+			attr(element, 'xmlns', SVG_NS);
+		}
 
 		// object properties
 		renderer.isSVG = true;
-		renderer.box = boxWrapper.element;
+		renderer.box = element;
 		renderer.boxWrapper = boxWrapper;
 		renderer.alignedObjects = [];
 		
@@ -46542,259 +46968,6 @@ define("splunk.legend", ["splunk"], (function (global) {
     };
 }(this)));
 
-
-Splunk.namespace("Splunk.Logger");
-/**
- * The getLogger factory provides a standard interface for implementing a logger program mode. Dependency on utils.js
- *
- * var logger = Splunk.Logger.getLogger("logger.js");
- * logger.info("This is a log message at ", new Date(), "showing a log!");
- *
- *
- * @param {String} fileName The name of the source file to log.
- * @param {Function} mode (Optional) The logging programming interface you wish to implement, defaults to Splunk.Logger.mode.Default if not defined.
- */
-Splunk.Logger.getLogger = function(fileName, mode){
-    var self;
-    mode = mode || Splunk.Logger.mode.Default;
-    try {
-        self = new (mode)(fileName);
-    }catch(err){
-        self = this;
-        throw(new Error("Splunk.Logger mode is undefined, not callable or thrown an exception. mode=" + mode + " and fileName=" + fileName + ". Check to make sure the mode you are defining exist (see: web.conf js_logger_mode) and is a proper closure. Stack trace:" + err));
-    }
-    return self;
-};
-
-/**
- * Exposes if a browser has firebug installed or not.
- *
- * @method hasFirebug
- * @return Boolean
- */
-Splunk.Logger.hasFirebug = function(){
-    return (typeof(console)!="undefined" && console.firebug)?true:false;
-};
-/**
- * Exposes if a browser has a window console object.
- *
- * @method hasConsole
- * @return Boolean
- */
-Splunk.Logger.hasConsole = function(){
-    return (typeof(console)!="undefined")?true:false;
-};
-/**
- * Object to store logger program mode.
- */
-Splunk.Logger.mode = {};
-/**
- * A mode logger program that does nothing.
- */
-Splunk.Logger.mode.None = function(){
-    var self = this;
-    self.info = self.log = self.debug = self.warn = self.error = self.trace = function(){};
-};
-/**
- * A mode logger program that calls a console object and a closure matching method if defined.
- */
-Splunk.Logger.mode.Firebug = function(fileName){    
-    var self = this;
-    var generateArguments = function(args){
-        var arr = [];
-        for(var i=0; i<args.length; i++){
-            arr.push(args[i]);
-        }
-        arr.push(fileName);
-        return arr;
-    };
-    var bindConsole = function(args, method){
-        args = generateArguments(args);
-        if(Splunk.Logger.hasConsole()){
-            method = console[method] || console.info || function(){};
-            //>=ie8 console object does not have an apply method (they are not instanceof functions!)
-            if(method.apply){
-                method.apply(console, args);
-            }else{
-                method(args.join(" "));
-            }
-        }
-    };
-
-    if (Splunk.Logger.hasFirebug() && console.firebug != '1.3.0') {
-        self.log = console.log;
-        self.info = console.info;
-        self.debug = console.debug;
-        self.warn = console.warn;
-        self.error = console.error;
-        self.trace = console.trace;
-    }
-    else {
-        self.info = function(){
-            bindConsole(arguments, "info");
-        };
-        self.log = function(){
-            bindConsole(arguments, "log");
-        };
-        self.debug = function(){
-            bindConsole(arguments, "debug");
-        };
-        self.warn = function(){
-            bindConsole(arguments, "warn");
-        };
-        self.error = function(){
-            bindConsole(arguments, "error");
-        };
-        self.trace = function(){
-            bindConsole(arguments, "trace");
-        };
-    }
-};
-/**
- * A mode logger program that implements logging to a server/splunk. Dependency on contrib/swfobject.js
- */
-Splunk.Logger.mode.Server = function(fileName){
-    var self = this,
-        buffer = Splunk.Logger.mode.Server.Buffer.getInstance();
-    /**
-     * Formats a console call and pushes it to buffer.
-     *
-     * @method bufferPush
-     * @param {arguments} args The arguments object from the original closure handler.
-     * @param {String} level The console level called.
-     */
-    var bufferPush = function(args, level){
-        var message = Array.apply(null, args).join(" ");
-        var data = {level: level, 'class': fileName, message: message};
-        buffer.push(data);
-    };
-    /**
-     * The handlers for (new Splunk.Logger(fileName, [mode]))[level](arguments) calls.
-     */
-    self.info = function(){
-        bufferPush(arguments, "info");
-    };
-    self.log = function(){
-        bufferPush(arguments, "log");
-    };
-    self.debug = function(){
-        bufferPush(arguments, "debug");
-    };
-    self.warn = function(){
-        bufferPush(arguments, "warn");
-    };
-    self.error = function(){
-        bufferPush(arguments, "error");
-    };
-    self.trace = function(){
-        bufferPush(arguments, "trace");
-    };
-};
-/**
- * A buffer class to take care of purging and posting of logged messages.
- */
-Splunk.Logger.mode.Server.Buffer = function(){
-    var self = this,
-        thread,
-        buffer = [];
-    /**
-     * Posts buffer asynchronously to Splunk.Logger.Mode.Server.END_POINT,
-     *
-     * @method serverPost
-     */
-    var serverPost = function(){
-        var data = JSON.stringify(buffer);
-        $.post(Splunk.Logger.mode.Server.END_POINT, {"data":data});
-    };
-    /**
-     * Posts and purges the existing buffer.
-     *
-     * @method purge
-     */
-    var purge = function(){
-        serverPost();
-        buffer = [];
-    };
-    /**
-     * Checks the buffer, posts and purges if necessary.
-     *
-     * @method check
-     */
-    var check = function(){
-        if(buffer.length>Splunk.Logger.mode.Server.MAX_BUFFER){
-            purge();
-        }
-    };
-    self.push = function(str){
-        buffer.push(str);
-        check();
-    };
-    /**
-     * Checks the buffer at set interval and posts and purges if data exists.
-     *
-     * @method poller
-     */
-    self.poller = function(){
-        if(buffer.length>0){
-            purge();
-        }
-    };
-    self.size = function(){
-        return buffer.length;
-    };
-    self.Buffer = function(){
-        thread = setInterval(self.poller, Splunk.Logger.mode.Server.POLL_BUFFER);
-    }();
-};
-Splunk.Logger.mode.Server.Buffer.instance = null;
-/**
- * Singleton reference to a shared buffer.
- *
- * @method getInstance
- */
-Splunk.Logger.mode.Server.Buffer.getInstance = function(){
-    if(Splunk.Logger.mode.Server.Buffer.instance==null){
-        Splunk.Logger.mode.Server.Buffer.instance = new Splunk.Logger.mode.Server.Buffer();
-    }
-    return Splunk.Logger.mode.Server.Buffer.instance;
-};
-Splunk.Logger.mode.Server.END_POINT = Splunk.util.make_url(Splunk.util.getConfigValue("JS_LOGGER_MODE_SERVER_END_POINT", "util/log/js"));
-Splunk.Logger.mode.Server.POLL_BUFFER = Splunk.util.getConfigValue("JS_LOGGER_MODE_SERVER_POLL_BUFFER", 1000);
-Splunk.Logger.mode.Server.MAX_BUFFER = Splunk.util.getConfigValue("JS_LOGGER_MODE_SERVER_MAX_BUFFER", 100);
-/**
- * The default system mode logger program, see web.conf js_logger_mode.
- */
-Splunk.Logger.mode.Default = Splunk.Logger.mode[Splunk.util.getConfigValue("JS_LOGGER_MODE", "None")];
-/**
- * Legacy Splunk.log compatibility
- */
-Splunk.log = function(msg, category, src){
-    Splunk.Logger.getLogger("logger.js").warn("WARNING! Splunk.log is now deprecated. See Splunk.Logger class for more details.", "Original Message:", msg, " Original Category:", category, "Original Source:", src);
-};
-/**
- * Legacy Backwards compatibility with 3.X
- */
-var D = {};
-D.logger = Splunk.Logger.getLogger("logger.js");
-D.wrapper = function(str, level){
-    D.logger.warn("WARNING! D.", level, "is now deprecated. See Splunk.Logger class for more details.", str);
-};
-D.debug = function(str){D.wrapper(str, "debug");};
-D.error = function(str){D.wrapper(str, "error");};
-D.warn = function(str){D.wrapper(str, "warn");};
-/**
- * Augment util.logger to standard logger.
- */
-Splunk.util.logger = Splunk.Logger.getLogger("util.js");
-
-
-define("splunk.logger", ["splunk","splunk.util"], (function (global) {
-    return function () {
-        var ret, fn;
-        return ret || global.Splunk.Logger;
-    };
-}(this)));
-
 /**
  * Cookie plugin
  *
@@ -46937,7 +47110,7 @@ define("jquery.cookie", ["jquery"], function(){});
 $(function(){
    
     var HEADER_NAME = 'X-Splunk-Form-Key';
-    var FORM_KEY = Splunk.util.getConfigValue('FORM_KEY');
+    var FORM_KEY = Splunk.util.getFormKey();
 
     if (jQuery && jQuery.cookie) {
         $.ajaxPrefilter(function(options, originalOptions, jqXHR) {
@@ -47132,6 +47305,1211 @@ define("splunk.print", ["jquery","lowpro","splunk","splunk.logger"], (function (
     return function () {
         var ret, fn;
         return ret || global.Splunk.Print;
+    };
+}(this)));
+
+define('uri/route',
+    ['underscore', 'splunk.util'],
+    function(_, splunkutil) {
+    var exports = {};
+    exports.encodeRoot = function(path, locale) {
+        var parts = _.map((path || '').split('/'), function(part) {
+            return encodeURIComponent(part);
+        });
+        path = parts.join('/');
+        path = path ? '/' + path : path;
+        return path + '/' + encodeURIComponent(locale);
+    };
+    exports.staticFile = function(root, locale, version, file) {
+        return exports.encodeRoot(root,  locale)  + '/static/' + version + '/' + file;
+    };
+    exports.img = function(root, locale, version, file) {
+        return exports.staticFile(root, locale, version, 'img/' + file);  
+    };
+    exports.page = function(root, locale, app, page, options) {
+        if(typeof page === 'undefined'){
+            page = '';
+        }
+        var url = exports.encodeRoot(root, locale) + '/app/' + encodeURIComponent(app);
+            if (_.isArray(page)) {
+            _.each(page, function(dir) {
+                url += '/' + encodeURIComponent(dir);
+            });
+        } else {
+            url += '/' + encodeURIComponent(page);
+        }
+        if (options) {
+            if (options.data) {
+                url = url + '?' + splunkutil.propToQueryString(options.data);
+            }
+            if (options.absolute) {
+                url = window.location.protocol + "//" + window.location.host + url;
+            }
+        }
+        return url;
+    };
+    exports.appIcon = function(root, locale, owner, app, options){
+        var size = '';
+        if(window && window.devicePixelRatio > 1){
+            size = '_2x';
+        }
+        return exports.splunkdNS(root, locale, owner, app, 'static/appIcon'+size+'.png', options);
+    };
+    exports.appIconAlt = function(root, locale, owner, app, options){
+        var size = '';
+        if(window && window.devicePixelRatio > 1){
+            size = '_2x';
+        }
+        return exports.splunkdNS(root, locale, owner, app, 'static/appIconAlt'+size+'.png', options);
+    };
+    exports.appLogo = function(root, locale, owner, app, options){
+        var size = '';
+        if(window && window.devicePixelRatio > 1){
+            size = '_2x';
+        }
+        return exports.splunkdNS(root, locale, owner, app, 'static/appLogo'+size+'.png', options);
+    };
+    exports.splunkdNS = function(root, locale, owner, app, page, options){
+        var url = exports.encodeRoot(root, locale) + '/splunkd/__raw/servicesNS/' + owner + '/' + app + '/' + page;
+        return url;
+    };
+    exports.data_models = function(root, locale, app, options) {
+        return exports.page(root, locale, app, 'data_models', options);
+    };
+    exports.data_model_explorer = function(root, locale, app, options) {
+        return exports.page(root, locale, app, 'data_model_explorer', options);
+    };
+    exports.pivot = function(root, locale, app, options) {
+        return exports.page(root, locale, app, 'pivot', options);
+    };
+    exports.data_model_manager = function(root, locale, app, options) {
+        return exports.page(root, locale, app, 'data_model_manager', options);
+    };
+    exports.data_model_editor = function(root, locale, app, options) {
+        return exports.page(root, locale, app, 'data_model_editor', options);
+    };
+    exports.search = function(root, locale, app, options) {
+        return exports.page(root, locale, app, 'search', options);
+    };
+    exports.report = function(root, locale, app, options) {
+        return exports.page(root, locale, app, 'report', options);
+    };
+    exports.reports = function(root, locale, app, options) {
+        return exports.page(root, locale, app, 'reports', options);
+    };
+    exports.alert = function(root, locale, app, options) {
+        return exports.page(root, locale, app, 'alert', options);
+    };
+    exports.alerts = function(root, locale, app, options) {
+        return exports.page(root, locale, app, 'alerts', options);
+    };
+    exports.editDashboard = function(root, locale, app, name, options) {
+        return exports.page(root, locale, app, [name, 'edit'], options);
+    };
+    exports.logout = function(root, locale) {
+        return exports.encodeRoot(root, locale) + '/account/logout';
+    };
+    exports.jobInspector = function(root, locale, app, sid) {
+        var data = {
+            sid: sid,
+            namespace: app
+        };
+        return exports.encodeRoot(root, locale) + '/search/inspector' + '?' + splunkutil.propToQueryString(data);
+    };
+    exports.ifx = function(root, locale, app, sid, offset) {
+        var data = {
+            sid: sid,
+            namespace: app,
+            offset: offset
+        };
+        return exports.encodeRoot(root, locale) + '/ifx' + '?' + splunkutil.propToQueryString(data);
+    };
+    exports.manager = function(root, locale, app, page, options) {
+        var url =  exports.encodeRoot(root, locale) + '/manager/' + encodeURIComponent(app);
+        if (_.isArray(page)) {
+            _.each(page, function(dir) {
+                url += '/' + encodeURIComponent(dir);
+            });
+        } else {
+            url += '/' + encodeURIComponent(page);
+        }
+        if (options) {
+            if (options.data) {
+                url = url + '?' + splunkutil.propToQueryString(options.data);
+            }
+        }
+        return url;
+    };
+    exports.managerEdit = function(root, locale, app, page, id, options) {
+        options = options || {};
+        options = $.extend(true, {data: {action: 'edit', uri: id}}, options);
+        return exports.manager(root, locale, app, page, options);
+    };
+    exports.triggeredAlerts = function(root, locale, app, options) {
+        var url = exports.encodeRoot(root, locale) + '/alerts/' + encodeURIComponent(app);
+        if (options) {
+            if (options.data) {
+                url = url + '?' + splunkutil.propToQueryString(options.data);
+            }
+        }
+        return url;
+    };
+    exports.docSearch = function(locale, version, isFree, isTrial, search) {
+        var base = 'http://docs.splunk.com/Special:SplunkSearch/docs',
+            params = {
+                locale: locale,
+                versionNumber: version,
+                license: isFree ? 'free' : 'pro',
+                installType: isTrial ? 'trial' : 'prod',
+                q: search
+            };
+        return base + '?' + splunkutil.propToQueryString(params);
+    };
+    exports.docHelp = function(root, locale, location) {
+        var url = exports.encodeRoot(root, locale) + '/help',
+            params = {
+                location: location
+            };
+        return url + '?' + splunkutil.propToQueryString(params);
+    };
+    exports.docHelpInAppContext = function(root, locale, location, appName, appVersion, appAllowsDisable, appDocSectionOverride) {
+        var url = exports.encodeRoot(root, locale) + '/help',
+            params = {
+                location: location
+            };
+            if (appAllowsDisable) {
+                if (appDocSectionOverride) {
+                    params.location = '[' + appDocSectionOverride + ']' + params.location;
+                } else {
+                    params.location = '[' + appName + ':' + appVersion + ']' + params.location;
+                }
+            }
+        return url + '?' + splunkutil.propToQueryString(params);
+    };
+    exports.exportUrl = function(root, locale, sid, filename, format, limit, maxResults, count, isReport, options) {
+        options = options || {};
+        var resultType = isReport ? 'results' : 'event';
+        var url = exports.encodeRoot(root, locale) + '/api/search/jobs/' + encodeURIComponent(sid) + '/' + resultType;
+        var params = {
+            isDownload: true,
+            timeFormat: options.timeFormat || '%FT%T.%Q%:z',
+            maxLines: 0,
+            count: count,
+            filename: filename || '',
+            outputMode: format,
+            'spl_ctrl-limit': limit,
+            'spl_ctrl-count': maxResults
+        };
+        url += '?' + splunkutil.propToQueryString(params);
+        return url;
+    };
+    exports.getContextualPageRouter = function(applicationModel) {
+        var root = applicationModel.get('root'),
+            locale = applicationModel.get('locale'),
+            app = applicationModel.get('app'),
+            nonPageMethods = ['page', 'docSearch', 'docHelp', 'docHelpInAppContext', 'exportUrl', 'exportUrl', 'getContextualPageRouter', 'pageStart', 'encodeRoot'],
+            routeNames = _(exports).chain().functions().difference(nonPageMethods),
+            router = {};
+
+        _(routeNames).each(function(route) {
+            var routeFn = exports[route];
+            router[route] = function() {
+                var fullArgs = [root, locale, app].concat(_(arguments).toArray());
+                return routeFn.apply(null, fullArgs);
+            };
+        });
+        return router;
+    };
+    exports.appNavUrl = function(root, locale, app){
+        return exports.encodeRoot(root,  locale)  + '/appnav/' + (app || '');
+    };
+    exports.viewStrings = function(root, locale, app, view){
+        return exports.page(root, locale, app, view) + "/strings";
+    };
+    return exports;
+});
+
+define('util/beacon',['jquery', 'uri/route', 'splunk.util'], function($, route, splunkutil) {
+    var exports = {
+        ping: function(root, locale, params) {
+            params || (params = {});
+            var path = route.img(root, locale, '@' + Math.random(), 'beacon.gif'),
+                img = new Image(),
+                defaults = {
+                    client_time: (new Date).getTime()
+                };
+            img.src = path + '?' + splunkutil.propToQueryString($.extend(true, {}, defaults, params || {}));
+        }
+    };
+    return exports;
+});
+define('util/dom_utils',
+    [],
+    function() {
+        
+        //see: http://stackoverflow.com/questions/512528/set-cursor-position-in-html-textbox
+        //submission by mcpDESIGNS
+        var setCaretPosition = function(el, caretPos) {            
+            el.value = el.value;
+            // ^ this is used to not only get "focus", but
+            // to make sure we don't have it everything -selected-
+            // (it causes an issue in chrome, and having it doesn't hurt any other browser)
+
+            if (el !== null) {
+                if (el.createTextRange) {
+                    var range = el.createTextRange();
+                    range.move('character', caretPos);
+                    range.select();
+                    return true;
+                } else {
+                    // (el.selectionStart === 0 added for Firefox bug)
+                    if (el.setSelectionRange && (el.selectionStart || el.selectionStart === 0)) {
+                        el.focus();
+                        el.setSelectionRange(caretPos, caretPos);
+                        return true;
+                    } else { // fail city, fortunately this never happens (as far as I've tested) :)
+                        el.focus();
+                        return false;
+                    }
+                }
+            }
+        };
+        
+        //see: http://stackoverflow.com/questions/2897155/get-cursor-position-within-an-text-input-field
+        //sbumission by Max
+        var getCaretPosition = function(el) {
+            var caretPos, selection;
+
+            if (el.selectionStart || el.selectionStart === 0) {
+                caretPos = el.selectionStart;
+            } else if (document.selection) {
+                // IE Support
+                el.focus();
+                selection = document.selection.createRange();
+                selection.moveStart('character', -el.value.length);
+                caretPos = selection.text.length;
+            }
+            
+            return caretPos;
+        };
+        
+        return {
+            setCaretPosition: setCaretPosition,
+            getCaretPosition: getCaretPosition
+        };        
+    }
+);
+///////////////////////////////////////////////////////////////////////////////
+// Provides common popup window/dialogs
+///////////////////////////////////////////////////////////////////////////////
+
+
+Splunk.window = {
+    
+    /**
+     * Meant to be a sane wrapper to the insane world of window.open.
+     * This should probably just be merged with this.popup. Get popup's centering goodness
+     * and open's options management, safer focus call.
+     *
+     * Be default, calling this method opens a new window with the same width and height as
+     * the calling window.  It also centers the new window on the user's screen.
+     * To change the width and height of the new window set 'width' and 'height' values to
+     * the passed in options object.  To change the position of the new window, set 'top'
+     * and 'left' in the passed in options parameter.
+     *
+     * @param uri {String} path to the new window object.
+     * @param name {String} name of the new window object.
+     * @param args {Object} dictionary of key / value pairs used to manage the window's options.
+     */
+    open: function(uri, name, options) {
+
+        // Set defaults
+        options = $.extend({
+            resizable: true,
+            scrollbars: true,
+            toolbar: true,
+            location: true,
+            menubar: true,
+            width: $(window).width(),
+            height: $(window).height()
+        }, options);
+
+        if (!options['top']) options['top'] = Math.max(0, screen.availHeight/2 - options['height']/2);
+        if (!options['left']) options['left'] = Math.max(0, screen.availWidth/2 - options['width']/2);
+        options['screenX'] = options['left'];
+        options['screenY'] = options['top'];
+
+        var compiled_options = [];
+        for (var key in options) {
+            if (options[key] === true) options[key] = 'yes';
+            if (options[key] === false) options[key] = 'no';
+            compiled_options.push(key + '=' + options[key]);
+        }
+
+        name = 'w' + name.replace(/[^a-zA-Z 0-9]+/g,'');
+        
+        var newWindow = window.open(uri, name, compiled_options.join(','));
+        if (newWindow && newWindow.focus) newWindow.focus();
+        return newWindow;
+    },
+    
+    /**
+     * Opens the job manager as a popup window
+     */
+    openJobManager: function(getArgs) {
+        var app = Splunk.util.getCurrentApp();
+        if (app == "UNKNOWN_APP") app = "search";
+        var url = Splunk.util.make_url('app', app, 'job_management');
+        if (getArgs) url += "?" + Splunk.util.propToQueryString(getArgs);
+        var spawnedWindow = this.open(
+            url, 
+            'splunk_job_manager',
+            {
+                width: 900,
+                height: 600,
+                'menubar': false
+            }
+        );
+        return spawnedWindow;
+    },
+    
+    openAerts: function(href) {
+        return this.open(href, 'splunk_alerts', {width: 900, height: 600, 'menubar': false});
+    },
+    
+    openJobInspector: function(sid) {
+        var url = Splunk.util.make_url('search', 'inspector');
+        
+        if (!sid) {
+            alert(_('Cannot open job inspector; no search job ID provided!'));
+            return false;
+        }
+        
+        var getArgs = {
+            sid: sid,
+            namespace: Splunk.util.getCurrentApp()
+        };
+        url += "?" + Splunk.util.propToQueryString(getArgs);
+        //set width and height slightly less than openJobManager so when open on top of job manager the window can be easily identified
+        var spawnedWindow = this.open(
+            url, 
+            'splunk_job_inspector',
+            {
+                width: 870, 
+                height: 560,
+                'menubar': false
+            }
+        );
+        return spawnedWindow;
+    }
+    
+};
+define("splunk.window", ["splunk","splunk.util","splunk.i18n"], (function (global) {
+    return function () {
+        var ret, fn;
+        return ret || global.Splunk.window;
+    };
+}(this)));
+
+/*	SWFObject v2.2 beta1 <http://code.google.com/p/swfobject/> 
+	is released under the MIT License <http://www.opensource.org/licenses/mit-license.php> 
+*/
+var swfobject=function(){var D="undefined",r="object",S="Shockwave Flash",W="ShockwaveFlash.ShockwaveFlash",q="application/x-shockwave-flash",R="SWFObjectExprInst",x="onreadystatechange",O=window,j=document,t=navigator,T=false,U=[h],o=[],N=[],I=[],l,Q,E,B,J=false,a=false,n,G,m=true,M=function(){var aa=typeof j.getElementById!=D&&typeof j.getElementsByTagName!=D&&typeof j.createElement!=D,ah=t.userAgent.toLowerCase(),Y=t.platform.toLowerCase(),ae=Y?/win/.test(Y):/win/.test(ah),ac=Y?/mac/.test(Y):/mac/.test(ah),af=/webkit/.test(ah)?parseFloat(ah.replace(/^.*webkit\/(\d+(\.\d+)?).*$/,"$1")):false,X=!+"\v1",ag=[0,0,0],ab=null;if(typeof t.plugins!=D&&typeof t.plugins[S]==r){ab=t.plugins[S].description;if(ab&&!(typeof t.mimeTypes!=D&&t.mimeTypes[q]&&!t.mimeTypes[q].enabledPlugin)){T=true;X=false;ab=ab.replace(/^.*\s+(\S+\s+\S+$)/,"$1");ag[0]=parseInt(ab.replace(/^(.*)\..*$/,"$1"),10);ag[1]=parseInt(ab.replace(/^.*\.(.*)\s.*$/,"$1"),10);ag[2]=/[a-zA-Z]/.test(ab)?parseInt(ab.replace(/^.*[a-zA-Z]+(.*)$/,"$1"),10):0}}else{if(typeof O.ActiveXObject!=D){try{var ad=new ActiveXObject(W);if(ad){ab=ad.GetVariable("$version");if(ab){X=true;ab=ab.split(" ")[1].split(",");ag=[parseInt(ab[0],10),parseInt(ab[1],10),parseInt(ab[2],10)]}}}catch(Z){}}}return{w3:aa,pv:ag,wk:af,ie:X,win:ae,mac:ac}}(),k=function(){if(!M.w3){return}if((typeof j.readyState!=D&&j.readyState=="complete")||(typeof j.readyState==D&&(j.getElementsByTagName("body")[0]||j.body))){f()}if(!J){if(typeof j.addEventListener!=D){j.addEventListener("DOMContentLoaded",f,false)}if(M.ie&&M.win){j.attachEvent(x,function(){if(j.readyState=="complete"){j.detachEvent(x,arguments.callee);f()}});if(O==top){(function(){if(J){return}try{j.documentElement.doScroll("left")}catch(X){setTimeout(arguments.callee,0);return}f()})()}}if(M.wk){(function(){if(J){return}if(!/loaded|complete/.test(j.readyState)){setTimeout(arguments.callee,0);return}f()})()}s(f)}}();function f(){if(J){return}try{var Z=j.getElementsByTagName("body")[0].appendChild(C("span"));Z.parentNode.removeChild(Z)}catch(aa){return}J=true;var X=U.length;for(var Y=0;Y<X;Y++){U[Y]()}}function K(X){if(J){X()}else{U[U.length]=X}}function s(Y){if(typeof O.addEventListener!=D){O.addEventListener("load",Y,false)}else{if(typeof j.addEventListener!=D){j.addEventListener("load",Y,false)}else{if(typeof O.attachEvent!=D){i(O,"onload",Y)}else{if(typeof O.onload=="function"){var X=O.onload;O.onload=function(){X();Y()}}else{O.onload=Y}}}}}function h(){if(T){V()}else{H()}}function V(){var X=j.getElementsByTagName("body")[0];var aa=C(r);aa.setAttribute("type",q);var Z=X.appendChild(aa);if(Z){var Y=0;(function(){if(typeof Z.GetVariable!=D){var ab=Z.GetVariable("$version");if(ab){ab=ab.split(" ")[1].split(",");M.pv=[parseInt(ab[0],10),parseInt(ab[1],10),parseInt(ab[2],10)]}}else{if(Y<10){Y++;setTimeout(arguments.callee,10);return}}X.removeChild(aa);Z=null;H()})()}else{H()}}function H(){var ag=o.length;if(ag>0){for(var af=0;af<ag;af++){var Y=o[af].id;var ab=o[af].callbackFn;var aa={success:false,id:Y};if(M.pv[0]>0){var ae=c(Y);if(ae){if(F(o[af].swfVersion)&&!(M.wk&&M.wk<312)){w(Y,true);if(ab){aa.success=true;aa.ref=z(Y);ab(aa)}}else{if(o[af].expressInstall&&A()){var ai={};ai.data=o[af].expressInstall;ai.width=ae.getAttribute("width")||"0";ai.height=ae.getAttribute("height")||"0";if(ae.getAttribute("class")){ai.styleclass=ae.getAttribute("class")}if(ae.getAttribute("align")){ai.align=ae.getAttribute("align")}var ah={};var X=ae.getElementsByTagName("param");var ac=X.length;for(var ad=0;ad<ac;ad++){if(X[ad].getAttribute("name").toLowerCase()!="movie"){ah[X[ad].getAttribute("name")]=X[ad].getAttribute("value")}}P(ai,ah,Y,ab)}else{p(ae);if(ab){ab(aa)}}}}}else{w(Y,true);if(ab){var Z=z(Y);if(Z&&typeof Z.SetVariable!=D){aa.success=true;aa.ref=Z}ab(aa)}}}}}function z(aa){var X=null;var Y=c(aa);if(Y&&Y.nodeName=="OBJECT"){if(typeof Y.SetVariable!=D){X=Y}else{var Z=Y.getElementsByTagName(r)[0];if(Z){X=Z}}}return X}function A(){return !a&&F("6.0.65")&&(M.win||M.mac)&&!(M.wk&&M.wk<312)}function P(aa,ab,X,Z){a=true;E=Z||null;B={success:false,id:X};var ae=c(X);if(ae){if(ae.nodeName=="OBJECT"){l=g(ae);Q=null}else{l=ae;Q=X}aa.id=R;if(typeof aa.width==D||(!/%$/.test(aa.width)&&parseInt(aa.width,10)<310)){aa.width="310"}if(typeof aa.height==D||(!/%$/.test(aa.height)&&parseInt(aa.height,10)<137)){aa.height="137"}j.title=j.title.slice(0,47)+" - Flash Player Installation";var ad=M.ie&&M.win?"ActiveX":"PlugIn",ac="MMredirectURL="+O.location.toString().replace(/&/g,"%26")+"&MMplayerType="+ad+"&MMdoctitle="+j.title;if(typeof ab.flashvars!=D){ab.flashvars+="&"+ac}else{ab.flashvars=ac}if(M.ie&&M.win&&ae.readyState!=4){var Y=C("div");X+="SWFObjectNew";Y.setAttribute("id",X);ae.parentNode.insertBefore(Y,ae);ae.style.display="none";(function(){if(ae.readyState==4){ae.parentNode.removeChild(ae)}else{setTimeout(arguments.callee,10)}})()}u(aa,ab,X)}}function p(Y){if(M.ie&&M.win&&Y.readyState!=4){var X=C("div");Y.parentNode.insertBefore(X,Y);X.parentNode.replaceChild(g(Y),X);Y.style.display="none";(function(){if(Y.readyState==4){Y.parentNode.removeChild(Y)}else{setTimeout(arguments.callee,10)}})()}else{Y.parentNode.replaceChild(g(Y),Y)}}function g(ab){var aa=C("div");if(M.win&&M.ie){aa.innerHTML=ab.innerHTML}else{var Y=ab.getElementsByTagName(r)[0];if(Y){var ad=Y.childNodes;if(ad){var X=ad.length;for(var Z=0;Z<X;Z++){if(!(ad[Z].nodeType==1&&ad[Z].nodeName=="PARAM")&&!(ad[Z].nodeType==8)){aa.appendChild(ad[Z].cloneNode(true))}}}}}return aa}function u(ai,ag,Y){var X,aa=c(Y);if(M.wk&&M.wk<312){return X}if(aa){if(typeof ai.id==D){ai.id=Y}if(M.ie&&M.win){var ah="";for(var ae in ai){if(ai[ae]!=Object.prototype[ae]){if(ae.toLowerCase()=="data"){ag.movie=ai[ae]}else{if(ae.toLowerCase()=="styleclass"){ah+=' class="'+ai[ae]+'"'}else{if(ae.toLowerCase()!="classid"){ah+=" "+ae+'="'+ai[ae]+'"'}}}}}var af="";for(var ad in ag){if(ag[ad]!=Object.prototype[ad]){af+='<param name="'+ad+'" value="'+ag[ad]+'" />'}}aa.outerHTML='<object classid="clsid:D27CDB6E-AE6D-11cf-96B8-444553540000"'+ah+">"+af+"</object>";N[N.length]=ai.id;X=c(ai.id)}else{var Z=C(r);Z.setAttribute("type",q);for(var ac in ai){if(ai[ac]!=Object.prototype[ac]){if(ac.toLowerCase()=="styleclass"){Z.setAttribute("class",ai[ac])}else{if(ac.toLowerCase()!="classid"){Z.setAttribute(ac,ai[ac])}}}}for(var ab in ag){if(ag[ab]!=Object.prototype[ab]&&ab.toLowerCase()!="movie"){e(Z,ab,ag[ab])}}aa.parentNode.replaceChild(Z,aa);X=Z}}return X}function e(Z,X,Y){var aa=C("param");aa.setAttribute("name",X);aa.setAttribute("value",Y);Z.appendChild(aa)}function y(Y){var X=c(Y);if(X&&X.nodeName=="OBJECT"){if(M.ie&&M.win){X.style.display="none";(function(){if(X.readyState==4){b(Y)}else{setTimeout(arguments.callee,10)}})()}else{X.parentNode.removeChild(X)}}}function b(Z){var Y=c(Z);if(Y){for(var X in Y){if(typeof Y[X]=="function"){Y[X]=null}}Y.parentNode.removeChild(Y)}}function c(Z){var X=null;try{X=j.getElementById(Z)}catch(Y){}return X}function C(X){return j.createElement(X)}function i(Z,X,Y){Z.attachEvent(X,Y);I[I.length]=[Z,X,Y]}function F(Z){var Y=M.pv,X=Z.split(".");X[0]=parseInt(X[0],10);X[1]=parseInt(X[1],10)||0;X[2]=parseInt(X[2],10)||0;return(Y[0]>X[0]||(Y[0]==X[0]&&Y[1]>X[1])||(Y[0]==X[0]&&Y[1]==X[1]&&Y[2]>=X[2]))?true:false}function v(ac,Y,ad,ab){if(M.ie&&M.mac){return}var aa=j.getElementsByTagName("head")[0];if(!aa){return}var X=(ad&&typeof ad=="string")?ad:"screen";if(ab){n=null;G=null}if(!n||G!=X){var Z=C("style");Z.setAttribute("type","text/css");Z.setAttribute("media",X);n=aa.appendChild(Z);if(M.ie&&M.win&&typeof j.styleSheets!=D&&j.styleSheets.length>0){n=j.styleSheets[j.styleSheets.length-1]}G=X}if(M.ie&&M.win){if(n&&typeof n.addRule==r){n.addRule(ac,Y)}}else{if(n&&typeof j.createTextNode!=D){n.appendChild(j.createTextNode(ac+" {"+Y+"}"))}}}function w(Z,X){if(!m){return}var Y=X?"visible":"hidden";if(J&&c(Z)){c(Z).style.visibility=Y}else{v("#"+Z,"visibility:"+Y)}}function L(Y){var Z=/[\\\"<>\.;]/;var X=Z.exec(Y)!=null;return X&&typeof encodeURIComponent!=D?encodeURIComponent(Y):Y}var d=function(){if(M.ie&&M.win){window.attachEvent("onunload",function(){var ac=I.length;for(var ab=0;ab<ac;ab++){I[ab][0].detachEvent(I[ab][1],I[ab][2])}var Z=N.length;for(var aa=0;aa<Z;aa++){y(N[aa])}for(var Y in M){M[Y]=null}M=null;for(var X in swfobject){swfobject[X]=null}swfobject=null})}}();return{registerObject:function(ab,X,aa,Z){if(M.w3&&ab&&X){var Y={};Y.id=ab;Y.swfVersion=X;Y.expressInstall=aa;Y.callbackFn=Z;o[o.length]=Y;w(ab,false)}else{if(Z){Z({success:false,id:ab})}}},getObjectById:function(X){if(M.w3){return z(X)}},embedSWF:function(ab,ah,ae,ag,Y,aa,Z,ad,af,ac){var X={success:false,id:ah};if(M.w3&&!(M.wk&&M.wk<312)&&ab&&ah&&ae&&ag&&Y){w(ah,false);K(function(){ae+="";ag+="";var aj={};if(af&&typeof af===r){for(var al in af){aj[al]=af[al]}}aj.data=ab;aj.width=ae;aj.height=ag;var am={};if(ad&&typeof ad===r){for(var ak in ad){am[ak]=ad[ak]}}if(Z&&typeof Z===r){for(var ai in Z){if(typeof am.flashvars!=D){am.flashvars+="&"+ai+"="+Z[ai]}else{am.flashvars=ai+"="+Z[ai]}}}if(F(Y)){var an=u(aj,am,ah);if(aj.id==ah){w(ah,true)}X.success=true;X.ref=an}else{if(aa&&A()){aj.data=aa;P(aj,am,ah,ac);return}else{w(ah,true)}}if(ac){ac(X)}})}else{if(ac){ac(X)}}},switchOffAutoHideShow:function(){m=false},ua:M,getFlashPlayerVersion:function(){return{major:M.pv[0],minor:M.pv[1],release:M.pv[2]}},hasFlashPlayerVersion:F,createSWF:function(Z,Y,X){if(M.w3){return u(Z,Y,X)}else{return undefined}},showExpressInstall:function(Z,aa,X,Y){if(M.w3&&A()){P(Z,aa,X,Y)}},removeSWF:function(X){if(M.w3){y(X)}},createCSS:function(aa,Z,Y,X){if(M.w3){v(aa,Z,Y,X)}},addDomLoadEvent:K,addLoadEvent:s,getQueryParamValue:function(aa){var Z=j.location.search||j.location.hash;if(Z){if(/\?/.test(Z)){Z=Z.split("?")[1]}if(aa==null){return L(Z)}var Y=Z.split("&");for(var X=0;X<Y.length;X++){if(Y[X].substring(0,Y[X].indexOf("="))==aa){return L(Y[X].substring((Y[X].indexOf("=")+1)))}}}return""},expressInstallCallback:function(){if(a){var X=c(R);if(X&&l){X.parentNode.replaceChild(l,X);if(Q){w(Q,true);if(M.ie&&M.win){l.style.display="block"}}if(E){E(B)}}a=false}}}}();
+define("swfobject", (function (global) {
+    return function () {
+        var ret, fn;
+        return ret || global.swfobject;
+    };
+}(this)));
+
+Splunk.namespace("Splunk.Session");
+/**
+ * A simple class that dispatches jQuery document events Splunk.Session.TIMEOUT_EVENT and Splunk.Session.START_EVENT.
+ * Events triggered on UI activity/no-activity configuration setting POLLER_TIMEOUT_INTERVAL.
+ */
+Splunk.Session = $.klass({
+    EVENT_BUFFER_TIMEOUT: 1000,//Never operate on many DOM events without a governor (ie., 1000ms governor cancels >30 scroll events).
+    UI_INACTIVITY_TIMEOUT: 60,
+    START_EVENT: "SessionStart",
+    TIMEOUT_EVENT: "SessionTimeout",
+    RESTART_EVENT: "HaltOnRestart", //Stop all the pollers when restart is initiated from the UI
+    UI_EVENT_TYPES: ["click", "keydown", "mouseover", "scroll"],
+    /**
+     * Initializes Session.
+     */
+    initialize: function(){
+        this.eventBuffer = [];
+        this.timeoutDelay = Splunk.util.getConfigValue("UI_INACTIVITY_TIMEOUT", this.UI_INACTIVITY_TIMEOUT);
+        this.timeoutDelay *= 60000;
+        this.timeoutID = null;
+        $(document).bind(this.START_EVENT, this.onSessionStart.bind(this));
+        if(!this.timeoutDelay<1){
+            $(document).bind(this.TIMEOUT_EVENT, this.onSessionTimeout.bind(this));
+            $(document).bind(this.UI_EVENT_TYPES.join(" "), this.onUIEvent.bind(this));
+            this.startTimeout();
+        }
+        $(document).trigger(this.START_EVENT, new Date());
+    },
+    /**
+     * Top level UI event listener and dispatcher, triggers Splunk.Session.START_EVENT if timeoutID is null, resets the 
+     * timer if timeoutID not null.
+     *
+     * @param {Object} event A DOM event.
+     */
+    onUIEvent: function(event){
+        if(this.timeoutID){
+            this.eventBuffer.push("");
+            if(this.eventBuffer.length===1){
+                this.resetTimeout();
+                setTimeout(
+                    function(){
+                        this.eventBuffer = [];
+                    }.bind(this),
+                    this.EVENT_BUFFER_TIMEOUT
+                );
+            }
+        }else{
+            this.startTimeout();
+            $(document).trigger(this.START_EVENT, new Date());
+        }
+    },
+    /**
+     * Start of new UI activity/session.
+     * 
+     * @param {Object) event The jQuery passed event.
+     * @param {Date} date The time the event was fired.
+     */
+    onSessionStart: function(event, date){},
+    /**
+     * End of UI activity/session.
+     * 
+     * @param {Object) event The jQuery passed event.
+     * @param {Date} date The time the event was fired.
+     */
+    onSessionTimeout: function(event, date){},
+    /**
+     * Reset timeout, stop and start again.
+     */
+    resetTimeout: function(){
+        this.stopTimeout();
+        this.startTimeout();
+    },
+    /**
+     * Inform subscribers of server restart started
+     */
+    signalRestart: function(){
+        $(document).trigger(this.RESTART_EVENT);
+    },
+    /**
+     * Start timeout, set timeoutID.
+     */
+    startTimeout: function(){
+        this.timeoutID = window.setTimeout(this.timeoutHandler.bind(this), this.timeoutDelay);
+    },
+    /**
+     * Stop timeout, if timeoutID exists clear the previous delay and set timeoutID back to null.
+     * 
+     * Note: Passing an invalid ID to clearTimeout does not have any effect (and doesn't throw an exception).
+     */
+    stopTimeout: function(){
+        if(this.timeoutID){
+            window.clearTimeout(this.timeoutID);
+            this.timeoutID = null;
+        }
+    },
+    /**
+     * Handler for successful timeout, set timeoutID back to null, trigger Splunk.Session.TIMEOUT_EVENT.
+     */
+    timeoutHandler: function(){
+        this.stopTimeout();
+        $(document).trigger(this.TIMEOUT_EVENT, new Date());
+    }
+});
+Splunk.Session.instance = null;
+/**
+ * Singleton reference to Session object.
+ *
+ * @return A reference to a shared Session object.
+ * @type Object
+ */
+Splunk.Session.getInstance = function(){
+    if(!Splunk.Session.instance){
+        Splunk.Session.instance = new Splunk.Session();
+    }
+    return Splunk.Session.instance;
+};
+
+define("splunk.session", ["lowpro","splunk","jquery","splunk.logger","splunk.util","swfobject"], (function (global) {
+    return function () {
+        var ret, fn;
+        return ret || global.Splunk.Session;
+    };
+}(this)));
+
+Splunk.namespace("Splunk.Messenger");
+
+/**
+ * A controller like class who carries a message.
+ *
+ * Example:
+ * var broker = new Splunk.Messenger.Bus();
+ *
+ * //Send a message.
+ * broker.send("info", "Info message a", "foobar_b", null, null);
+ * broker.send("info", "Info message b", "foobar_a", null, null);
+ *
+ * //Get all messages.
+ * broker.receive(null, null, function(message){
+ *     alert("Got some arbitrary message object.");
+ * });
+ *
+ * //Get all messages filtered by level 'info'.
+ * broker.receive({"level":"info"}, null, function(message){
+ *     alert("Got a a message object with a level of info.");
+ * });
+ *
+ * //Get all messages filtered by level 'info' and ordered by date.
+ * broker.receive({"level":"info"}, ['date'], function(msg){
+ *     alert("Got a message object with a level of info sorted by date (latest first).");
+ * });
+ */
+Splunk.Messenger.Bus = $.klass({
+    DATE_FORMAT: "%Y-%m-%dT%H:%M:%S",
+    MAX_SUBJECTS_BUFFER: 100,
+    MAX_OBSERVERS_BUFFER: 200,
+    /**
+     * Initializes Messenger Bus.
+     */
+    initialize: function(){
+        this.count = 1;
+        this.id = 0;
+        this.logger = Splunk.Logger.getLogger("Splunk.Messenger.Bus");
+        this.observers = [];
+        this.subjects = [];
+        $(window).bind("unload", this.gc.bind(this));
+    },
+    /**
+     * Create a new observer object.
+     *
+     * @param {Object||null} filter An object literal key/value filter: {(key) {String} One of x properties for an Object: (value) {String || RegExp} An arbitrary string value to match or regular expression object, all matching.
+     * @param {Array||null} sort An Array of key values to sort by.
+     * @param {Boolean} negate If you wish to negate the entire filter, matching only items that do not match the filter.
+     * @param {Boolean} cancel Stop the propogation of notification to other observers.
+     * @return An new observer object.
+     * @type Object
+     */
+    createObserver: function(filter, sort, callback, negate, cancel){
+        filter.control = filter.hasOwnProperty('control') ? filter.control : true;
+        return {
+            'filter':filter,
+            'sort':sort,
+            'callback':callback,
+            'negate':negate,
+            'cancel':cancel
+        };
+    },
+    /**
+     * Create a new subject object.
+     *
+     * @param {String} level The severity level.
+     * @param {String} content The message content.
+     * @param {*} className The class identifier for the message of any type.
+     * @param {String} date The UTC ISO Date.
+     * @param {String} id An id value (Does not have to be unique).
+     * @return An new subject object.
+     * @type Object
+     */
+    createSubject: function(level, content, className, date, id, control){
+        return {
+            'level':level,
+            'control':control,
+            'content':content,
+            'className':className,
+            'date':date,
+            'id': id
+        };
+    },
+    /**
+     * Filter an Array of Objects given an arbitrary set of key/value pairs.
+     *
+     * @param {Array} arrayOfObjects An array of object literal values.
+     * @param {Object} kv An object literal key/value filter: {(key) {String} One of x properties for an Object: (value) {String || RegExp} An arbitrary string value to match or regular expression object, all matching.
+     * @return Matching (included) and non-matching (excluded) subject(s).
+     * @type Object
+     */
+    filter: function(arrayOfObjects, kv){
+        var included = [];
+        var excluded = [];
+        for(i=0; i<arrayOfObjects.length; i++){
+            var object = arrayOfObjects[i];
+            var match = true;
+            for(var k in kv){
+                if(kv.hasOwnProperty(k) && object.hasOwnProperty(k) && object[k] !== undefined &&
+                    ((k=='control' && (kv[kv]||!object[k])
+                    || ((kv[k] instanceof RegExp)?object[k].search(kv[k])!=-1:kv[k]==object[k])))){
+                    continue;
+                }else{
+                    match = false;
+                    break;
+                }
+            }
+            if(match){
+                included.push(object);
+            }else{
+                excluded.push(object);
+            }
+        }
+        return {"included":included, "excluded":excluded};
+    },
+    /**
+     * Garbage collection routine.
+     */
+    gc: function(){
+        this.observers = [];
+    },
+    /**
+     * Create an empty subject object.
+     *
+     * @return An empy subject.
+     * @type Object
+     */
+    getEmptySubject: function(){
+        return this.createSubject("", "", "", "", "", false);
+    },
+    /**
+     * Get a unique id with zero padding.
+     */
+    getUniqueId: function(){
+        this.id++;
+        var paddingLength = [this.MAX_OBSERVERS_BUFFER].join("").length + 1;
+        var zeropad = [this.id, ""].join("");
+        while(zeropad.length<paddingLength){
+            zeropad = ["0", zeropad].join("");
+        }
+        return zeropad;
+    },
+    /**
+     * Get matching subject item(s) based on optional filter and sort criteria.
+     *
+     * @param {Boolean} del Delete the entire message queue after retrieval.
+     * @param {Object||null} filter An object literal key/value filter: {(key) {String} One of x properties for an Object: (value) {String || RegExp} An arbitrary string value to match or regular expression object, all matching.
+     * @param {Array||null} sort An Array of key values to sort by.
+     * @param {Boolean} (Optional) negate If you wish to negate the entire filter, matching only items that do not match the filter.
+     * @return Matched subject(s).
+     * @type Array
+     */
+    getSubjects: function(del, filter, sort, negate){
+        negate = arguments[3] || false;
+        //this.logger.info("Filter negation enabled", arguments);
+        var filtered = (filter && this.hasSubjectProperty(filter))?this.filter(this.subjects, filter):{"included":this.subjects.concat([]), "excluded":[]};
+        var included = (negate)?filtered.excluded:filtered.included;
+        var excluded = (negate)?filtered.included:filtered.excluded;
+        if(del){
+            this.subjects = excluded;
+        }
+        return (sort && sort.length>0)?this.sort(included, sort):included;
+    },
+    /**
+     * Get the length of matching subjects.
+     *
+     * @param {Object||null} filter An object literal key/value filter: {(key) {String} One of x properties for an Object: (value) {String || RegExp} An arbitrary string value to match or regular expression object, all matching.
+     * @param {Boolean} (Optional) negate If you wish to negate the entire filter, matching only items that do not match the filter.
+     * @return The length of matching queue entities.
+     * @type Number
+     */
+    getSubjectLength: function(filter){
+        var negate = arguments[1] || false;
+        return this.getSubjects(false, filter, null, negate).length;
+    },
+    /**
+     * Check if an object has a subject property.
+     *
+     * @param {Object} object An object to check properties against.
+     * @return If the object has a queue entity property.
+     * @type Boolean
+     */
+    hasSubjectProperty: function(object){
+        for(var property in object){
+            if(this.isValidSubjectProperty(property)){
+                return true;
+            }
+        }
+        return false;
+    },
+    /**
+     * Check if a subject has all required properties.
+     *
+     * @param {Object} object An object to check properties against.
+     * @return If the object is a valid queue entity.
+     * @type Boolean
+     */
+    isValidSubject: function(object){
+        var subject = this.getEmptySubject();
+        for(var property in subject){
+            if(subject.hasOwnProperty(property) && !object.hasOwnProperty(property)){
+                return false;
+            }
+        }
+        return true;
+    },
+    /**
+     * Check if subject property is valid.
+     *
+     * @param {String} property A property to validate.
+     * @return If the property is a queue entity property.
+     * @type Boolean
+     */
+    isValidSubjectProperty: function(property){
+        var subject = this.getEmptySubject();
+        return (subject.hasOwnProperty(property))?true:false;
+    },
+    /**
+     * Send notification to all observers.
+     *
+     * @param {Array} observers An array of observers.
+     */
+    notify: function(observers){
+        //this.logger.info("notify subject(s)");
+        observers = observers.concat([]).sort(this.observerNotifySortby.bind(this));
+        var observer;
+        for(var j=0; j<observers.length; j++){
+            observer = observers[j];
+            var subjects = this.getSubjects(observer.cancel, observer.filter, observer.sort, observer.negate);
+            for(var k=0; k<subjects.length; k++){
+                var subject = subjects[k];
+                this.logger.info(subject);
+                try{
+                    observer.callback(subject);
+                }catch(e){
+                    //setTimeout(function(e){throw e;}, 0);//Keep on trucking...
+                }
+            }
+        }
+        for(var l=0; l<observers.length; l++){
+            observer = observers[l];
+            this.getSubjects(true, observer.filter, null, observer.negate);//remove all matched observers.
+        }
+    },
+    /**
+     * Sort pattern for observer notification.
+     *
+     * @param {Object} a
+     * @param {Object} b
+     * @return Defaults to 0, no sort required.
+     * @type Number
+     * @return
+     * < 0: Sort "a" to be a lower index than "b"
+     * = 0: "a" and "b" should be considered equal, and no sorting performed.
+     * > 0: Sort "b" to be a lower index than "a".
+     */
+    observerNotifySortby: function(a, b){
+        return 0;
+    },
+    /**
+     * Create an observer of subjects(s).
+     *
+     * @param {Object||null} filter An object literal key/value filter: {(key) {String} One of x properties for an Object: (value) {String || RegExp} An arbitrary string value to match or regular expression object, all matching.
+     * @param {Array||null} sort An Array of key values to sort by.
+     * @param {Function} callback A callback handler to call with the matching message.
+     * @param {Boolean} negate If you wish to negate the entire filter, matching only items that do not match the filter.
+     * @param {Boolean} cancel Stop the propogation of notification to other observers.
+     */
+    receive: function(filter, sort, callback, negate, cancel){
+        var observer = this.createObserver(filter, sort, callback, negate, cancel);
+        if(this.observers.length>=this.MAX_OBSERVERS_BUFFER){
+            this.logger.warn("observers length exceeds MAX_OBSERVERS_BUFFER constraint of", this.MAX_OBSERVERS_BUFFER, "dropping earliest item.");
+            this.observers.shift();
+        }
+        this.observers.push(observer);
+        this.notify([observer]);
+    },
+    /**
+     * Send a subject.
+     *
+     * @param {String} level The severity level.
+     * @param {String} content The message string text.
+     * @param {*} className The class identifier for the message of any type.
+     * @param {String || null} id An id value (Does not have to be unique), if null generates a unique value.
+     * @param {String || null} date An optional UTC ISO Date, if null defaults value of now is added.
+     */
+    send: function(level, content, className, id, date, control){
+        //this.logger.info("send message");
+        date = date || (new Date()).strftime(this.DATE_FORMAT);
+        id = id || this.getUniqueId();
+        control = control ? true : false;
+        var subject = this.createSubject(level, content, className, date, id, control);
+        if(this.subjects.length>=this.MAX_SUBJECTS_BUFFER){
+            this.logger.warn("subjects length exceeds MAX_SUBJECTS_BUFFER constraint of", this.MAX_SUBJECTS_BUFFER, "dropping earliest item.");
+            this.subjects.shift();
+        }
+        this.logger.info(sprintf('MSG [%s, %s] %s', level, className, content));
+        this.subjects.push(subject);
+        this.notify(this.observers);
+    },
+    /**
+     * Sort an Array of Objects given an arbitrary set of key/value pairs in (default is alpha ordering).
+     *
+     * @param {Array} arrayOfObjects An array of object literal values.
+     * @param {Array} key An Array of key values to sort by.
+     * @return A sorted array of objects.
+     * @type Object
+     */
+    sort: function(arrayOfObjects, keys){
+        var sortedArray = arrayOfObjects.concat([]);
+        for(var i=0; i<keys.length; i++){
+            var k = keys[i];
+            sortedArray.sort(function(a, b){
+                if(!a.hasOwnProperty(k) || !b.hasOwnProperty(k)){
+                    this.logger.warn("Cannot sort with invalid key", k);
+                    return 0;
+                }else{
+                    return ([a[k], b[k]].sort()[0]!==a[k])?1:-1;
+                }
+            });
+        }
+        return sortedArray;
+    }
+});
+/**
+ * Augment Bus for application specific implementation. Based on className hierarchy and splunkd server messaging.
+ * Overrides send and receive methods.
+ *
+ * Example:
+ * var broker = Splunk.Messenger.System.getInstance();
+ *
+ * //Send a message.
+ * broker.send("info", "splunk", "This is a message");
+ * broker.send("info", "splunk.search.job", "This is a message");
+ * broker.send("info", "splunk.search", "This is a message");
+ *
+ * //Get all messages.
+ * broker.receive("splunk.search.job", function(message){
+ *     alert("Got one message matching className splunk.search.job.");
+ * });
+ *
+ * broker.receive("splunk", function(message){
+ *     alert("Got any message matching className splunk or splunk.search");
+ * });
+ *
+ * //Get all non-matching messages.
+ * broker.receive("*", function(msg){
+ *     alert("Got a message that is neither splunk, splunk.search or splunk.search.job");
+ * });
+ */
+Splunk.Messenger.System = $.klass(Splunk.Messenger.Bus, {
+    RECEIVE_WILD_CARD: "*",
+    RECEIVE_LEVELS: ["persistent", "info", "warn", "error", "fatal"],
+    RECEIVE_LEVEL: "fatal",
+    REQUEST_TIMEOUT: 5000,
+    SERVER_ENABLED: true,
+    SERVER_POLL_INTERVAL: 60000,
+    SERVER_RESOURCE: Splunk.util.make_url("/api/messages/index"),
+    SERVER_CLASSIFIER: "splunk.services",
+    SERVER_SESSION_EXPIRED_MESSAGE: _("Your session has expired."),
+    SERVER_DOWN_MESSAGE: _("Your network connection may have been lost or Splunk web may be down."),
+    SERVER_BACK_UP_MESSAGE: _("Your network connection was either restored or Splunk web was restarted."),    
+    
+    // number of consecutive request failures to throw warning to user
+    // about potential connection issues
+    OFFLINE_WARNING_THRESHOLD: 2,
+
+    /**
+     * Intializes Messenger System.
+     *
+     * @param {Object} super
+     */
+    initialize: function($super){
+        $super();
+        this.logger = Splunk.Logger.getLogger("Splunk.Messenger.System");
+        this.intervalId = null;
+        this.isRequestQueued = false;
+        this.isServerDown = false;
+        this.errorCount = 0;
+        this.abortRequests = false;
+        this.previousEtag = "";
+        if(this.SERVER_ENABLED && typeof DISABLE_MESSENGER === 'undefined') {
+            setTimeout(this.getServerMessages.bind(this), 0);//chrome throttle for status code of 0
+            this.startPoller();
+        }
+        $(document).bind("SessionTimeout", this.onSessionTimeout.bind(this));
+        $(document).bind("SessionStart", this.onSessionStart.bind(this));
+    },
+    /**
+     * Serialize a className into a hierarchy matching RegExp object.
+     *
+     * @param {String} className
+     * @type RegExp
+     * @return RegExp serialized className.
+     */
+    classNameSerialize: function(className){
+        var regex;
+        if(!className)
+            className = this.RECEIVE_WILD_CARD;
+        if(className===this.RECEIVE_WILD_CARD){
+            regex = /./;
+        }else{
+            var classNameParts = className.split(".");
+            if(classNameParts.length===0){
+                classNameParts = [className];
+            }
+            var pattern = "^" + classNameParts.join("\.");
+            try{
+                regex = new RegExp(pattern);
+            }catch(e){
+                this.logger.error("Could not create RegExp object for className", className);
+                return null;
+            }
+        }
+        return regex;
+    },
+    /**
+     * Retrieve messages from the app server.
+     */
+    getServerMessages: function(){
+        if(!this.isRequestQueued && !this.abortRequests){
+            this.isRequestQueued = true;
+            $.ajax({
+                type: "GET",
+                url: this.SERVER_RESOURCE,
+                dataType: "text",
+                beforeSend: function(XMLHttpRequest){
+                    //don't set If-None-Match header to empty string value (see SPL-70971)
+                    if (this.previousEtag) {
+                        try {
+                            XMLHttpRequest.setRequestHeader("If-None-Match", this.previousEtag);
+                        } catch(e) {
+                            // IE6 does not have setRequestHeader()
+                        }
+                    }
+                }.bind(this),
+                timeout: this.REQUEST_TIMEOUT,
+                error: this.onServerMessagesError.bind(this),
+                complete: this.onServerMessagesComplete.bind(this)
+            });
+            //this.logger.info("Getting messages from server.");
+        }
+    },
+    /**
+     * Override sort pattern for observer notification. Follows class hiearchy pattern: aaa.bbb.ccc, aaa.bbb, aaa, *.
+     *
+     * @param {Object} a
+     * @param {Object} b
+     * @return Defaults to 0, no sort required.
+     * @type Number
+     * @return
+     * < 0: Sort "a" to be a lower index than "b"
+     * = 0: "a" and "b" should be considered equal, and no sorting performed.
+     * > 0: Sort "b" to be a lower index than "a".
+     */
+    observerNotifySortby: function(a, b){
+        var classNameA = (a.filter.className instanceof RegExp)?a.filter.className.toString():a.filter.className;
+        var classNameB = (b.filter.className instanceof RegExp)?b.filter.className.toString():b.filter.className;
+        var classNameWildCard = this.classNameSerialize(this.RECEIVE_WILD_CARD).toString();
+        if(classNameA===classNameWildCard){    
+            return 1;
+        }else if(classNameB===classNameWildCard){
+            return -1;
+        }else{
+            return ([classNameA, classNameB].sort()[0]!==classNameA)?1:-1;
+        }
+    },
+    /**
+     * Handle error repsonse from jQuery $.ajax
+     */
+    onServerMessagesError: function(){
+        //this.logger.error("onServerMessagesError fired");
+    },
+    /**
+     * Handle a splunk appserver jsonresponse envelope.
+     *
+     * @param {Object} data The XMLHttpRequest object.
+     * @param {String} textStatus A string describing the type of success of the request.
+     */
+    onServerMessagesComplete: function(data, textStatus){
+        this.isRequestQueued = false;
+        this.previousEtag = data.getResponseHeader("Etag");
+        switch(data.status){
+            case 0:
+         	case 12029: //IE9(prob 8 as well) has it's own HTTP error status of 12029.. WTF?! 
+                this.errorCount++;
+         		this.previousEtag = new Date();
+                if (this.errorCount >= this.OFFLINE_WARNING_THRESHOLD) {
+                    this.isServerDown = true;
+                    this.send("error", this.SERVER_CLASSIFIER, this.SERVER_DOWN_MESSAGE);
+                    this.logger.warn("Server message timeout, offline");           	
+                }
+            	break;
+            case 304:
+                this.errorCount = 0;
+                break;
+            case 412:
+                this.abortRequests = true;
+                this.send("error", this.SERVER_CLASSIFIER, this.SERVER_SESSION_EXPIRED_MESSAGE);
+                this.logger.warn("Server message session expired, abort further requests.");
+                break;
+            case 200:
+                this.errorCount = 0;
+                if(this.isServerDown){
+                    this.logger.info("Server message back online.");
+                    this.isServerDown = false;
+                    this.previousEtag = new Date();
+                    
+                    // all messages from this persistent store should be marked as 'persistent'
+                    this.send("persistent", this.SERVER_CLASSIFIER, this.SERVER_BACK_UP_MESSAGE);
+                    break;
+                }
+                this.processResponse(data);
+                break;
+            default:
+                break;
+        }
+    },
+    /**
+     * Handle Splunk.Session start event, ensure abortRequests is false to enable poller http requests.
+     * 
+     * @param {Object} event A jQuery event object.
+     * @param {Date} date The fire time of the event.
+     */    
+    onSessionStart: function(event, date){
+        this.logger.info("Starting message poller...");
+        this.abortRequests = false;
+    },    
+    /**
+     * Handle Splunk.Session timeout event, ensure abortRequests is true to cancel poller http requests.
+     * 
+     * @param {Object} event A jQuery event object.
+     * @param {Date} date The fire time of the event.
+     */
+    onSessionTimeout: function(event, date){
+        this.logger.info("Stopping message poller...");
+        this.abortRequests = true;
+    },
+    /**
+     * Process response data from messages endpoint.
+     * 
+     * @param {Object} data The XMLHttpRequest object.
+     */
+    processResponse: function(data){
+        try{
+            this.logger.info("Server message process response");
+            data = JSON.parse(data.responseText);
+        }catch(e){
+            this.logger.warn("Could not parse server messages with error");
+            return;
+        }
+        for(var i=0; i<data.messages.length; i++){
+            var dataObj = data.messages[i];
+            if(dataObj.hasOwnProperty("type") && dataObj.hasOwnProperty("message")){
+                try{
+                    this.send(dataObj.type.toLowerCase(), this.SERVER_CLASSIFIER, dataObj.message, dataObj.id);
+                }catch(e){
+                    this.logger.error("Could not send message through bus", e);
+                }
+            }else{
+                this.logger.error("Missing jsonresponse property from app server.");
+            }
+        }        
+    },
+    /**
+     * Override receive method based on className and id.
+     *
+     * @param {String} className The class identifier for the message following ("foo.bar" convention, "*" for all non-matched classNames)
+     * @param {Function} callback A callback handler to call with the matching message.
+     * @param {String} (Optional) id An id value (Does not have to be unique).
+     */
+    receive: function($super, className, callback, id, control){
+
+        if(!className)
+            className = this.RECEIVE_WILD_CARD;
+        var classNameRegExp = this.classNameSerialize(className);
+        if(!classNameRegExp){
+            return;
+        }
+        for(var i=0; i<this.RECEIVE_LEVELS.length; i++){
+            var filter = {};
+            filter.className = classNameRegExp;
+            if(id){
+                filter.id = id;
+            }
+            if(control)
+                filter.control = true;
+            filter.level = this.RECEIVE_LEVELS[i];
+            var uniqueReceiver = true;
+            for(var j=0; j<this.observers.length; j++){
+                var observerFilter = this.observers[j].filter;
+                if((observerFilter.level && observerFilter.level===filter.level) && (observerFilter.className && observerFilter.className.toString()===filter.className.toString())){
+                    uniqueReceiver = false;
+                    this.logger.warn("Can't add another receiver with level", filter.level, "for already observed className", className);
+                    break;
+                }
+            }
+            if(uniqueReceiver){
+                $super(filter, null, callback, false, true);
+            }
+            if(this.RECEIVE_LEVELS[i]===this.RECEIVE_LEVEL){
+                break;
+            }
+        }
+    },
+    /**
+     * Reset polling the server at a set interval for messages.
+     */
+    resetPoller: function(){
+        if(this.intervalId){
+            clearInterval(this.intervalId);
+        }
+        this.startPoller();
+    },
+    /**
+     * Override send method.
+     *
+     * @param {String} level The severity level.
+     * @param {String} className className The class identifier for the message following ("foo.bar" convention)
+     * @param {String} content The message string text.
+     * @param {String} (Optional) id An id value (Does not have to be unique).
+     */
+    send: function($super, level, className, content, id, control){
+        id = id || null;
+        if(jQuery.inArray(level, this.RECEIVE_LEVELS)!=-1){
+            if(this.SERVER_ENABLED){
+                this.resetPoller();
+            }
+            $super(level, content, className, id, null, control);
+        }else{
+            this.logger.warn("Message not sent, invalid message level -", level, "- needs to be one of", this.RECEIVE_LEVELS.join(","));
+        }
+    },
+    /**
+     * Start polling the server at a set interval for messages.
+     */
+    startPoller: function(){
+        this.intervalId = setInterval(this.getServerMessages.bind(this), this.SERVER_POLL_INTERVAL);
+    },
+    /**
+     * Inject a control event to instruct listeners to clear their display
+     */
+    clear: function() {
+        this.send('info', 'control', 'CLEAR', null, true);
+    }
+});
+Splunk.Messenger.System.instance = null;
+/**
+ * Singleton reference to Messenger System object.
+ *
+ * @return A reference to a shared Messenger System object.
+ * @type Object
+ */
+Splunk.Messenger.System.getInstance = function(){
+    if(!Splunk.Messenger.System.instance){
+        Splunk.Messenger.System.instance = new Splunk.Messenger.System();
+    }
+    return Splunk.Messenger.System.instance;
+};
+
+define("splunk.messenger", ["splunk","splunk.util","splunk.logger","splunk.i18n","lowpro"], (function (global) {
+    return function () {
+        var ret, fn;
+        return ret || global.Splunk.Messenger;
     };
 }(this)));
 
@@ -53290,322 +54668,6 @@ define('splunkjs/ready',['require','exports','module','jquery'],function(require
     
     return ready;
 });
-define('uri/route',
-    ['underscore', 'splunk.util'],
-    function(_, splunkutil) {
-    var exports = {};
-    exports.encodeRoot = function(path, locale) {
-        var parts = _.map((path || '').split('/'), function(part) {
-            return encodeURIComponent(part);
-        });
-        path = parts.join('/');
-        path = path ? '/' + path : path;
-        return path + '/' + encodeURIComponent(locale);
-    };
-    exports.staticFile = function(root, locale, version, file) {
-        return exports.encodeRoot(root,  locale)  + '/static/' + version + '/' + file;
-    };
-    exports.img = function(root, locale, version, file) {
-        return exports.staticFile(root, locale, version, 'img/' + file);  
-    };
-    exports.page = function(root, locale, app, page, options) {
-        if(typeof page === 'undefined'){
-            page = '';
-        }
-        var url = exports.encodeRoot(root, locale) + '/app/' + encodeURIComponent(app) + '/' + encodeURIComponent(page);
-        if (options) {
-            if (options.data) {
-                url = url + '?' + splunkutil.propToQueryString(options.data);
-            }
-
-            if (options.absolute) {
-                url = window.location.protocol + "//" + window.location.host + url;
-            }
-        }
-        return url;
-    };
-    exports.appIcon = function(root, locale, owner, app, options){
-        var size = '';
-        if(window && window.devicePixelRatio > 1){
-            size = '2';
-        }
-        return exports.splunkdNS(root, locale, owner, app, 'static/appIcon'+size+'.png', options);
-    };
-    exports.appLogo = function(root, locale, owner, app, options){
-        var size = '';
-        if(window && window.devicePixelRatio > 1){
-            size = '2';
-        }
-        return exports.splunkdNS(root, locale, owner, app, 'static/appLogo'+size+'.png', options);
-    };
-    exports.splunkdNS = function(root, locale, owner, app, page, options){
-        var url = exports.encodeRoot(root, locale) + '/splunkd/__raw/servicesNS/' + owner + '/' + app + '/' + page;
-        return url;
-    };
-    exports.data_models = function(root, locale, app, options) {
-        return exports.page(root, locale, app, 'data_models', options);
-    };
-    exports.data_model_explorer = function(root, locale, app, options) {
-        return exports.page(root, locale, app, 'data_model_explorer', options);
-    };
-    exports.pivot = function(root, locale, app, options) {
-        return exports.page(root, locale, app, 'pivot', options);
-    };
-    exports.data_model_manager = function(root, locale, app, options) {
-        return exports.page(root, locale, app, 'data_model_manager', options);
-    };
-    exports.data_model_editor = function(root, locale, app, options) {
-        return exports.page(root, locale, app, 'data_model_editor', options);
-    };
-    exports.search = function(root, locale, app, options) {
-        return exports.page(root, locale, app, 'search', options);
-    };
-    exports.report = function(root, locale, app, options) {
-        return exports.page(root, locale, app, 'report', options);
-    };
-    exports.reports = function(root, locale, app, options) {
-        return exports.page(root, locale, app, 'reports', options);
-    };
-    exports.alert = function(root, locale, app, options) {
-        return exports.page(root, locale, app, 'alert', options);
-    };
-    exports.alerts = function(root, locale, app, options) {
-        return exports.page(root, locale, app, 'alerts', options);
-    };
-    exports.logout = function(root, locale) {
-        return exports.encodeRoot(root, locale) + '/account/logout';
-    };
-    exports.jobInspector = function(root, locale, app, sid) {
-        var data = {
-            sid: sid,
-            namespace: app
-        };
-        return exports.encodeRoot(root, locale) + '/search/inspector' + '?' + splunkutil.propToQueryString(data);
-    };
-    exports.ifx = function(root, locale, app, sid, offset) {
-        var data = {
-            sid: sid,
-            namespace: app,
-            offset: offset
-        };
-        return exports.encodeRoot(root, locale) + '/ifx' + '?' + splunkutil.propToQueryString(data);
-    };
-    exports.manager = function(root, locale, app, page, options) {
-        var url =  exports.encodeRoot(root, locale) + '/manager/' + encodeURIComponent(app);
-        if (_.isArray(page)) {
-            _.each(page, function(dir) {
-                url += '/' + encodeURIComponent(dir);
-            });
-        } else {
-            url += '/' + encodeURIComponent(page);
-        }
-        if (options) {
-            if (options.data) {
-                url = url + '?' + splunkutil.propToQueryString(options.data);
-            }
-        }
-        return url;
-    };
-    exports.triggeredAlerts = function(root, locale, app, options) {
-        var url = exports.encodeRoot(root, locale) + '/alerts/' + encodeURIComponent(app);
-        if (options) {
-            if (options.data) {
-                url = url + '?' + splunkutil.propToQueryString(options.data);
-            }
-        }
-        return url;
-    };
-    exports.docSearch = function(locale, version, isFree, isTrial, search) {
-        var base = 'http://docs.splunk.com/Special:SplunkSearch/docs',
-            params = {
-                locale: locale,
-                versionNumber: version,
-                license: isFree ? 'free' : 'pro',
-                installType: isTrial ? 'trial' : 'prod',
-                q: search
-            };
-        return base + '?' + splunkutil.propToQueryString(params);
-    };
-    exports.docHelp = function(root, locale, location, appName, appVersion, appAllowsDisable, appDocSectionOverride) {
-        var url = exports.encodeRoot(root, locale) + '/help',
-            params = {
-                location: location
-            };
-            if (appAllowsDisable) {
-                if (appDocSectionOverride) {
-                    params.location = '[' + appDocSectionOverride + ']' + params.location;
-                } else {
-                    params.location = '[' + appName + ':' + appVersion + ']' + params.location;
-                }
-            }
-        return url + '?' + splunkutil.propToQueryString(params);
-    };
-    exports.exportUrl = function(root, locale, sid, filename, format, limit, maxResults, count, isReport, options) {
-        options = options || {};
-        var resultType = isReport ? 'results' : 'event';
-        var url = exports.encodeRoot(root, locale) + '/api/search/jobs/' + encodeURIComponent(sid) + '/' + resultType;
-        var params = {
-            isDownload: true,
-            timeFormat: options.timeFormat || '%FT%T.%Q%:z',
-            maxLines: 0,
-            count: count,
-            filename: filename || '',
-            outputMode: format,
-            'spl_ctrl-limit': limit,
-            'spl_ctrl-count': maxResults
-        };
-        url += '?' + splunkutil.propToQueryString(params);
-        return url;
-    };
-    exports.getContextualPageRouter = function(applicationModel) {
-        var root = applicationModel.get('root'),
-            locale = applicationModel.get('locale'),
-            app = applicationModel.get('app'),
-            nonPageMethods = ['page', 'docSearch', 'docHelp', 'exportUrl', 'exportUrl', 'getContextualPageRouter', 'pageStart', 'encodeRoot'],
-            routeNames = _(exports).chain().functions().difference(nonPageMethods),
-            router = {};
-
-        _(routeNames).each(function(route) {
-            var routeFn = exports[route];
-            router[route] = function() {
-                var fullArgs = [root, locale, app].concat(_(arguments).toArray());
-                return routeFn.apply(null, fullArgs);
-            };
-        });
-        return router;
-    };
-    exports.appNavUrl = function(root, locale, app){
-        return exports.encodeRoot(root,  locale)  + '/appnav/' + (app || '');
-    };
-    exports.viewStrings = function(root, locale, app, view){
-        return exports.page(root, locale, app, view) + "/strings";
-    };
-    return exports;
-});
-
-define('splunkjs/mvc/drilldown',['require','underscore','jquery','./utils','splunk.util','uri/route','util/console'],function (require) {
-    var _ = require('underscore'),
-        $ = require('jquery'),
-        utils = require('./utils'),
-        splunkUtils = require('splunk.util'),
-        route = require('uri/route'),
-        console = require('util/console');
-
-    var Drilldown = {
-
-        applyDrilldownIntention: function (clickInfo, drilldownType, manager) {
-            var dfd = $.Deferred();
-            var earliest = manager.job.properties().searchEarliestTime,
-                latest = manager.job.properties().searchLatestTime,
-                params = { q: manager.query.resolve({ qualified: true }), namespace: utils.getCurrentApp() },
-                values = [];
-
-            if (clickInfo.name === '_time') {
-                if (clickInfo.hasOwnProperty('_span')) {
-                    earliest = parseInt(clickInfo.value, 10);
-                    latest = earliest + parseInt(clickInfo._span, 10);
-                } else {
-                    earliest = parseInt(clickInfo.value, 10);
-                    latest = earliest + 1;
-                }
-                values.push(['_time', [earliest, latest].join('-')]);
-            } else {
-                values.push([clickInfo.name, clickInfo.value]);
-            }
-
-            if ((drilldownType === 'all' || drilldownType === 'cell') && clickInfo.hasOwnProperty('name2')) {
-                values.push([clickInfo.name2, clickInfo.value2]);
-            } else {
-                values.push(values[0]);
-            }
-
-            params.intentions = JSON.stringify([
-                {
-                    arg: { vals: values},
-                    flags: ['keepevents'],
-                    name: 'drilldown'
-                }
-            ]);
-            // Apply the intention using the legacy search parser
-            // TODO-Sigi: Replace this with the new intentions parser
-            $.ajax({
-                url: splunkUtils.make_full_url('parser/parse'),
-                data: params,
-                type: 'post',
-                dataType: 'json',
-                async: false,
-                success: function (data) {
-                    var result = { q: splunkUtils.stripLeadingSearchCommand(data.search) };
-                    if(earliest !== undefined) {
-                        result.earliest = earliest;
-                    }
-                    if(latest !== undefined) {
-                        result.latest = latest;
-                    }
-                    dfd.resolve(result);
-                },
-                error: function (xhr, status, error) {
-                    dfd.reject(error);
-                }
-            });
-            return dfd.promise();
-        },
-
-        handleDrilldown: function(click, drilldownType, manager, target) {
-            Drilldown.applyDrilldownIntention(click, drilldownType, manager).done(function(params){
-                var pageInfo = utils.getPageInfo(), url = route.search(pageInfo.root, pageInfo.locale, pageInfo.app, {
-                    data: params
-                });
-                utils.redirect(url, click.modifierKey, target);
-            });
-        }
-
-    };
-
-    return Drilldown;
-
-});
-define('splunkjs/mvc/basemanager',['require','exports','module','underscore','backbone','util/console','./mvc'],function(require, exports, module) {
-    var _ = require('underscore');
-    var Backbone = require('backbone');
-    var console = require('util/console');
-    var mvc = require('./mvc');
-    
-    var BaseManager = Backbone.Model.extend({
-        constructor: function(attributes, options) {
-            attributes = attributes || {};
-            options = options || {};
-            
-            // Get or generate a name
-            var id = options.id || attributes.id;
- 
-            if (id === undefined) {
-                id = options.name || attributes.name;
-                if (id !== undefined) {
-                    console.log("Use of 'name' to specify the ID of a Splunk model is deprecated.");
-                }
-            }
-            
-            if (id === undefined) {
-                id = _.uniqueId('manager_');
-            }
-            
-            // Store it on the instance/options
-            this.id = this.name = options.name = options.id = id;
-            var returned = Backbone.Model.prototype.constructor.apply(this, arguments);
-            
-            // Register it on the global registry
-            mvc.Components.registerInstance(this.id, this, { replace: options.replace });
-            
-            return returned;
-        },
-        
-        _start: function() {}
-    });
-    
-    return BaseManager;
-});
-
 define('mixins/xhrmanagement',['underscore'], function(_) {
     return {
         safeFetch: function() {
@@ -53641,7 +54703,10 @@ define('mixins/xhrmanagement',['underscore'], function(_) {
         }
     };
 });
-define('util/math_utils',[],function() {
+define('util/math_utils',[
+       'underscore'
+   ],
+   function(_) {
 
     var DECIMAL_OR_SCIENTIFIC_REGEX = /(^[-+]?[0-9]*[.]?[0-9]*$)|(^[-+]?[0-9][.]?[0-9]*e[-+]?[1-9][0-9]*$)/;
 
@@ -53707,11 +54772,23 @@ define('util/math_utils',[],function() {
         var parsedValue = strictParseFloat(value);
         return !isNaN(parsedValue) && parsedValue % 1 === 0;
      };
+     
+     var nearestMatchAndIndexInArray = function(valueToMatch, values) {         
+         var closestValue, closestIndex;
+         _.each(values, function(value, index){
+             if (closestValue == null || (Math.abs(valueToMatch - value) < Math.abs(closestValue - valueToMatch))) {
+                 closestValue = value;
+                 closestIndex = index;
+             }
+         });
+         return {value: closestValue, index: closestIndex};
+     };
 
     return ({
         strictParseFloat: strictParseFloat,
         roundToDecimal: roundToDecimal,
-        isInteger: isInteger
+        isInteger: isInteger,
+        nearestMatchAndIndexInArray: nearestMatchAndIndexInArray
     });
 
 });
@@ -53982,6 +55059,25 @@ define('util/general_utils',
             return searchString.split('|').length === 2;
         };
 
+        var strEndsWith = function(str, suffix) {
+            if (!str || !suffix) {
+                return false;
+            }
+            return str.indexOf(suffix, str.length - suffix.length) !== -1;
+        };
+
+        /**
+         * Returns the text currently selected with mouse or null
+         */
+        var getMouseSelection = function() {
+            if (window.getSelection) {
+                return window.getSelection().toString();
+            } else if (document.selection) {
+                return document.selection.createRange().text;
+            }
+            return null;
+        };
+
         return {
             compareWithDirection: compareWithDirection,
             unionWithKey: unionWithKey,
@@ -53993,7 +55089,9 @@ define('util/general_utils',
             transferKey: transferKey,
             convertNumToString: convertNumToString,
             invert: invert,
-            isValidPivotSearch: isValidPivotSearch
+            isValidPivotSearch: isValidPivotSearch,
+            strEndsWith: strEndsWith,
+            getMouseSelection: getMouseSelection
         };
     }
 );
@@ -54079,8 +55177,14 @@ define('util/splunkd_utils',
             }
             
             if (response.hasOwnProperty('status')) {
-                if (response.status == 404) {
-                    messages.push(createMessageObject(NOT_FOUND, splunkUtils.sprintf(_('Could not retrieve %s.').t(), id)));
+                if (response.status == 404 && $.isEmptyObject(responseData)) {
+                    messages.push(createMessageObject(
+                        NOT_FOUND,
+                        splunkUtils.sprintf(
+                            _('Could not retrieve %s. Make sure that this resource exists and has the correct permissions.').t(),
+                            id
+                        )
+                    ));
                 } else if (response.status == 0 || response.status == 12029) {
                     messages.push(createMessageObject(NETWORK_ERROR, _('Your network connection may have been lost or Splunk may be down.').t()));
                 }
@@ -54156,15 +55260,15 @@ define('util/splunkd_utils',
         var createMessageObject = function(type, message) {
             type = type.toLowerCase();
 
-            var jsonStart = message.indexOf("{");
-            var jsonEnd = message.lastIndexOf("}");
+            var jsonStart = message.indexOf("~!~{");
+            var jsonEnd = message.lastIndexOf("}~!~");
             var jsonMsg;
             var messageText = message;
 
             if (jsonStart != -1 && jsonEnd != -1) {
                 try
                 {
-                    var jsonBlock = message.slice(jsonStart, jsonEnd+1);
+                    var jsonBlock = message.slice(jsonStart+3, jsonEnd+1);
                     jsonMsg = JSON.parse(jsonBlock);
                     messageText = jsonMsg.errorMessageEnglish;
                 }
@@ -54248,7 +55352,7 @@ define('util/splunkd_utils',
             };
         };
 
-        var getSharingLabel = function (sharing) {
+        var getSharingLabel = function(sharing) {
             switch (sharing) {
                 case USER:
                     return _("Private").t();
@@ -54261,7 +55365,7 @@ define('util/splunkd_utils',
             }
         };
 
-        var getPermissionLabel = function (sharing, owner) {
+        var getPermissionLabel = function(sharing, owner) {
             switch (sharing) {
                 case USER:
                     return splunkUtils.sprintf(_("Private. Owned by %s.").t(), owner);
@@ -54273,6 +55377,29 @@ define('util/splunkd_utils',
             }
             return "";
         };
+        
+        var normalizeValuesForPOST = function(values) {
+            var valuesCopy = $.extend(true, {}, values);
+            _.each(valuesCopy, function(value, key) {
+                if (typeof(value) === "boolean") {
+                    if (value) {
+                        valuesCopy[key] = "1";
+                    } else {
+                        valuesCopy[key] = "0";
+                    }
+                }              
+            });
+            return valuesCopy;
+        };
+        
+        var normalizeBooleanTo01String = function(value) {
+            var bool = splunkUtils.normalizeBoolean(value);
+            if (bool) {
+                return "1";
+            }
+            return "0";
+        };
+        
         return {
             // constants for splunkd message types
             FATAL: FATAL,
@@ -54308,7 +55435,9 @@ define('util/splunkd_utils',
             getPermissionLabel: getPermissionLabel,
             normalizeType: normalizeType,
             filterMessagesByTypes: filterMessagesByTypes,
-            xhrErrorResponseParser: xhrErrorResponseParser
+            xhrErrorResponseParser: xhrErrorResponseParser,
+            normalizeValuesForPOST: normalizeValuesForPOST,
+            normalizeBooleanTo01String: normalizeBooleanTo01String
         };
 });
 
@@ -55047,6 +56176,7 @@ function(
    var BaseModel = Backbone.Model.extend({
         initialize: function(attributes, options) {
             Backbone.Model.prototype.initialize.apply(this, arguments);
+
             this.error = new Backbone.Model();
             this.fetchData = (options && options.fetchData) ? options.fetchData : new Backbone.Model();
             this.associated = this.associated || {};
@@ -55166,10 +56296,22 @@ function(
         filterChangedByWildcards: function(wildcards, options) {
             return generalUtils.filterObjectByRegexes(this.changedAttributes(), wildcards, options);
         },
-        toURLEncodedQueryString: function() {
+        /**
+         * Convert the model to a query string
+         * @param  {Object} options 
+         *         * preserveEmptyStrings: if a string is empty, still encode it in
+         *         the query string. Defaults to false.
+         *   
+         * @return {String} The model encoded as a query string.
+         */
+        toURLEncodedQueryString: function(options) {
             var queryArray = [], encodedKey;
             _.each(this.toJSON(), function(value, key) {
-                if (_.isUndefined(value) || (value === "")){
+                if (_.isUndefined(value)) {
+                    return;
+                }
+                
+                if (value === "" && options && options.preserveEmptyStrings === false) {
                     return;
                 }
 
@@ -55189,9 +56331,9 @@ function(
             } catch (e) {}
             return value;
         },
-        replace: function(attributes) {
+        replace: function(attributes, options) {
             this.clear({silent: true});
-            this.set(attributes);
+            this.set(attributes, options);
         },
         /**
          * Restore the model to its default attributes.
@@ -55211,15 +56353,3759 @@ function(
    return BaseModel;
 });
 
-define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore','backbone','splunkjs/mvc','./tokensafestring','./utils','util/console','./tokenutils','models/Base'],function(require, exports, module) {
+define('models/Application',
+    [
+        'models/Base'
+    ],
+    function(BaseModel) {
+        return BaseModel.extend({
+            initialize: function() {
+                BaseModel.prototype.initialize.apply(this, arguments);
+            },
+            getPermissions: function(permission){
+            	return {
+            		app: this.get("app"),
+            		owner: ((permission === 'private') ? this.get("owner") : 'nobody')
+            	};
+            }
+        });
+    }
+);
+define('models/SplunkDWhiteList',
+    [
+        'jquery',
+        'backbone',
+        'underscore',
+        'models/Base',
+        'util/splunkd_utils'
+     ],
+     function($, Backbone, _, BaseModel, splunkDUtils) {
+        return BaseModel.extend({
+            initialize: function(options) {
+                BaseModel.prototype.initialize.apply(this, arguments);
+            },
+            concatOptionalRequired: function() {
+                var optional = (this.get('optional') || []).slice(0),
+                required = (this.get('required') || []).slice(0);
+                return optional.concat(required);
+            },
+            url: '',
+            sync: function(method, model, options) {
+                var  defaults = {
+                        data:{
+                            output_mode: 'json'
+                        },
+                        url: _.isFunction(model.url) ? model.url() : model.url
+                };
+                switch(method) {
+                    case 'read':
+                        defaults.data = _.extend(defaults.data, options.data || {});
+                        delete options.data;
+                        defaults.url = splunkDUtils.fullpath(defaults.url);
+                        break;
+                    default:
+                        throw new Error('invalid method: ' + method);
+                }
+                return Backbone.sync.call(this, method, model, $.extend(true, defaults, options));
+            },
+            parse: function(response){
+                var entity = (response.entry ? $.extend(true, {}, response.entry[0]) : {}),
+                data = entity.fields || {};
+                
+                if (data.wildcard) {
+                    data.wildcard = splunkDUtils.addAnchorsToWildcardArray(data.wildcard);
+                }
+                
+                return data;
+            }
+        });
+    }
+);
+
+define('models/services/ACL',
+    [
+     'jquery',
+     'backbone',
+     'models/Base',
+     'util/splunkd_utils'
+     ],
+     function($, Backbone, BaseModel, splunkDUtils) {
+        return BaseModel.extend({
+            initialize: function(attributes, options) {
+                BaseModel.prototype.initialize.apply(this, arguments);
+            },
+            sync: function(method, model, options) {
+                var defaults = {
+                    data: {
+                        output_mode: 'json'
+                    }
+                };
+                switch(method) {
+                case 'update':
+                    defaults.processData = true;
+                    defaults.type = 'POST';
+                    defaults.url = splunkDUtils.fullpath(model.id);
+                    $.extend(true, defaults, options);
+                    break;
+                default:
+                    throw new Error('invalid method: ' + method);
+                }
+                return Backbone.sync.call(this, method, model, defaults);
+            }
+        });
+    }
+);
+
+define('models/ACLReadOnly',
+    [
+         'jquery',
+         'underscore',
+         'backbone',
+         'models/Base',
+         'util/splunkd_utils'
+     ],
+     function($, _, Backbone, BaseModel, splunkd_utils) {
+        return BaseModel.extend({
+            initialize: function(attributes, options) {
+                BaseModel.prototype.initialize.apply(this, arguments);
+            },
+            permsToObj: function() {
+                var perms = $.extend(true, {}, this.get('perms'));
+                perms.read = perms.read || [];
+                perms.write = perms.write || [];
+                return perms;
+            },
+            toDataPayload: function() {
+                var perms = this.permsToObj(),
+                    data = {
+                        sharing: this.get('sharing'),
+                        owner: this.get('owner')
+                    };
+
+                if (data.sharing !== splunkd_utils.USER && perms.read.length !== 0) {
+                    if (_.indexOf(perms.read, '*') != -1) {
+                        data['perms.read'] = '*';
+                    } else {
+                        data['perms.read'] = perms.read.join(',');
+                    }
+                }
+
+                if (data.sharing !== splunkd_utils.USER && perms.write.length !== 0) {
+                    if (_.indexOf(perms.write, '*') != -1) {
+                        data['perms.write'] = '*';
+                    } else {
+                        data['perms.write'] = perms.write.join(',');
+                    }
+                }
+
+                return data;
+            },
+            canWrite: function() {
+                return this.get('can_write');
+            }
+        });
+    }
+);
+
+define('models/SplunkDBase',
+    [
+        'jquery',
+        'underscore',
+        'backbone',
+        'models/Base',
+        'models/SplunkDWhiteList',
+        'models/services/ACL',
+        'models/ACLReadOnly',
+        'util/splunkd_utils',
+        'util/console'
+    ],
+    function($, _, Backbone, BaseModel, SplunkDWhiteList, ACLModel, ACLReadOnlyModel, splunkd_utils, console) {
+
+        //private sync CRUD methods
+        var syncCreate = function(model, options){
+            var bbXHR, splunkDWhiteListXHR, url,
+	            deferredResponse = $.Deferred(),
+	            defaults = {data: {output_mode: 'json'}};
+
+            url = _.isFunction(model.url) ? model.url() : model.url;
+            splunkDWhiteListXHR = this.splunkDWhiteList.fetch({
+                url: splunkd_utils.fullpath(url, {}) + '/_new',
+                success: function(splunkDWhiteListModel, response) {
+                    var app_and_owner = {};
+                    if (options.data){
+                        app_and_owner = $.extend(app_and_owner, { //JQuery purges undefined
+                            app: options.data.app || undefined,
+                            owner: options.data.owner || undefined,
+                            sharing: options.data.sharing || undefined
+                        });
+                    }
+                    defaults.url = splunkd_utils.fullpath(url, app_and_owner);
+                    
+                    defaults.processData = true;
+                    $.extend(true, defaults.data, model.whiteListAttributes());
+                    $.extend(true, defaults, options);
+                    
+                    delete defaults.data.app;
+                    delete defaults.data.owner;
+                    delete defaults.data.sharing;
+                    
+                    defaults.data = splunkd_utils.normalizeValuesForPOST(defaults.data);
+
+                    bbXHR = Backbone.sync.call(null, "create", model, defaults);
+                    bbXHR.done(function() {
+                        deferredResponse.resolve.apply(deferredResponse, arguments);
+                    });
+                    bbXHR.fail(function() {
+                        deferredResponse.reject.apply(deferredResponse, arguments);
+                    });
+                }
+            });
+            splunkDWhiteListXHR.fail(function() {
+                deferredResponse.reject.apply(deferredResponse, arguments);
+            });
+            return deferredResponse.promise();
+        },
+        syncRead = function(model, options){
+            var bbXHR, url,
+	            deferredResponse = $.Deferred(),
+	            defaults = {data: {output_mode: 'json'}};
+
+            if((window.$C['SPLUNKD_FREE_LICENSE'] || options.isFreeLicense) && model.FREE_PAYLOAD) {
+                if(options.success) {
+                    options.success(model, model.FREE_PAYLOAD, options);
+                }
+                return deferredResponse.resolve.apply(deferredResponse, [model, model.FREE_PAYLOAD, options]);
+            }
+
+            if (model.isNew()){
+                url = _.isFunction(model.url) ? model.url() : model.url;
+                url += "/_new";
+            }else if(model.urlRoot){
+                url = model.urlRoot +'/'+ model.id;
+            } else {
+                url = model.id;
+            }
+            
+            var app_and_owner = {};
+            if (options.data){
+                app_and_owner = $.extend(app_and_owner, { //JQuery purges undefined
+                    app: options.data.app || undefined,
+                    owner: options.data.owner || undefined,
+                    sharing: options.data.sharing || undefined
+                });
+            }
+            defaults.url = splunkd_utils.fullpath(url, app_and_owner);
+            
+            $.extend(true, defaults, options);
+            delete defaults.data.app;
+            delete defaults.data.owner;
+            delete defaults.data.sharing;
+
+            bbXHR = Backbone.sync.call(this, "read", model, defaults);
+            bbXHR.done(function() {
+                deferredResponse.resolve.apply(deferredResponse, arguments);
+            });
+            bbXHR.fail(function() {
+                deferredResponse.reject.apply(deferredResponse, arguments);
+            });
+            return deferredResponse.promise();
+        },
+        syncUpdate = function(model, options){
+            var bbXHR, splunkDWhiteListXHR, url,
+	            deferredResponse = $.Deferred(),
+	            defaults = {data: {output_mode: 'json'}},
+	            id = model.id;
+
+            url = splunkd_utils.fullpath(id, {});
+            this.splunkDWhiteList.clear();
+            splunkDWhiteListXHR = this.splunkDWhiteList.fetch({
+                url: url,
+                success: function(splunkDWhiteListModel) {
+                    $.extend(true, defaults.data, model.whiteListAttributes());
+                    $.extend(true, defaults, options);
+                    defaults.processData = true;
+                    defaults.type = 'POST';
+                    defaults.url = url;
+                    
+                    defaults.data = splunkd_utils.normalizeValuesForPOST(defaults.data);
+
+                    bbXHR = Backbone.sync.call(null, "update", model, defaults);
+                    bbXHR.done(function() {
+                        deferredResponse.resolve.apply(deferredResponse, arguments);
+                    });
+                    bbXHR.fail(function() {
+                        deferredResponse.reject.apply(deferredResponse, arguments);
+                    });
+                }
+            });
+            splunkDWhiteListXHR.fail(function() {
+                deferredResponse.reject.apply(deferredResponse, arguments);
+            });
+            return deferredResponse.promise();
+        },
+        syncDelete = function(model, options){
+            var bbXHR,
+	            deferredResponse = $.Deferred(),
+	            defaults = {data: {output_mode: 'json'}};
+
+            if(options.data && options.data.output_mode){
+                //add layering of url if specified by user
+                defaults.url = splunkd_utils.fullpath(model.id, {}) + '?output_mode=' + encodeURIComponent(options.data.output_mode);
+                delete options.data.output_mode;
+            } else {
+                //add layering of url if specified by user
+                defaults.url = splunkd_utils.fullpath(model.id, {}) + '?output_mode=' + encodeURIComponent(defaults.data.output_mode);
+                delete defaults.data.output_mode;
+            }
+            $.extend(true, defaults, options);
+            defaults.processData = true;
+
+            bbXHR = Backbone.sync.call(this, "delete", model, defaults);
+            bbXHR.done(function() {
+                deferredResponse.resolve.apply(deferredResponse, arguments);
+            });
+            bbXHR.fail(function() {
+                deferredResponse.reject.apply(deferredResponse, arguments);
+            });
+            return deferredResponse.promise();
+        };
+
+        var Model = BaseModel.extend({
+            initialize: function(attributes, options) {
+                BaseModel.prototype.initialize.apply(this, arguments);
+                this.splunkDWhiteList = options && options.splunkDWhiteList ?
+                        options.splunkDWhiteList : new SplunkDWhiteList();
+                
+                this.initializeAssociated();
+                
+                this.on("change:id", function() {
+                    var alt = this.id;
+                    if (alt) {
+                        alt = alt + "/acl";
+                    }
+                    this.acl.set('id', alt);
+                }, this);
+                
+                if (options && options.splunkDPayload){
+                    this.setFromSplunkD(options.splunkDPayload, {silent: true});
+                }
+            },
+            parseSplunkDMessages: function(response) {
+                var messages = BaseModel.prototype.parseSplunkDMessages.call(this, response);
+                if(response && response.entry && response.entry.length > 0) {
+                    messages = _.union(messages, splunkd_utils.parseMessagesObject(response.entry[0].messages));
+                }
+                return messages;
+            },
+            initializeAssociated: function() {
+                // do a dynamic lookup of the current constructor so that this method is inheritance-friendly
+                var RootClass = this.constructor;
+                this.associated = this.associated || {};
+
+                //instance level models
+                this.links = this.links || new RootClass.Links();
+                this.associated.links = this.links;
+                
+                this.generator = this.generator || new RootClass.Generator();
+                this.associated.generator = this.generator;
+                
+                this.paging = this.paging || new RootClass.Paging();
+                this.associated.paging = this.paging;
+
+                //nested instance level on entry
+                if (!this.entry){
+                    this.entry = new RootClass.Entry();
+                    $.extend(this.entry, {
+                        links: new RootClass.Entry.Links(),
+                        acl: new RootClass.Entry.ACL(),
+                        content: new RootClass.Entry.Content(),
+                        fields: new RootClass.Entry.Fields()
+                    });
+                    this.entry.associated.links = this.entry.links;
+                    this.entry.associated.acl = this.entry.acl;
+                    this.entry.associated.content = this.entry.content;
+                    this.entry.associated.fields = this.entry.fields;
+                }
+                this.associated.entry = this.entry;
+                
+                //associated EAI models
+                this.acl = this.acl || new ACLModel();
+                this.associated.acl = this.acl;
+            },
+            url: '',
+            sync: function(method, model, options) {
+                switch(method){
+                    case 'create':
+                        return syncCreate.call(this, model, options);
+                    case 'read':
+                        return syncRead.call(this, model, options);
+                    case 'update':
+                        return syncUpdate.call(this, model, options);
+                    case 'delete':
+                        return syncDelete.call(this, model, options);
+                    default:
+                        throw new Error('invalid method: ' + method);
+                }
+            },
+            parse: function(response) {
+                // make a defensive copy of response since we are going to modify it
+                response = $.extend(true, {}, response);
+                //when called from the collection fetch we will need to ensure that our
+                //associated models are initialized because parse is called before
+                //initialize
+                this.initializeAssociated();
+
+                var newRegex = /.\/_new$/;
+                
+                if (!response || !response.entry || response.entry.length === 0) {
+                    console.log('Response has no content to parse');
+                    return;
+                }
+                var response_entry = response.entry[0];
+
+                //id
+                //this needs to be the first thing so that people can get !isNew()
+                if (!newRegex.test(response_entry.links.alternate)){
+                    this.id = response_entry.links.alternate;
+                    response.id = response_entry.links.alternate;
+                    this.acl.set('id', this.id + '/acl');
+                }
+
+                //top-level
+                this.links.set(response.links);
+                delete response.links;
+                this.generator.set(response.generator);
+                delete response.generator;
+                this.paging.set(response.paging);
+                delete response.paging;
+
+                //sub-entry
+                this.entry.links.set(response_entry.links);
+                delete response_entry.links;
+                this.entry.acl.set(response_entry.acl);
+                delete response_entry.acl;
+                this.entry.content.set(response_entry.content);
+                delete response_entry.content;
+                
+                if (response_entry.fields && response_entry.fields.wildcard) {
+                    response_entry.fields.wildcard = splunkd_utils.addAnchorsToWildcardArray(response_entry.fields.wildcard);
+                }
+                this.entry.fields.set(response_entry.fields);
+                delete response_entry.fields;
+                this.entry.set(response_entry);
+                delete response.entry;
+                return response;
+            },
+            whiteListAttributes: function() {
+                var whiteListOptAndReq = this.splunkDWhiteList.concatOptionalRequired(),
+                    whiteListWild = this.splunkDWhiteList.get('wildcard') || [],
+                    contentAttrs = this.entry.content.filterByKeys(whiteListOptAndReq, {allowEmpty: true});
+
+                return _.extend(contentAttrs, this.entry.content.filterByWildcards(whiteListWild, {allowEmpty: true}));
+            },
+            setFromSplunkD: function(payload, options) {
+                this.attributes = {};
+                var cloned_payload = $.extend(true, {}, payload),
+                    newRegex = /.\/_new$/;
+
+                var oldId = this.id;
+                //object assignment
+                if (cloned_payload) {
+                    if (cloned_payload.entry && cloned_payload.entry[0]) {
+                        var payload_entry = cloned_payload.entry[0];
+
+                        if(payload_entry.links){
+                            //id
+                            //this needs to be the first thing so that people can get !isNew()
+                            if (payload_entry.links.alternate && !newRegex.test(payload_entry.links.alternate)){
+                                this.set({id: payload_entry.links.alternate}, {silent: true});
+                                this.acl.set({id: payload_entry.links.alternate + "/acl"}, options);
+                            }
+
+                            this.entry.links.set(payload_entry.links, options);
+                            delete payload_entry.links;
+                        }
+
+                        if(payload_entry.acl){
+                            this.entry.acl.set(payload_entry.acl, options);
+                            delete payload_entry.acl;
+                        }
+                        if(payload_entry.content){
+                            this.entry.content.set(payload_entry.content, options);
+                            delete payload_entry.content;
+                        }
+                        if(payload_entry.fields){
+                            if (payload_entry.fields.wildcard) {
+                                payload_entry.fields.wildcard = splunkd_utils.addAnchorsToWildcardArray(payload_entry.fields.wildcard);
+                            }
+                            
+                            this.entry.fields.set(payload_entry.fields, options);
+                            delete payload_entry.fields;
+                        }
+
+                        this.entry.set(payload_entry, options);
+                        delete cloned_payload.entry;
+                    }
+
+                    if(cloned_payload.links) {
+                        this.links.set(cloned_payload.links, options);
+                        delete cloned_payload.links;
+                    }
+                    if(cloned_payload.generator) {
+                        this.generator.set(cloned_payload.generator, options);
+                        delete cloned_payload.generator;
+                    }
+                    if(cloned_payload.paging) {
+                        this.paging.set(cloned_payload.paging, options);
+                        delete cloned_payload.paging;
+                    }
+
+                    //reset the internal root model due to pre-init routine
+                    this.set(cloned_payload, options);
+                    if(this.id !== oldId) {
+                        this.trigger('change:' + this.idAttribute);
+                    }
+                }
+            },
+            toSplunkD: function() {
+                var payload = {};
+
+                payload = $.extend(true, {}, this.toJSON());
+
+                payload.links = $.extend(true, {}, this.links.toJSON());
+                payload.generator = $.extend(true, {}, this.generator.toJSON());
+                payload.paging = $.extend(true, {}, this.paging.toJSON());
+                payload.entry = [$.extend(true, {}, this.entry.toJSON())];
+
+                payload.entry[0].links = $.extend(true, {}, this.entry.links.toJSON());
+                payload.entry[0].acl = $.extend(true, {}, this.entry.acl.toJSON());
+                payload.entry[0].content = $.extend(true, {}, this.entry.content.toJSON());
+                payload.entry[0].fields = $.extend(true, {}, this.entry.fields.toJSON());
+
+                //cleanup
+                delete payload.id;
+                return payload;
+            }
+        },
+        {
+            Links: BaseModel,
+            Generator: BaseModel,
+            Paging: BaseModel,
+            Entry: BaseModel.extend(
+                {
+                    initialize: function() {
+                        BaseModel.prototype.initialize.apply(this, arguments);
+                    }
+                },
+                {
+                    Links: BaseModel,
+                    ACL: ACLReadOnlyModel,
+                    Content: BaseModel,
+                    Fields: BaseModel
+                }
+            )
+        });
+
+        return Model;
+    }
+);
+
+define('models/services/AppLocal',
+    [
+        'models/SplunkDBase'
+    ],
+    function(SplunkDBaseModel) {
+        return SplunkDBaseModel.extend({
+            url: "apps/local",
+            initialize: function() {
+                SplunkDBaseModel.prototype.initialize.apply(this, arguments);
+            },
+            appAllowsDisable: function() {
+                return this.entry.links.get("disable") ? true : false;
+            }
+        });
+    }
+);
+define('models/services/authentication/User',[
+    'underscore',
+    'models/SplunkDBase'
+],
+function(_, SplunkDBaseModel) {
+    return SplunkDBaseModel.extend({
+        FREE_PAYLOAD: {
+            "links": {
+                "create": "/services/authentication/users/_new"
+            },
+            "generator": {},
+            "entry": [
+                {
+                    "name": "admin",
+                    "links": {
+                        "alternate": "/services/authentication/users/admin",
+                        "list": "/services/authentication/users/admin",
+                        "edit": "/services/authentication/users/admin"
+                    },
+                    "author": "system",
+                    "acl": {
+                        "app": "",
+                        "can_list": true,
+                        "can_write": true,
+                        "modifiable": false,
+                        "owner": "system",
+                        "perms": {
+                            "read": [
+                                "*"
+                            ],
+                            "write": [
+                                "*"
+                            ]
+                        },
+                        "removable": false,
+                        "sharing": "system"
+                    },
+                    "fields": {
+                        "required": [],
+                        "optional": [
+                            "defaultApp",
+                            "email",
+                            "password",
+                            "realname",
+                            "restart_background_jobs",
+                            "roles",
+                            "tz"
+                        ],
+                        "wildcard": []
+                    },
+                    "content": {
+                        "isFree": true,
+                        "capabilities": [],
+                        "defaultApp": "launcher",
+                        "defaultAppIsUserOverride": false,
+                        "defaultAppSourceRole": "system",
+                        "eai:acl": null,
+                        "email": "changeme@example.com",
+                        "password": "********",
+                        "realname": "Administrator",
+                        "restart_background_jobs": true,
+                        "roles": [
+                            "admin"
+                        ],
+                        "type": "Splunk",
+                        "tz": ""
+                    }
+                }
+            ],
+            "paging": {
+                "total": 1,
+                "perPage": 30,
+                "offset": 0
+            },
+            "messages": []
+        },
+        urlRoot: "authentication/users",
+        url: "authentication/users",
+        initialize: function() {
+            SplunkDBaseModel.prototype.initialize.apply(this, arguments);
+        },
+        getCapabilities: function() {
+            return this.entry.content.get('capabilities') || [];
+        },
+        hasCapability: function(capability) {
+            if(this.isFree()) {
+                return true;
+            }
+            return this.isNew() || (_.indexOf(this.getCapabilities(), capability) !== -1);
+        },
+        canAccelerateDataModel: function() {
+            if (this.isFree())
+                return false;
+            return this.hasCapability("accelerate_datamodel");
+        },
+        //the ability to run searches.
+        canSearch: function() {
+            return this.hasCapability("search");
+        },
+        //the ability to run real-time searches.
+        canRTSearch: function() {
+            return this.hasCapability("rtsearch");
+        },
+        canScheduleRTSearch: function() {
+            return this.hasCapability("schedule_rtsearch");
+        },
+        //the ability to schedule saved searches, create and update alerts, review triggered alert information, and turn on report acceleration for searches.
+        canScheduleSearch: function() {
+            return this.hasCapability("schedule_search");
+        },
+        //the ability to add new or edit existing inputs
+        canEditMonitor: function() {
+            return this.hasCapability("edit_monitor");
+        },
+        canManageRemoteApps: function() {
+            return this.hasCapability("rest_apps_management");
+        },
+        canEditViewHtml: function () {
+            return this.hasCapability("edit_view_html");
+        },
+        isFree: function() {
+            return this.entry.content.get("isFree");
+        }
+    });
+});
+// moment.js
+// version : 2.0.0
+// author : Tim Wood
+// license : MIT
+// momentjs.com
+
+(function (undefined) {
+
+    /************************************
+        Constants
+    ************************************/
+
+    var moment,
+        VERSION = "2.0.0",
+        round = Math.round, i,
+        // internal storage for language config files
+        languages = {},
+
+        // check for nodeJS
+        hasModule = (typeof module !== 'undefined' && module.exports),
+
+        // ASP.NET json date format regex
+        aspNetJsonRegex = /^\/?Date\((\-?\d+)/i,
+        aspNetTimeSpanJsonRegex = /(\-)?(\d*)?\.?(\d+)\:(\d+)\:(\d+)\.?(\d{3})?/,
+
+        // format tokens
+        formattingTokens = /(\[[^\[]*\])|(\\)?(Mo|MM?M?M?|Do|DDDo|DD?D?D?|ddd?d?|do?|w[o|w]?|W[o|W]?|YYYYY|YYYY|YY|gg(ggg?)?|GG(GGG?)?|e|E|a|A|hh?|HH?|mm?|ss?|SS?S?|X|zz?|ZZ?|.)/g,
+        localFormattingTokens = /(\[[^\[]*\])|(\\)?(LT|LL?L?L?|l{1,4})/g,
+
+        // parsing tokens
+        parseMultipleFormatChunker = /([0-9a-zA-Z\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]+)/gi,
+
+        // parsing token regexes
+        parseTokenOneOrTwoDigits = /\d\d?/, // 0 - 99
+        parseTokenOneToThreeDigits = /\d{1,3}/, // 0 - 999
+        parseTokenThreeDigits = /\d{3}/, // 000 - 999
+        parseTokenFourDigits = /\d{1,4}/, // 0 - 9999
+        parseTokenSixDigits = /[+\-]?\d{1,6}/, // -999,999 - 999,999
+        parseTokenWord = /[0-9]*[a-z\u00A0-\u05FF\u0700-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]+|[\u0600-\u06FF\/]+(\s*?[\u0600-\u06FF]+){1,2}/i, // any word (or two) characters or numbers including two/three word month in arabic.
+        parseTokenTimezone = /Z|[\+\-]\d\d:?\d\d/i, // +00:00 -00:00 +0000 -0000 or Z
+        parseTokenT = /T/i, // T (ISO seperator)
+        parseTokenTimestampMs = /[\+\-]?\d+(\.\d{1,3})?/, // 123456789 123456789.123
+
+        // preliminary iso regex
+        // 0000-00-00 + T + 00 or 00:00 or 00:00:00 or 00:00:00.000 + +00:00 or +0000
+        isoRegex = /^\s*\d{4}-\d\d-\d\d((T| )(\d\d(:\d\d(:\d\d(\.\d\d?\d?)?)?)?)?([\+\-]\d\d:?\d\d)?)?/,
+        isoFormat = 'YYYY-MM-DDTHH:mm:ssZ',
+
+        // iso time formats and regexes
+        isoTimes = [
+            ['HH:mm:ss.S', /(T| )\d\d:\d\d:\d\d\.\d{1,3}/],
+            ['HH:mm:ss', /(T| )\d\d:\d\d:\d\d/],
+            ['HH:mm', /(T| )\d\d:\d\d/],
+            ['HH', /(T| )\d\d/]
+        ],
+
+        // timezone chunker "+10:00" > ["10", "00"] or "-1530" > ["-15", "30"]
+        parseTimezoneChunker = /([\+\-]|\d\d)/gi,
+
+        // getter and setter names
+        proxyGettersAndSetters = 'Date|Hours|Minutes|Seconds|Milliseconds'.split('|'),
+        unitMillisecondFactors = {
+            'Milliseconds' : 1,
+            'Seconds' : 1e3,
+            'Minutes' : 6e4,
+            'Hours' : 36e5,
+            'Days' : 864e5,
+            'Months' : 2592e6,
+            'Years' : 31536e6
+        },
+
+        unitAliases = {
+            ms : 'millisecond',
+            s : 'second',
+            m : 'minute',
+            h : 'hour',
+            d : 'day',
+            w : 'week',
+            M : 'month',
+            y : 'year'
+        },
+
+        // format function strings
+        formatFunctions = {},
+
+        // tokens to ordinalize and pad
+        ordinalizeTokens = 'DDD w W M D d'.split(' '),
+        paddedTokens = 'M D H h m s w W'.split(' '),
+
+        formatTokenFunctions = {
+            M    : function () {
+                return this.month() + 1;
+            },
+            MMM  : function (format) {
+                return this.lang().monthsShort(this, format);
+            },
+            MMMM : function (format) {
+                return this.lang().months(this, format);
+            },
+            D    : function () {
+                return this.date();
+            },
+            DDD  : function () {
+                return this.dayOfYear();
+            },
+            d    : function () {
+                return this.day();
+            },
+            dd   : function (format) {
+                return this.lang().weekdaysMin(this, format);
+            },
+            ddd  : function (format) {
+                return this.lang().weekdaysShort(this, format);
+            },
+            dddd : function (format) {
+                return this.lang().weekdays(this, format);
+            },
+            w    : function () {
+                return this.week();
+            },
+            W    : function () {
+                return this.isoWeek();
+            },
+            YY   : function () {
+                return leftZeroFill(this.year() % 100, 2);
+            },
+            YYYY : function () {
+                return leftZeroFill(this.year(), 4);
+            },
+            YYYYY : function () {
+                return leftZeroFill(this.year(), 5);
+            },
+            gg   : function () {
+                return leftZeroFill(this.weekYear() % 100, 2);
+            },
+            gggg : function () {
+                return this.weekYear();
+            },
+            ggggg : function () {
+                return leftZeroFill(this.weekYear(), 5);
+            },
+            GG   : function () {
+                return leftZeroFill(this.isoWeekYear() % 100, 2);
+            },
+            GGGG : function () {
+                return this.isoWeekYear();
+            },
+            GGGGG : function () {
+                return leftZeroFill(this.isoWeekYear(), 5);
+            },
+            e : function () {
+                return this.weekday();
+            },
+            E : function () {
+                return this.isoWeekday();
+            },
+            a    : function () {
+                return this.lang().meridiem(this.hours(), this.minutes(), true);
+            },
+            A    : function () {
+                return this.lang().meridiem(this.hours(), this.minutes(), false);
+            },
+            H    : function () {
+                return this.hours();
+            },
+            h    : function () {
+                return this.hours() % 12 || 12;
+            },
+            m    : function () {
+                return this.minutes();
+            },
+            s    : function () {
+                return this.seconds();
+            },
+            S    : function () {
+                return ~~(this.milliseconds() / 100);
+            },
+            SS   : function () {
+                return leftZeroFill(~~(this.milliseconds() / 10), 2);
+            },
+            SSS  : function () {
+                return leftZeroFill(this.milliseconds(), 3);
+            },
+            Z    : function () {
+                var a = -this.zone(),
+                    b = "+";
+                if (a < 0) {
+                    a = -a;
+                    b = "-";
+                }
+                return b + leftZeroFill(~~(a / 60), 2) + ":" + leftZeroFill(~~a % 60, 2);
+            },
+            ZZ   : function () {
+                var a = -this.zone(),
+                    b = "+";
+                if (a < 0) {
+                    a = -a;
+                    b = "-";
+                }
+                return b + leftZeroFill(~~(10 * a / 6), 4);
+            },
+            X    : function () {
+                return this.unix();
+            }
+        };
+
+    function padToken(func, count) {
+        return function (a) {
+            return leftZeroFill(func.call(this, a), count);
+        };
+    }
+    function ordinalizeToken(func, period) {
+        return function (a) {
+            return this.lang().ordinal(func.call(this, a), period);
+        };
+    }
+
+    while (ordinalizeTokens.length) {
+        i = ordinalizeTokens.pop();
+        formatTokenFunctions[i + 'o'] = ordinalizeToken(formatTokenFunctions[i], i);
+    }
+    while (paddedTokens.length) {
+        i = paddedTokens.pop();
+        formatTokenFunctions[i + i] = padToken(formatTokenFunctions[i], 2);
+    }
+    formatTokenFunctions.DDDD = padToken(formatTokenFunctions.DDD, 3);
+
+
+    /************************************
+        Constructors
+    ************************************/
+
+    function Language() {
+
+    }
+
+    // Moment prototype object
+    function Moment(config) {
+        extend(this, config);
+    }
+
+    // Duration Constructor
+    function Duration(duration) {
+        var data = this._data = {},
+            years = duration.years || duration.year || duration.y || 0,
+            months = duration.months || duration.month || duration.M || 0,
+            weeks = duration.weeks || duration.week || duration.w || 0,
+            days = duration.days || duration.day || duration.d || 0,
+            hours = duration.hours || duration.hour || duration.h || 0,
+            minutes = duration.minutes || duration.minute || duration.m || 0,
+            seconds = duration.seconds || duration.second || duration.s || 0,
+            milliseconds = duration.milliseconds || duration.millisecond || duration.ms || 0;
+
+        // representation for dateAddRemove
+        this._milliseconds = milliseconds +
+            seconds * 1e3 + // 1000
+            minutes * 6e4 + // 1000 * 60
+            hours * 36e5; // 1000 * 60 * 60
+        // Because of dateAddRemove treats 24 hours as different from a
+        // day when working around DST, we need to store them separately
+        this._days = days +
+            weeks * 7;
+        // It is impossible translate months into days without knowing
+        // which months you are are talking about, so we have to store
+        // it separately.
+        this._months = months +
+            years * 12;
+
+        // The following code bubbles up values, see the tests for
+        // examples of what that means.
+        data.milliseconds = milliseconds % 1000;
+        seconds += absRound(milliseconds / 1000);
+
+        data.seconds = seconds % 60;
+        minutes += absRound(seconds / 60);
+
+        data.minutes = minutes % 60;
+        hours += absRound(minutes / 60);
+
+        data.hours = hours % 24;
+        days += absRound(hours / 24);
+
+        days += weeks * 7;
+        data.days = days % 30;
+
+        months += absRound(days / 30);
+
+        data.months = months % 12;
+        years += absRound(months / 12);
+
+        data.years = years;
+    }
+
+
+    /************************************
+        Helpers
+    ************************************/
+
+
+    function extend(a, b) {
+        for (var i in b) {
+            if (b.hasOwnProperty(i)) {
+                a[i] = b[i];
+            }
+        }
+        return a;
+    }
+
+    function absRound(number) {
+        if (number < 0) {
+            return Math.ceil(number);
+        } else {
+            return Math.floor(number);
+        }
+    }
+
+    // left zero fill a number
+    // see http://jsperf.com/left-zero-filling for performance comparison
+    function leftZeroFill(number, targetLength) {
+        var output = number + '';
+        while (output.length < targetLength) {
+            output = '0' + output;
+        }
+        return output;
+    }
+
+    // helper function for _.addTime and _.subtractTime
+    function addOrSubtractDurationFromMoment(mom, duration, isAdding) {
+        var ms = duration._milliseconds,
+            d = duration._days,
+            M = duration._months,
+            currentDate;
+
+        if (ms) {
+            mom._d.setTime(+mom + ms * isAdding);
+        }
+        if (d) {
+            mom.date(mom.date() + d * isAdding);
+        }
+        if (M) {
+            currentDate = mom.date();
+            mom.date(1)
+                .month(mom.month() + M * isAdding)
+                .date(Math.min(currentDate, mom.daysInMonth()));
+        }
+    }
+
+    // check if is an array
+    function isArray(input) {
+        return Object.prototype.toString.call(input) === '[object Array]';
+    }
+
+    // compare two arrays, return the number of differences
+    function compareArrays(array1, array2) {
+        var len = Math.min(array1.length, array2.length),
+            lengthDiff = Math.abs(array1.length - array2.length),
+            diffs = 0,
+            i;
+        for (i = 0; i < len; i++) {
+            if (~~array1[i] !== ~~array2[i]) {
+                diffs++;
+            }
+        }
+        return diffs + lengthDiff;
+    }
+
+    function normalizeUnits(units) {
+        return units ? unitAliases[units] || units.toLowerCase().replace(/(.)s$/, '$1') : units;
+    }
+
+
+    /************************************
+        Languages
+    ************************************/
+
+
+    Language.prototype = {
+        set : function (config) {
+            var prop, i;
+            for (i in config) {
+                prop = config[i];
+                if (typeof prop === 'function') {
+                    this[i] = prop;
+                } else {
+                    this['_' + i] = prop;
+                }
+            }
+        },
+
+        _months : "January_February_March_April_May_June_July_August_September_October_November_December".split("_"),
+        months : function (m) {
+            return this._months[m.month()];
+        },
+
+        _monthsShort : "Jan_Feb_Mar_Apr_May_Jun_Jul_Aug_Sep_Oct_Nov_Dec".split("_"),
+        monthsShort : function (m) {
+            return this._monthsShort[m.month()];
+        },
+
+        monthsParse : function (monthName) {
+            var i, mom, regex;
+
+            if (!this._monthsParse) {
+                this._monthsParse = [];
+            }
+
+            for (i = 0; i < 12; i++) {
+                // make the regex if we don't have it already
+                if (!this._monthsParse[i]) {
+                    mom = moment([2000, i]);
+                    regex = '^' + this.months(mom, '') + '|^' + this.monthsShort(mom, '');
+                    this._monthsParse[i] = new RegExp(regex.replace('.', ''), 'i');
+                }
+                // test the regex
+                if (this._monthsParse[i].test(monthName)) {
+                    return i;
+                }
+            }
+        },
+
+        _weekdays : "Sunday_Monday_Tuesday_Wednesday_Thursday_Friday_Saturday".split("_"),
+        weekdays : function (m) {
+            return this._weekdays[m.day()];
+        },
+
+        _weekdaysShort : "Sun_Mon_Tue_Wed_Thu_Fri_Sat".split("_"),
+        weekdaysShort : function (m) {
+            return this._weekdaysShort[m.day()];
+        },
+
+        _weekdaysMin : "Su_Mo_Tu_We_Th_Fr_Sa".split("_"),
+        weekdaysMin : function (m) {
+            return this._weekdaysMin[m.day()];
+        },
+
+        weekdaysParse : function (weekdayName) {
+            var i, mom, regex;
+
+            if (!this._weekdaysParse) {
+                this._weekdaysParse = [];
+            }
+
+            for (i = 0; i < 7; i++) {
+                // make the regex if we don't have it already
+                if (!this._weekdaysParse[i]) {
+                    mom = moment([2000, 1]).day(i);
+                    regex = '^' + this.weekdays(mom, '') + '|^' + this.weekdaysShort(mom, '') + '|^' + this.weekdaysMin(mom, '');
+                    this._weekdaysParse[i] = new RegExp(regex.replace('.', ''), 'i');
+                }
+                // test the regex
+                if (this._weekdaysParse[i].test(weekdayName)) {
+                    return i;
+                }
+            }
+        },
+
+        _longDateFormat : {
+            LT : "h:mm A",
+            L : "MM/DD/YYYY",
+            LL : "MMMM D YYYY",
+            LLL : "MMMM D YYYY LT",
+            LLLL : "dddd, MMMM D YYYY LT"
+        },
+        longDateFormat : function (key) {
+            var output = this._longDateFormat[key];
+            if (!output && this._longDateFormat[key.toUpperCase()]) {
+                output = this._longDateFormat[key.toUpperCase()].replace(/MMMM|MM|DD|dddd/g, function (val) {
+                    return val.slice(1);
+                });
+                this._longDateFormat[key] = output;
+            }
+            return output;
+        },
+
+        meridiem : function (hours, minutes, isLower) {
+            if (hours > 11) {
+                return isLower ? 'pm' : 'PM';
+            } else {
+                return isLower ? 'am' : 'AM';
+            }
+        },
+
+        _calendar : {
+            sameDay : '[Today at] LT',
+            nextDay : '[Tomorrow at] LT',
+            nextWeek : 'dddd [at] LT',
+            lastDay : '[Yesterday at] LT',
+            lastWeek : '[Last] dddd [at] LT',
+            sameElse : 'L'
+        },
+        calendar : function (key, mom) {
+            var output = this._calendar[key];
+            return typeof output === 'function' ? output.apply(mom) : output;
+        },
+
+        _relativeTime : {
+            future : "in %s",
+            past : "%s ago",
+            s : "a few seconds",
+            m : "a minute",
+            mm : "%d minutes",
+            h : "an hour",
+            hh : "%d hours",
+            d : "a day",
+            dd : "%d days",
+            M : "a month",
+            MM : "%d months",
+            y : "a year",
+            yy : "%d years"
+        },
+        relativeTime : function (number, withoutSuffix, string, isFuture) {
+            var output = this._relativeTime[string];
+            return (typeof output === 'function') ?
+                output(number, withoutSuffix, string, isFuture) :
+                output.replace(/%d/i, number);
+        },
+        pastFuture : function (diff, output) {
+            var format = this._relativeTime[diff > 0 ? 'future' : 'past'];
+            return typeof format === 'function' ? format(output) : format.replace(/%s/i, output);
+        },
+
+        ordinal : function (number) {
+            return this._ordinal.replace("%d", number);
+        },
+        _ordinal : "%d",
+
+        preparse : function (string) {
+            return string;
+        },
+
+        postformat : function (string) {
+            return string;
+        },
+
+        week : function (mom) {
+            return weekOfYear(mom, this._week.dow, this._week.doy).week;
+        },
+        _week : {
+            dow : 0, // Sunday is the first day of the week.
+            doy : 6  // The week that contains Jan 1st is the first week of the year.
+        }
+    };
+
+    // Loads a language definition into the `languages` cache.  The function
+    // takes a key and optionally values.  If not in the browser and no values
+    // are provided, it will load the language file module.  As a convenience,
+    // this function also returns the language values.
+    function loadLang(key, values) {
+        values.abbr = key;
+        if (!languages[key]) {
+            languages[key] = new Language();
+        }
+        languages[key].set(values);
+        return languages[key];
+    }
+
+    // Determines which language definition to use and returns it.
+    //
+    // With no parameters, it will return the global language.  If you
+    // pass in a language key, such as 'en', it will return the
+    // definition for 'en', so long as 'en' has already been loaded using
+    // moment.lang.
+    function getLangDefinition(key) {
+        if (!key) {
+            return moment.fn._lang;
+        }
+        if (!languages[key] && hasModule) {
+            require('./lang/' + key);
+        }
+        return languages[key];
+    }
+
+
+    /************************************
+        Formatting
+    ************************************/
+
+
+    function removeFormattingTokens(input) {
+        if (input.match(/\[.*\]/)) {
+            return input.replace(/^\[|\]$/g, "");
+        }
+        return input.replace(/\\/g, "");
+    }
+
+    function makeFormatFunction(format) {
+        var array = format.match(formattingTokens), i, length;
+
+        for (i = 0, length = array.length; i < length; i++) {
+            if (formatTokenFunctions[array[i]]) {
+                array[i] = formatTokenFunctions[array[i]];
+            } else {
+                array[i] = removeFormattingTokens(array[i]);
+            }
+        }
+
+        return function (mom) {
+            var output = "";
+            for (i = 0; i < length; i++) {
+                output += array[i] instanceof Function ? array[i].call(mom, format) : array[i];
+            }
+            return output;
+        };
+    }
+
+    // format date using native date object
+    function formatMoment(m, format) {
+        var i = 5;
+
+        function replaceLongDateFormatTokens(input) {
+            return m.lang().longDateFormat(input) || input;
+        }
+
+        while (i-- && localFormattingTokens.test(format)) {
+            format = format.replace(localFormattingTokens, replaceLongDateFormatTokens);
+        }
+
+        if (!formatFunctions[format]) {
+            formatFunctions[format] = makeFormatFunction(format);
+        }
+
+        return formatFunctions[format](m);
+    }
+
+
+    /************************************
+        Parsing
+    ************************************/
+
+
+    // get the regex to find the next token
+    function getParseRegexForToken(token) {
+        switch (token) {
+        case 'DDDD':
+            return parseTokenThreeDigits;
+        case 'YYYY':
+            return parseTokenFourDigits;
+        case 'YYYYY':
+            return parseTokenSixDigits;
+        case 'S':
+        case 'SS':
+        case 'SSS':
+        case 'DDD':
+            return parseTokenOneToThreeDigits;
+        case 'MMM':
+        case 'MMMM':
+        case 'dd':
+        case 'ddd':
+        case 'dddd':
+        case 'a':
+        case 'A':
+            return parseTokenWord;
+        case 'X':
+            return parseTokenTimestampMs;
+        case 'Z':
+        case 'ZZ':
+            return parseTokenTimezone;
+        case 'T':
+            return parseTokenT;
+        case 'MM':
+        case 'DD':
+        case 'YY':
+        case 'HH':
+        case 'hh':
+        case 'mm':
+        case 'ss':
+        case 'M':
+        case 'D':
+        case 'd':
+        case 'H':
+        case 'h':
+        case 'm':
+        case 's':
+            return parseTokenOneOrTwoDigits;
+        default :
+            return new RegExp(token.replace('\\', ''));
+        }
+    }
+
+    // function to convert string input to date
+    function addTimeToArrayFromToken(token, input, config) {
+        var a, b,
+            datePartArray = config._a;
+
+        switch (token) {
+        // MONTH
+        case 'M' : // fall through to MM
+        case 'MM' :
+            datePartArray[1] = (input == null) ? 0 : ~~input - 1;
+            break;
+        case 'MMM' : // fall through to MMMM
+        case 'MMMM' :
+            a = getLangDefinition(config._l).monthsParse(input);
+            // if we didn't find a month name, mark the date as invalid.
+            if (a != null) {
+                datePartArray[1] = a;
+            } else {
+                config._isValid = false;
+            }
+            break;
+        // DAY OF MONTH
+        case 'D' : // fall through to DDDD
+        case 'DD' : // fall through to DDDD
+        case 'DDD' : // fall through to DDDD
+        case 'DDDD' :
+            if (input != null) {
+                datePartArray[2] = ~~input;
+            }
+            break;
+        // YEAR
+        case 'YY' :
+            datePartArray[0] = ~~input + (~~input > 68 ? 1900 : 2000);
+            break;
+        case 'YYYY' :
+        case 'YYYYY' :
+            datePartArray[0] = ~~input;
+            break;
+        // AM / PM
+        case 'a' : // fall through to A
+        case 'A' :
+            config._isPm = ((input + '').toLowerCase() === 'pm');
+            break;
+        // 24 HOUR
+        case 'H' : // fall through to hh
+        case 'HH' : // fall through to hh
+        case 'h' : // fall through to hh
+        case 'hh' :
+            datePartArray[3] = ~~input;
+            break;
+        // MINUTE
+        case 'm' : // fall through to mm
+        case 'mm' :
+            datePartArray[4] = ~~input;
+            break;
+        // SECOND
+        case 's' : // fall through to ss
+        case 'ss' :
+            datePartArray[5] = ~~input;
+            break;
+        // MILLISECOND
+        case 'S' :
+        case 'SS' :
+        case 'SSS' :
+            datePartArray[6] = ~~ (('0.' + input) * 1000);
+            break;
+        // UNIX TIMESTAMP WITH MS
+        case 'X':
+            config._d = new Date(parseFloat(input) * 1000);
+            break;
+        // TIMEZONE
+        case 'Z' : // fall through to ZZ
+        case 'ZZ' :
+            config._useUTC = true;
+            a = (input + '').match(parseTimezoneChunker);
+            if (a && a[1]) {
+                config._tzh = ~~a[1];
+            }
+            if (a && a[2]) {
+                config._tzm = ~~a[2];
+            }
+            // reverse offsets
+            if (a && a[0] === '+') {
+                config._tzh = -config._tzh;
+                config._tzm = -config._tzm;
+            }
+            break;
+        }
+
+        // if the input is null, the date is not valid
+        if (input == null) {
+            config._isValid = false;
+        }
+    }
+
+    // convert an array to a date.
+    // the array should mirror the parameters below
+    // note: all values past the year are optional and will default to the lowest possible value.
+    // [year, month, day , hour, minute, second, millisecond]
+    function dateFromArray(config) {
+        var i, date, input = [];
+
+        if (config._d) {
+            return;
+        }
+
+        for (i = 0; i < 7; i++) {
+            config._a[i] = input[i] = (config._a[i] == null) ? (i === 2 ? 1 : 0) : config._a[i];
+        }
+
+        // add the offsets to the time to be parsed so that we can have a clean array for checking isValid
+        input[3] += config._tzh || 0;
+        input[4] += config._tzm || 0;
+
+        date = new Date(0);
+
+        if (config._useUTC) {
+            date.setUTCFullYear(input[0], input[1], input[2]);
+            date.setUTCHours(input[3], input[4], input[5], input[6]);
+        } else {
+            date.setFullYear(input[0], input[1], input[2]);
+            date.setHours(input[3], input[4], input[5], input[6]);
+        }
+
+        config._d = date;
+    }
+
+    // date from string and format string
+    function makeDateFromStringAndFormat(config) {
+        // This array is used to make a Date, either with `new Date` or `Date.UTC`
+        var tokens = config._f.match(formattingTokens),
+            string = config._i,
+            i, parsedInput;
+
+        config._a = [];
+
+        for (i = 0; i < tokens.length; i++) {
+            parsedInput = (getParseRegexForToken(tokens[i]).exec(string) || [])[0];
+            if (parsedInput) {
+                string = string.slice(string.indexOf(parsedInput) + parsedInput.length);
+            }
+            // don't parse if its not a known token
+            if (formatTokenFunctions[tokens[i]]) {
+                addTimeToArrayFromToken(tokens[i], parsedInput, config);
+            }
+        }
+        // handle am pm
+        if (config._isPm && config._a[3] < 12) {
+            config._a[3] += 12;
+        }
+        // if is 12 am, change hours to 0
+        if (config._isPm === false && config._a[3] === 12) {
+            config._a[3] = 0;
+        }
+        // return
+        dateFromArray(config);
+    }
+
+    // date from string and array of format strings
+    function makeDateFromStringAndArray(config) {
+        var tempConfig,
+            tempMoment,
+            bestMoment,
+
+            scoreToBeat = 99,
+            i,
+            currentScore;
+
+        for (i = config._f.length; i > 0; i--) {
+            tempConfig = extend({}, config);
+            tempConfig._f = config._f[i - 1];
+            makeDateFromStringAndFormat(tempConfig);
+            tempMoment = new Moment(tempConfig);
+
+            if (tempMoment.isValid()) {
+                bestMoment = tempMoment;
+                break;
+            }
+
+            currentScore = compareArrays(tempConfig._a, tempMoment.toArray());
+
+            if (currentScore < scoreToBeat) {
+                scoreToBeat = currentScore;
+                bestMoment = tempMoment;
+            }
+        }
+
+        extend(config, bestMoment);
+    }
+
+    // date from iso format
+    function makeDateFromString(config) {
+        var i,
+            string = config._i;
+        if (isoRegex.exec(string)) {
+            config._f = 'YYYY-MM-DDT';
+            for (i = 0; i < 4; i++) {
+                if (isoTimes[i][1].exec(string)) {
+                    config._f += isoTimes[i][0];
+                    break;
+                }
+            }
+            if (parseTokenTimezone.exec(string)) {
+                config._f += " Z";
+            }
+            makeDateFromStringAndFormat(config);
+        } else {
+            config._d = new Date(string);
+        }
+    }
+
+    function makeDateFromInput(config) {
+        var input = config._i,
+            matched = aspNetJsonRegex.exec(input);
+
+        if (input === undefined) {
+            config._d = new Date();
+        } else if (matched) {
+            config._d = new Date(+matched[1]);
+        } else if (typeof input === 'string') {
+            makeDateFromString(config);
+        } else if (isArray(input)) {
+            config._a = input.slice(0);
+            dateFromArray(config);
+        } else {
+            config._d = input instanceof Date ? new Date(+input) : new Date(input);
+        }
+    }
+
+
+    /************************************
+        Relative Time
+    ************************************/
+
+
+    // helper function for moment.fn.from, moment.fn.fromNow, and moment.duration.fn.humanize
+    function substituteTimeAgo(string, number, withoutSuffix, isFuture, lang) {
+        return lang.relativeTime(number || 1, !!withoutSuffix, string, isFuture);
+    }
+
+    function relativeTime(milliseconds, withoutSuffix, lang) {
+        var seconds = round(Math.abs(milliseconds) / 1000),
+            minutes = round(seconds / 60),
+            hours = round(minutes / 60),
+            days = round(hours / 24),
+            years = round(days / 365),
+            args = seconds < 45 && ['s', seconds] ||
+                minutes === 1 && ['m'] ||
+                minutes < 45 && ['mm', minutes] ||
+                hours === 1 && ['h'] ||
+                hours < 22 && ['hh', hours] ||
+                days === 1 && ['d'] ||
+                days <= 25 && ['dd', days] ||
+                days <= 45 && ['M'] ||
+                days < 345 && ['MM', round(days / 30)] ||
+                years === 1 && ['y'] || ['yy', years];
+        args[2] = withoutSuffix;
+        args[3] = milliseconds > 0;
+        args[4] = lang;
+        return substituteTimeAgo.apply({}, args);
+    }
+
+
+    /************************************
+        Week of Year
+    ************************************/
+
+
+    // firstDayOfWeek       0 = sun, 6 = sat
+    //                      the day of the week that starts the week
+    //                      (usually sunday or monday)
+    // firstDayOfWeekOfYear 0 = sun, 6 = sat
+    //                      the first week is the week that contains the first
+    //                      of this day of the week
+    //                      (eg. ISO weeks use thursday (4))
+    function weekOfYear(mom, firstDayOfWeek, firstDayOfWeekOfYear) {
+        var end = firstDayOfWeekOfYear - firstDayOfWeek,
+            daysToDayOfWeek = firstDayOfWeekOfYear - mom.day(),
+            adjustedMoment;
+
+
+        if (daysToDayOfWeek > end) {
+            daysToDayOfWeek -= 7;
+        }
+
+        if (daysToDayOfWeek < end - 7) {
+            daysToDayOfWeek += 7;
+        }
+
+        adjustedMoment = moment(mom).add('d', daysToDayOfWeek);
+        return {
+            week: Math.ceil(adjustedMoment.dayOfYear() / 7),
+            year: adjustedMoment.year()
+        };
+    }
+
+
+    /************************************
+        Top Level Functions
+    ************************************/
+
+    function makeMoment(config) {
+        var input = config._i,
+            format = config._f;
+
+        if (input === null || input === '') {
+            return null;
+        }
+
+        if (typeof input === 'string') {
+            config._i = input = getLangDefinition().preparse(input);
+        }
+
+        if (moment.isMoment(input)) {
+            config = extend({}, input);
+            config._d = new Date(+input._d);
+        } else if (format) {
+            if (isArray(format)) {
+                makeDateFromStringAndArray(config);
+            } else {
+                makeDateFromStringAndFormat(config);
+            }
+        } else {
+            makeDateFromInput(config);
+        }
+
+        return new Moment(config);
+    }
+
+    moment = function (input, format, lang) {
+        return makeMoment({
+            _i : input,
+            _f : format,
+            _l : lang,
+            _isUTC : false
+        });
+    };
+
+    // creating with utc
+    moment.utc = function (input, format, lang) {
+        return makeMoment({
+            _useUTC : true,
+            _isUTC : true,
+            _l : lang,
+            _i : input,
+            _f : format
+        });
+    };
+
+    // creating with unix timestamp (in seconds)
+    moment.unix = function (input) {
+        return moment(input * 1000);
+    };
+
+    // duration
+    moment.duration = function (input, key) {
+        var isDuration = moment.isDuration(input),
+            isNumber = (typeof input === 'number'),
+            duration = (isDuration ? input._data : (isNumber ? {} : input)),
+            matched = aspNetTimeSpanJsonRegex.exec(input),
+            sign,
+            ret;
+
+        if (isNumber) {
+            if (key) {
+                duration[key] = input;
+            } else {
+                duration.milliseconds = input;
+            }
+        } else if (matched) {
+            sign = (matched[1] === "-") ? -1 : 1;
+            duration = {
+                y: 0,
+                d: ~~matched[2] * sign,
+                h: ~~matched[3] * sign,
+                m: ~~matched[4] * sign,
+                s: ~~matched[5] * sign,
+                ms: ~~matched[6] * sign
+            };
+        }
+
+        ret = new Duration(duration);
+
+        if (isDuration && input.hasOwnProperty('_lang')) {
+            ret._lang = input._lang;
+        }
+
+        return ret;
+    };
+
+    // version number
+    moment.version = VERSION;
+
+    // default format
+    moment.defaultFormat = isoFormat;
+
+    // This function will load languages and then set the global language.  If
+    // no arguments are passed in, it will simply return the current global
+    // language key.
+    moment.lang = function (key, values) {
+        var i;
+
+        if (!key) {
+            return moment.fn._lang._abbr;
+        }
+        if (values) {
+            loadLang(key, values);
+        } else if (!languages[key]) {
+            getLangDefinition(key);
+        }
+        moment.duration.fn._lang = moment.fn._lang = getLangDefinition(key);
+    };
+
+    // returns language data
+    moment.langData = function (key) {
+        if (key && key._lang && key._lang._abbr) {
+            key = key._lang._abbr;
+        }
+        return getLangDefinition(key);
+    };
+
+    // compare moment object
+    moment.isMoment = function (obj) {
+        return obj instanceof Moment;
+    };
+
+    // for typechecking Duration objects
+    moment.isDuration = function (obj) {
+        return obj instanceof Duration;
+    };
+
+
+    /************************************
+        Moment Prototype
+    ************************************/
+
+
+    moment.fn = Moment.prototype = {
+
+        clone : function () {
+            return moment(this);
+        },
+
+        valueOf : function () {
+            return +this._d;
+        },
+
+        unix : function () {
+            return Math.floor(+this._d / 1000);
+        },
+
+        toString : function () {
+            return this.format("ddd MMM DD YYYY HH:mm:ss [GMT]ZZ");
+        },
+
+        toDate : function () {
+            return this._d;
+        },
+
+        toJSON : function () {
+            return formatMoment(moment(this).utc(), 'YYYY-MM-DD[T]HH:mm:ss.SSS[Z]');
+        },
+
+        toArray : function () {
+            var m = this;
+            return [
+                m.year(),
+                m.month(),
+                m.date(),
+                m.hours(),
+                m.minutes(),
+                m.seconds(),
+                m.milliseconds()
+            ];
+        },
+
+        isValid : function () {
+            if (this._isValid == null) {
+                if (this._a) {
+                    this._isValid = !compareArrays(this._a, (this._isUTC ? moment.utc(this._a) : moment(this._a)).toArray());
+                } else {
+                    this._isValid = !isNaN(this._d.getTime());
+                }
+            }
+            return !!this._isValid;
+        },
+
+        utc : function () {
+            this._isUTC = true;
+            return this;
+        },
+
+        local : function () {
+            this._isUTC = false;
+            return this;
+        },
+
+        format : function (inputString) {
+            var output = formatMoment(this, inputString || moment.defaultFormat);
+            return this.lang().postformat(output);
+        },
+
+        add : function (input, val) {
+            var dur;
+            // switch args to support add('s', 1) and add(1, 's')
+            if (typeof input === 'string') {
+                dur = moment.duration(+val, input);
+            } else {
+                dur = moment.duration(input, val);
+            }
+            addOrSubtractDurationFromMoment(this, dur, 1);
+            return this;
+        },
+
+        subtract : function (input, val) {
+            var dur;
+            // switch args to support subtract('s', 1) and subtract(1, 's')
+            if (typeof input === 'string') {
+                dur = moment.duration(+val, input);
+            } else {
+                dur = moment.duration(input, val);
+            }
+            addOrSubtractDurationFromMoment(this, dur, -1);
+            return this;
+        },
+
+        diff : function (input, units, asFloat) {
+            var that = this._isUTC ? moment(input).utc() : moment(input).local(),
+                zoneDiff = (this.zone() - that.zone()) * 6e4,
+                diff, output;
+
+            units = normalizeUnits(units);
+
+            if (units === 'year' || units === 'month') {
+                diff = (this.daysInMonth() + that.daysInMonth()) * 432e5; // 24 * 60 * 60 * 1000 / 2
+                output = ((this.year() - that.year()) * 12) + (this.month() - that.month());
+                output += ((this - moment(this).startOf('month')) - (that - moment(that).startOf('month'))) / diff;
+                if (units === 'year') {
+                    output = output / 12;
+                }
+            } else {
+                diff = (this - that) - zoneDiff;
+                output = units === 'second' ? diff / 1e3 : // 1000
+                    units === 'minute' ? diff / 6e4 : // 1000 * 60
+                    units === 'hour' ? diff / 36e5 : // 1000 * 60 * 60
+                    units === 'day' ? diff / 864e5 : // 1000 * 60 * 60 * 24
+                    units === 'week' ? diff / 6048e5 : // 1000 * 60 * 60 * 24 * 7
+                    diff;
+            }
+            return asFloat ? output : absRound(output);
+        },
+
+        from : function (time, withoutSuffix) {
+            return moment.duration(this.diff(time)).lang(this.lang()._abbr).humanize(!withoutSuffix);
+        },
+
+        fromNow : function (withoutSuffix) {
+            return this.from(moment(), withoutSuffix);
+        },
+
+        calendar : function () {
+            var diff = this.diff(moment().startOf('day'), 'days', true),
+                format = diff < -6 ? 'sameElse' :
+                diff < -1 ? 'lastWeek' :
+                diff < 0 ? 'lastDay' :
+                diff < 1 ? 'sameDay' :
+                diff < 2 ? 'nextDay' :
+                diff < 7 ? 'nextWeek' : 'sameElse';
+            return this.format(this.lang().calendar(format, this));
+        },
+
+        isLeapYear : function () {
+            var year = this.year();
+            return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+        },
+
+        isDST : function () {
+            return (this.zone() < moment([this.year()]).zone() ||
+                this.zone() < moment([this.year(), 5]).zone());
+        },
+
+        day : function (input) {
+            var day = this._isUTC ? this._d.getUTCDay() : this._d.getDay();
+            if (input != null) {
+                if (typeof input === 'string') {
+                    input = this.lang().weekdaysParse(input);
+                    if (typeof input !== 'number') {
+                        return this;
+                    }
+                }
+                return this.add({ d : input - day });
+            } else {
+                return day;
+            }
+        },
+
+        month : function (input) {
+            var utc = this._isUTC ? 'UTC' : '';
+            if (input != null) {
+                if (typeof input === 'string') {
+                    input = this.lang().monthsParse(input);
+                    if (typeof input !== 'number') {
+                        return this;
+                    }
+                }
+                this._d['set' + utc + 'Month'](input);
+                return this;
+            } else {
+                return this._d['get' + utc + 'Month']();
+            }
+        },
+
+        startOf: function (units) {
+            units = normalizeUnits(units);
+            // the following switch intentionally omits break keywords
+            // to utilize falling through the cases.
+            switch (units) {
+            case 'year':
+                this.month(0);
+                /* falls through */
+            case 'month':
+                this.date(1);
+                /* falls through */
+            case 'week':
+            case 'day':
+                this.hours(0);
+                /* falls through */
+            case 'hour':
+                this.minutes(0);
+                /* falls through */
+            case 'minute':
+                this.seconds(0);
+                /* falls through */
+            case 'second':
+                this.milliseconds(0);
+                /* falls through */
+            }
+
+            // weeks are a special case
+            if (units === 'week') {
+                this.day(0);
+            }
+
+            return this;
+        },
+
+        endOf: function (units) {
+            return this.startOf(units).add(units, 1).subtract('ms', 1);
+        },
+
+        isAfter: function (input, units) {
+            units = typeof units !== 'undefined' ? units : 'millisecond';
+            return +this.clone().startOf(units) > +moment(input).startOf(units);
+        },
+
+        isBefore: function (input, units) {
+            units = typeof units !== 'undefined' ? units : 'millisecond';
+            return +this.clone().startOf(units) < +moment(input).startOf(units);
+        },
+
+        isSame: function (input, units) {
+            units = typeof units !== 'undefined' ? units : 'millisecond';
+            return +this.clone().startOf(units) === +moment(input).startOf(units);
+        },
+
+        zone : function () {
+            return this._isUTC ? 0 : this._d.getTimezoneOffset();
+        },
+
+        daysInMonth : function () {
+            return moment.utc([this.year(), this.month() + 1, 0]).date();
+        },
+
+        dayOfYear : function (input) {
+            var dayOfYear = round((moment(this).startOf('day') - moment(this).startOf('year')) / 864e5) + 1;
+            return input == null ? dayOfYear : this.add("d", (input - dayOfYear));
+        },
+
+        weekYear : function (input) {
+            var year = weekOfYear(this, this.lang()._week.dow, this.lang()._week.doy).year;
+            return input == null ? year : this.add("y", (input - year));
+        },
+
+        isoWeekYear : function (input) {
+            var year = weekOfYear(this, 1, 4).year;
+            return input == null ? year : this.add("y", (input - year));
+        },
+
+        week : function (input) {
+            var week = this.lang().week(this);
+            return input == null ? week : this.add("d", (input - week) * 7);
+        },
+
+        isoWeek : function (input) {
+            var week = weekOfYear(this, 1, 4).week;
+            return input == null ? week : this.add("d", (input - week) * 7);
+        },
+
+        weekday : function (input) {
+            var weekday = (this._d.getDay() + 7 - this.lang()._week.dow) % 7;
+            return input == null ? weekday : this.add("d", input - weekday);
+        },
+
+        isoWeekday : function (input) {
+            // iso weeks start on monday, which is 1, so we subtract 1 (and add
+            // 7 for negative mod to work).
+            var weekday = (this._d.getDay() + 6) % 7;
+            return input == null ? weekday : this.add("d", input - weekday);
+        },
+
+        // If passed a language key, it will set the language for this
+        // instance.  Otherwise, it will return the language configuration
+        // variables for this instance.
+        lang : function (key) {
+            if (key === undefined) {
+                return this._lang;
+            } else {
+                this._lang = getLangDefinition(key);
+                return this;
+            }
+        }
+    };
+
+    // helper for adding shortcuts
+    function makeGetterAndSetter(name, key) {
+        moment.fn[name] = moment.fn[name + 's'] = function (input) {
+            var utc = this._isUTC ? 'UTC' : '';
+            if (input != null) {
+                this._d['set' + utc + key](input);
+                return this;
+            } else {
+                return this._d['get' + utc + key]();
+            }
+        };
+    }
+
+    // loop through and add shortcuts (Month, Date, Hours, Minutes, Seconds, Milliseconds)
+    for (i = 0; i < proxyGettersAndSetters.length; i ++) {
+        makeGetterAndSetter(proxyGettersAndSetters[i].toLowerCase().replace(/s$/, ''), proxyGettersAndSetters[i]);
+    }
+
+    // add shortcut for year (uses different syntax than the getter/setter 'year' == 'FullYear')
+    makeGetterAndSetter('year', 'FullYear');
+
+    // add plural methods
+    moment.fn.days = moment.fn.day;
+    moment.fn.months = moment.fn.month;
+    moment.fn.weeks = moment.fn.week;
+    moment.fn.isoWeeks = moment.fn.isoWeek;
+
+    /************************************
+        Duration Prototype
+    ************************************/
+
+
+    moment.duration.fn = Duration.prototype = {
+        weeks : function () {
+            return absRound(this.days() / 7);
+        },
+
+        valueOf : function () {
+            return this._milliseconds +
+              this._days * 864e5 +
+              (this._months % 12) * 2592e6 +
+              ~~(this._months / 12) * 31536e6;
+        },
+
+        humanize : function (withSuffix) {
+            var difference = +this,
+                output = relativeTime(difference, !withSuffix, this.lang());
+
+            if (withSuffix) {
+                output = this.lang().pastFuture(difference, output);
+            }
+
+            return this.lang().postformat(output);
+        },
+
+        get : function (units) {
+            units = normalizeUnits(units);
+            return this[units.toLowerCase() + 's']();
+        },
+
+        as : function (units) {
+            units = normalizeUnits(units);
+            return this['as' + units.charAt(0).toUpperCase() + units.slice(1) + 's']();
+        },
+
+        lang : moment.fn.lang
+    };
+
+    function makeDurationGetter(name) {
+        moment.duration.fn[name] = function () {
+            return this._data[name];
+        };
+    }
+
+    function makeDurationAsGetter(name, factor) {
+        moment.duration.fn['as' + name] = function () {
+            return +this / factor;
+        };
+    }
+
+    for (i in unitMillisecondFactors) {
+        if (unitMillisecondFactors.hasOwnProperty(i)) {
+            makeDurationAsGetter(i, unitMillisecondFactors[i]);
+            makeDurationGetter(i.toLowerCase());
+        }
+    }
+
+    makeDurationAsGetter('Weeks', 6048e5);
+    moment.duration.fn.asMonths = function () {
+        return (+this - this.years() * 31536e6) / 2592e6 + this.years() * 12;
+    };
+
+
+    /************************************
+        Default Lang
+    ************************************/
+
+
+    // Set default language, other languages will inherit from English.
+    moment.lang('en', {
+        ordinal : function (number) {
+            var b = number % 10,
+                output = (~~ (number % 100 / 10) === 1) ? 'th' :
+                (b === 1) ? 'st' :
+                (b === 2) ? 'nd' :
+                (b === 3) ? 'rd' : 'th';
+            return number + output;
+        }
+    });
+
+
+    /************************************
+        Exposing Moment
+    ************************************/
+
+
+    // CommonJS module is defined
+    if (hasModule) {
+        module.exports = moment;
+    }
+    /*global ender:false */
+    if (typeof ender === 'undefined') {
+        // here, `this` means `window` in the browser, or `global` on the server
+        // add `moment` as a global object via a string identifier,
+        // for Closure Compiler "advanced" mode
+        this['moment'] = moment;
+    }
+    /*global define:false */
+    if (typeof define === "function" && define.amd) {
+        define("moment", [], function () {
+            return moment;
+        });
+    }
+}).call(this);
+
+define('util/moment',['splunk.i18n', 'moment'],function(i18n, moment){
+    var initFn = i18n.moment_install;
+    if(typeof initFn === 'function') {
+        initFn(moment);
+    }
+    return moment;
+});
+define('util/time_utils',
+    [
+        'underscore',
+        'splunk.i18n',
+        'splunk.util',
+        'util/moment'
+    ],
+    function(_, i18n, splunkUtils, moment) {
+
+        var BD_TIME_REGEX_MILLIS = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d+)[+-]{1}\d{2}[:]?\d{2}$/,
+            BD_TIME_REGEX_NO_MILLIS = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})[+-]{1}\d{2}[:]?\d{2}$/,
+            u = {},
+            language = i18n.locale_name().substring(0, 2),
+            ISO_PATTERN = '%Y-%m-%dT%H:%M:%S.%Q%:z';
+        
+        u.s = u.sec = u.secs = u.second = u.seconds = {abbr: "s",  singular: _("second").t(), plural: _("seconds").t()};
+        u.m = u.min = u.mins = u.minute = u.minutes = {abbr: "m", singular: _("minute").t(), plural: _("minutes").t()};
+        u.h = u.hr  = u.hrs  = u.hour   = u.hours   = {abbr: "h", singular: _("hour").t(), plural: _("hours").t()};
+        u.d = u.day = u.days = {abbr: "d", singular: _("day").t(), plural: _("days").t()};
+        u.w = u.week = u.weeks = {abbr: "w", singular: _("week").t(), plural: _("weeks").t()};
+        u.mon = u.month = u.months = {abbr: "mon", singular: _("month").t(), plural: _("months").t()};
+        u.q = u.qtr = u.qtrs = u.quarter = u.quarters = {abbr: "q", singular: _("quarter").t(), plural: _("quarters").t()};
+        u.y = u.yr = u.yrs = u.year = u.years = {abbr: "y", singular: _("year").t(), plural: _("years").t()};
+            
+        var TIME_UNITS = u;
+    
+        var BdTime = function(isoString) {
+            var bdPieces = BD_TIME_REGEX_MILLIS.exec(isoString) || BD_TIME_REGEX_NO_MILLIS.exec(isoString);
+            if(!bdPieces) {
+                this.isInvalid = true;
+            }
+            else {
+                this.year   = parseInt(bdPieces[1], 10);
+                this.month  = parseInt(bdPieces[2], 10);
+                this.day    = parseInt(bdPieces[3], 10);
+                this.hour   = parseInt(bdPieces[4], 10);
+                this.minute = parseInt(bdPieces[5], 10);
+                this.second = parseInt(bdPieces[6], 10);
+                this.millisecond = bdPieces.length > 7 ? parseInt(bdPieces[7], 10) : 0;
+            }
+        };
+    
+        var extractBdTime = function(timeString) {
+            return new BdTime(timeString);
+        };
+    
+        var bdTimeToDateObject = function(bdTime) {
+            var year     = bdTime.year,
+                month    = bdTime.month - 1,
+                day      = bdTime.day,
+                hour     = bdTime.hour,
+                minute   = bdTime.minute,
+                second   = bdTime.second,
+                millisecond = bdTime.millisecond;
+    
+            return new Date(year, month, day, hour, minute, second, millisecond);
+        };
+    
+        var isoToDateObject = function(isoString) {
+            var bdTime = extractBdTime(isoString);
+            return bdTimeToDateObject(bdTime);
+        };
+        
+        var jsDateToSplunkDateTimeWithMicroseconds = function(jsDate) {
+            var dateTime = new i18n.DateTime({
+                date: jsDate,
+                year: jsDate.getFullYear(),
+                month: jsDate.getMonth() + 1,
+                day: jsDate.getDate(),
+                hour: jsDate.getHours(),
+                minute: jsDate.getMinutes(),
+                second: jsDate.getSeconds(),
+                microsecond: jsDate.getMilliseconds() * 1000
+            });
+            dateTime.weekday = function() {
+                var d = this.date.getDay() - 1;
+                if (d < 0)
+                    d = 6;
+                return d;
+            };
+            return dateTime;
+        };
+    
+        var determineLabelGranularity = function(times) {
+            if(times.length === 1) {
+                return 'second';
+            }
+            if(!(times[0] instanceof BdTime)) {
+                times = _(times).map(extractBdTime);
+            }
+            var seconds = [],
+                minutes = [],
+                hours   = [],
+                days    = [],
+                months  = [],
+    
+                allInListMatch = function(list, matchMe) {
+                    for(var i = 0; i < list.length; i++) {
+                        if(list[i] !== matchMe) {
+                            return false;
+                        }
+                    }
+                    return true;
+                };
+    
+            _(times).each(function(time){
+                seconds.push(time.second);
+                minutes.push(time.minute);
+                hours.push(time.hour);
+                days.push(time.day);
+                months.push(time.month);
+            });
+    
+            if(!allInListMatch(seconds, 0)) {
+                return 'second';
+            }
+            if(!allInListMatch(minutes, 0)) {
+                return 'minute';
+            }
+            if((!allInListMatch(hours, 0))) {
+                return 'hour';
+            }
+            if(!allInListMatch(days, 1)) {
+                return 'day';
+            }
+            if(!allInListMatch(months, 1)) {
+                return 'month';
+            }
+            return 'year';
+        };
+    
+        var isValidIsoTime = function(str) {
+            return BD_TIME_REGEX_MILLIS.test(str) || BD_TIME_REGEX_NO_MILLIS.test(str);
+        };
+        
+    
+        /**
+         * Epoch seconds to LocaleString
+         * @param epochTime
+         * @return {String}
+         */
+        var convertToLocalTime = function(epochTime) {
+            if (!epochTime) {
+                return null;
+            }
+            return new Date(epochTime*1000).toLocaleString();
+        };
+    
+        /**
+         * Converts time difference to "1 year, 6 months ago"; "20 minutes, 30 seconds ago"
+         * @param endTime Unix epoch seconds
+         * @param startTime [optional] Unix epoch seconds; By default - current time.
+         * @param withoutSuffix [optional] true to omit the "ago" suffix
+         * @return {String}
+         */
+        var convertToRelativeTime = function(endTime, startTime, withoutSuffix) {
+            if (!endTime) {
+                return null;
+            }
+            var endMoment = moment.unix(endTime);
+            return startTime !== undefined ?
+                    endMoment.from(moment.unix(startTime), withoutSuffix) :
+                    endMoment.fromNow(withoutSuffix);
+        };
+
+        /**
+         * Converts parsed time amount and unit to seconds. Converts 1h to 3600.
+         * @param amount {Number}
+         * @param unit {String} ('s', 'm', 'h', 'd')
+         * @return {Number}
+         */
+        var convertAmountAndUnitToSeconds = function(amount, unit) {
+            var seconds = amount;
+            switch (unit) {
+                case 'd':
+                    seconds *= 24 * 60 * 60;
+                    break;
+                case 'h':
+                    seconds *= 60 * 60;
+                    break;
+                case 'm':
+                    seconds *= 60;
+                    break;
+            }
+            return seconds;
+        };
+
+        var getRelativeStringFromSeconds = function(seconds, removeAgo) {
+            if (_.isString(seconds)) {
+                seconds = parseInt(seconds, 10);
+            }
+            
+            var now = new Date(),
+                startTime = now.getTime() / 1000,
+                endTime = startTime - seconds;
+            
+            return convertToRelativeTime(endTime, startTime, removeAgo);
+        };
+        
+        /*  
+         * Normalize units to their shortest abbreviations.
+         * Required is an optional parameter, defaults to true.
+         * If required and there is no match, s is returned.
+         * 
+         */
+        var normalizeUnit = function(abbr, required) {
+            var hasUnit = TIME_UNITS.hasOwnProperty(abbr),
+                defaultUnit = required === false ? '' : TIME_UNITS.s.abbr;
+            return hasUnit ? TIME_UNITS[abbr].abbr : defaultUnit;
+        };
+        
+        var parseTimeString = function(timeString){
+            if (!_.isString(timeString)) {
+                return false;
+            }
+            //This regex is not a validator of splunk time! Use the TimeParser for that!
+            //-1, -1s, -1@s, -1s@s, +1, +1s, +1@s, +1s@s, s@s, rt@s, @s, rtnow, now
+            var parse = timeString.match(/^\s*(rt|)([-+]?)(\d*)([a-zA-Z]*)(@?)([a-zA-Z]*)(\d*)\s*$/);
+                                           //   1     2     3       4       5       6      7
+            if (parse) {
+                var normalizedUnit = normalizeUnit(parse[4], false),
+                    hasSnap = (parse[5] !== '');
+                
+                return {
+                    amount: (normalizedUnit ? (parseInt(parse[3], 10) || 1) : 0),
+                    unit: normalizedUnit,
+                    hasSnap: hasSnap,
+                    snapUnit: normalizeUnit(parse[6], false),
+                    snapUnitAmount: parseInt(parse[7], 10),
+                    isNow: parse[4] === "now",
+                    isRealTime: parse[1] === 'rt',
+                    isPositive: parse[2] === "+" || true,
+                    parse: parse 
+                };
+            }
+            
+            return false;
+        };
+        
+        var isRealtime = function(time) {
+            return (_.isString(time) && time.indexOf("rt") === 0);
+        };
+        
+        var stripRTSafe = function(timeString, isLatest) {
+            var sign,
+                parsedTimeString,
+                strippedString;
+            
+            if (!isRealtime(timeString)) {
+                return timeString;
+            }
+            
+            parsedTimeString = parseTimeString(timeString);
+            if (!parsedTimeString) {
+                return timeString;
+            }
+            
+            if (parsedTimeString.unit || parsedTimeString.isNow) {
+                return parsedTimeString.parse.slice(2, parsedTimeString.parse.length).join("");
+            }
+            
+            strippedString = parsedTimeString.parse.slice(3, parsedTimeString.parse.length).join("");
+            if (strippedString) {
+                sign = parsedTimeString.isPositive ? "+" : "-";
+                return sign + strippedString;
+            }
+            
+            if (isLatest) {
+                return "";
+            } else {
+                return "0";
+            }
+        };
+
+        var rangeFromIsoAndOffset = function(iso, offset) {
+            var lowerRange = new Date(iso),
+                upperRange = new Date(iso);
+            switch(offset) {
+                case 'w': 
+                    lowerRange.setDate(lowerRange.getDate()-7);
+                    upperRange.setDate(upperRange.getDate()+7);
+                    break;
+                case 'd': 
+                    lowerRange.setDate(lowerRange.getDate()-1);
+                    upperRange.setDate(upperRange.getDate()+1);
+                    break;
+                case 'h': 
+                    lowerRange.setHours(lowerRange.getHours()-1);
+                    upperRange.setHours(upperRange.getHours()+1);
+                    break;
+                case 'm': 
+                    lowerRange.setMinutes(lowerRange.getMinutes()-1);
+                    upperRange.setMinutes(upperRange.getMinutes()+1);
+                    break;
+                case 's': 
+                    lowerRange.setSeconds(lowerRange.getSeconds()-1);
+                    upperRange.setSeconds(upperRange.getSeconds()+1);
+                    break;
+                case 'ms': 
+                    lowerRange.setMilliseconds(lowerRange.getMilliseconds()-1);
+                    upperRange.setMilliseconds(upperRange.getMilliseconds()+1);
+                    break;
+            }
+            return { lowerRange: lowerRange, upperRange: upperRange }; 
+        };
+        
+        var isAbsolute = function(time) {
+            if (time === undefined) {
+                return false;
+            }
+            return _.isNumber(time) || !(/^(now|-|\+|@|rt).*/.test(time));
+        };
+        
+        var isEpoch = function(time) {
+            return _.isNumber(time) || (_.isString(time) && /^\d+((\.\d+)|(\d*))$/.test(time) && time !== '0');
+        };
+        
+        var timeAndJsDateIsWholeDay = function(time, jsDate) {
+            if (isAbsolute(time) && jsDate) {
+                return (jsDate.getHours() == 0) && (jsDate.getMinutes() == 0) && (jsDate.getSeconds() == 0) && (jsDate.getMilliseconds() == 0);
+            }
+            return false;
+        };
+        
+        var isNow = function(time) {
+            if (!time) {
+                return true;
+            }
+            return (_.isString(time) && ((time === '') || (/now/.test(time))));
+        };
+        
+        var isEmpty = function(time) {
+            if (time === '0') {
+                return true;
+            }
+            return (!time);
+        };
+        
+        var findPresetLabel = function(presetsCollection, earliest, latest) {
+            var presetModel;
+            
+            if (presetsCollection.length > 0) {
+                //TODO: this should probably get moved to the Times collection
+                presetModel = presetsCollection.find(function(model) {
+                    var timesConfEarliest = model.entry.content.get("earliest_time"),
+                        timesConfLatest = model.entry.content.get("latest_time"),
+                        noEarliests = (isEmpty(timesConfEarliest) && isEmpty(earliest)),
+                        noLatests = (isEmpty(timesConfLatest) && isEmpty(latest)),
+                        isDisabled = model.isDisabled(),
+                        isSubMenu = model.isSubMenu();
+                    
+                    return ((!isDisabled && !isSubMenu) && (noEarliests || (timesConfEarliest == earliest)) && (noLatests || (timesConfLatest == latest)));
+                });
+                
+                if (presetModel) {
+                    return presetModel.entry.content.get("label");
+                }
+            }
+            return false;
+        };
+        
+        var generateRealtimeLabel = function(earliest, latest) {
+            var earliestParse, latestIsNow;
+            
+            if (isRealtime(earliest) || isRealtime(latest)) {
+                earliestParse = parseTimeString(earliest);
+                latestIsNow = isNow(latest);
+                
+                var labelTemplates = {
+                    s:_("%t second window").t(),
+                    m: _("%t minute window").t(),
+                    h: _("%t hour window").t(),
+                    d: _("%t day window").t(),
+                    w: _("%t week window").t(),
+                    mon: _("%t month window").t(),
+                    q: _("%t quarter window").t(),
+                    y: _("%t year window").t()
+                };
+            
+                //A windowed time with a latest time of now.
+                if (earliestParse && earliestParse.amount && latestIsNow && labelTemplates.hasOwnProperty(earliestParse.unit)) {
+                    return labelTemplates[earliestParse.unit].replace(/%t/, earliestParse.amount);
+                } 
+                
+                //Other Real-Time.
+                return _("Real-time").t();
+            }
+            return false;
+        };
+        
+        var generateRelativeTimeLabel = function(earliest, latest) {
+            var earliestParse = parseTimeString(earliest),
+                latestIsNow = isNow(latest),
+                latestParse = parseTimeString(latest);
+            
+            if (!earliestParse || earliestParse.isRealTime || latestParse.isRealTime) {
+                return false;
+            }
+            
+            if (earliestParse.amount
+                    && (!earliestParse.snapUnit || earliestParse.unit === earliestParse.snapUnit)
+                    && (latestParse.isNow || (latestParse.snapUnit && !latestParse.amount))
+                    && (!latestParse.snapUnit || earliestParse.unit === latestParse.snapUnit)) {
+                var relativeLabel = _("Last %amount %unit").t();
+                relativeLabel = relativeLabel.replace(/%amount/, earliestParse.amount);
+                relativeLabel = relativeLabel.replace(/%unit/, TIME_UNITS[earliestParse.unit][earliestParse.amount > 1? 'plural' : 'singular']);
+                return relativeLabel;
+            }
+            
+            return false;
+        };
+        
+        var generateBetweenTimeLabel = function(earliest, earliestJSDate, latest, latestJSDate) {
+            var earliestIsWholeDay = timeAndJsDateIsWholeDay(earliest, earliestJSDate),
+                latestIsWholeDay = timeAndJsDateIsWholeDay(latest, latestJSDate);
+            
+            if (earliestIsWholeDay && latestIsWholeDay) {
+                if (language == 'en') {
+                    return i18n.format_datetime_range(null, earliestJSDate, latestJSDate, true);
+                } else {
+                    var dateLabel = _("%1 through %2").t();
+                    var labelDate = new Date(latestJSDate.getTime());
+                    labelDate.setDate(labelDate.getDate() -1);
+                    return dateLabel.replace('%1', i18n.format_date(earliestJSDate, 'short')).replace('%2', i18n.format_date(labelDate, 'short'));
+                }
+            }
+            
+            return false;
+        };
+        
+        var generateSinceDateLabel = function(earliest, earliestJSDate, latest){
+            var earliestIsWholeDay = timeAndJsDateIsWholeDay(earliest, earliestJSDate),
+                latestIsNow = isNow(latest);
+            
+            if (earliestIsWholeDay && latestIsNow) {
+                var dateLabel = _("Since %1").t();
+                return dateLabel.replace('%1', i18n.format_date(earliestJSDate, 'short'));
+            }
+            
+            return false;
+        };
+        
+        var generateBeforeDateLabel = function(earliest, latest, latestJSDate) {            
+            if (isEmpty(earliest) && timeAndJsDateIsWholeDay(latest, latestJSDate)) {
+                var dateLabel = _("Before %1").t();
+                return dateLabel.replace('%1', i18n.format_date(latestJSDate, 'short'));
+            }
+            
+            return false;
+        };
+        
+        var generateDateTimeRangeLabel = function(earliest, latest) {
+            if (!isEmpty(earliest) && isAbsolute(earliest) && isAbsolute(latest)) {
+                return _("Date time range").t();
+            }
+            return false;
+        };
+        
+        var generateSinceTimeRangeLabel = function(earliest, latest) {
+            if (isAbsolute(earliest) && isNow(latest)) {
+                return _("Since date time").t();
+            }
+            return false;
+         };
+         
+         var generateBeforeTimeRangeLabel = function(earliest, latest) {
+             if (isEmpty(earliest) && isAbsolute(latest)) {
+                 return _("Before date time").t();
+             }
+             return false;
+         };
+         
+         var generateAllTimeLabel = function(earliest, latest) {
+             if (isEmpty(earliest) && isNow(latest)) {
+                 return _("All time").t();
+             }
+             return false;
+         };
+    
+        /**
+        * presets: <collections.services.data.ui.TimesV2>
+        **/
+        var generateLabel = function(presetsCollection, earliest, earliestJSDate, latest, latestJSDate) {
+            return generateAllTimeLabel(earliest, latest) ||
+                findPresetLabel(presetsCollection, earliest, latest) ||
+                generateRealtimeLabel(earliest, latest) ||
+                generateRelativeTimeLabel(earliest, latest) ||
+                generateBetweenTimeLabel(earliest, earliestJSDate, latest, latestJSDate) ||
+                generateSinceDateLabel(earliest, earliestJSDate, latest) ||
+                generateBeforeDateLabel(earliest, latest, latestJSDate) ||
+                generateDateTimeRangeLabel(earliest, latest) ||
+                generateSinceTimeRangeLabel(earliest, latest) ||
+                generateBeforeTimeRangeLabel(earliest, latest) ||
+                _("Custom time").t();
+        };
+        
+        return ({
+            extractBdTime: extractBdTime,
+            bdTimeToDateObject: bdTimeToDateObject,
+            rangeFromIsoAndOffset: rangeFromIsoAndOffset,
+            isoToDateObject: isoToDateObject,
+            determineLabelGranularity: determineLabelGranularity,
+            isValidIsoTime: isValidIsoTime,
+            TIME_UNITS: TIME_UNITS,
+            ISO_PATTERN: ISO_PATTERN,
+            normalizeUnit: normalizeUnit,
+            parseTimeString: parseTimeString,
+            isRealtime: isRealtime,
+            stripRTSafe: stripRTSafe,
+            isAbsolute: isAbsolute,
+            isEpoch: isEpoch,
+            timeAndJsDateIsWholeDay: timeAndJsDateIsWholeDay,
+            isNow: isNow,
+            isEmpty: isEmpty,
+            findPresetLabel: findPresetLabel,
+            generateRealtimeLabel: generateRealtimeLabel,
+            generateRelativeTimeLabel: generateRelativeTimeLabel,
+            generateBetweenTimeLabel: generateBetweenTimeLabel,
+            generateSinceDateLabel: generateSinceDateLabel,
+            generateBeforeDateLabel: generateBeforeDateLabel,
+            generateDateTimeRangeLabel: generateDateTimeRangeLabel,
+            generateSinceTimeRangeLabel: generateSinceTimeRangeLabel,
+            generateBeforeTimeRangeLabel: generateBeforeTimeRangeLabel,
+            generateAllTimeLabel: generateAllTimeLabel,
+            generateLabel: generateLabel,
+            convertToRelativeTime: convertToRelativeTime,
+            convertToLocalTime: convertToLocalTime,
+            jsDateToSplunkDateTimeWithMicroseconds: jsDateToSplunkDateTimeWithMicroseconds,
+            getRelativeStringFromSeconds: getRelativeStringFromSeconds,
+            convertAmountAndUnitToSeconds: convertAmountAndUnitToSeconds
+        });
+    }
+);
+
+define('models/services/data/ui/Time',
+    [
+        'jquery',
+        'splunk.util',
+        'models/SplunkDBase',
+        'util/time_utils'
+    ],
+    function($, splunkutil, SplunkDBaseModel, time_utils) {
+        return SplunkDBaseModel.extend({
+            url: "data/ui/times",
+            initialize: function() {
+                SplunkDBaseModel.prototype.initialize.apply(this, arguments);
+            },
+            isRealTime: function() {
+                if (this.isDisabled()) {
+                    return false;
+                }
+                return time_utils.isRealtime(this.entry.content.get("latest_time"));
+            },
+            isPeriod: function() {
+                if (this.isDisabled()) {
+                    return false;
+                }
+                
+                var earliest =  this.entry.content.get("earliest_time");
+                var latest =  this.entry.content.get("latest_time");
+                
+                if (earliest && (earliest.indexOf("@") != -1) && (earliest.indexOf("-") != 0)) return true; // Period to date 
+                if (earliest && latest && (earliest.indexOf("@") != -1) && (latest.indexOf("@") != -1)) return true;  // Previous period
+                
+                return false;
+            },
+            isLast: function() {
+                if (this.isDisabled()) {
+                    return false;
+                }
+                
+                if (this.isPeriod()) {
+                    return false;
+                }
+            
+                var earliest =  this.entry.content.get("earliest_time");
+                if (!earliest) {
+                    return false;
+                }
+                return (earliest.indexOf("-") == 0);
+            },
+            isOther: function() {
+                if (this.isDisabled()) {
+                    return false;
+                }
+                
+                return !this.isRealTime() && !this.isPeriod() && !this.isLast() && !this.isSubMenu();
+            },
+            isDisabled: function() {
+                return this.entry.content.get("disabled");
+            },
+            isSubMenu: function() {
+                return this.entry.content.get('is_sub_menu') === '1';
+            }
+        });
+    }
+);
+/**
+ * A reusable model encapsulating the fetch data for EAI endpoints.
+ *
+ * Adds special handling of the "sortKey" and "sortDirection" attributes, which are mapped to the keys that
+ * the EAI-like endpoints expect, and the "filter" attribute, which is mapped from a dictionary of string pairs
+ * to a filter search string.
+ */
+
+define('models/fetch_data/EAIFetchData',[
+            'underscore',
+            'models/Base'
+        ], 
+        function(
+            _,
+            Base
+        ) {
+
+    return Base.extend({
+
+        defaults: {
+            filter: {}
+        },
+
+        toJSON: function() {
+            var json = Base.prototype.toJSON.call(this);
+
+            if(json.sortKey) {
+                json.sort_key = json.sortKey;
+                json.sort_dir = json.sortDirection;
+            }
+            delete json.sortKey;
+            delete json.sortDirection;
+
+            if(_(json.filter).size() > 0) {
+                var search = [];
+                _(json.filter).each(function(match, key) {
+                    search.push(key + '=*' + match + '*');
+                });
+                json.search = search.join(' ');
+            }
+            delete json.filter;
+
+            return json;
+        }
+
+    });
+
+});
+/**
+ * A base collection with some generic useful methods/behaviors
+ *
+ * TODO: lots of repeated code here and in the base model for broadcasting errors, safe fetch, and the fetch data model
+ *       consider one or more mixins
+ *
+ * TODO: potential memory leaks when binding to events on the fetchData model, do we need a hook for disposing of collections?
+ */
+
+define('collections/Base',
+    [
+        'jquery',
+        'underscore',
+        'backbone',
+        'mixins/xhrmanagement',
+        'models/Base',
+        'splunk.util',
+        'util/splunkd_utils'
+    ],
+    function($, _, Backbone, xhrmanagement, Base, splunkUtils, splunkDUtils) {
+        var BaseCollection = Backbone.Collection.extend({
+            initialize: function(models, options) {
+                Backbone.Collection.prototype.initialize.apply(this, arguments);
+
+                this.fetchData = (options && options.fetchData) ? options.fetchData : new Base();
+                this.fetchData.on('change', _.debounce(function() { this.safeFetch(); }, 0), this);
+                this.associated = this.associated || {};
+                this.on('sync', this._onsync, this);
+                this.on('error', this._onerror, this);
+                this.on('reset', this.previousModelsOff, this);
+            },
+            fetch: function(options) {
+                // merge the contents of the fetchData model into options.data
+                var mergedOptions = $.extend(true, {}, {data: this.fetchData.toJSON()}, options);
+                this.fetchXhr = Backbone.Collection.prototype.fetch.call(this, mergedOptions);
+                // on successful fetch, handle any calls to safeFetch that came in while we were in-flight
+                var that = this;
+                this.fetchXhr.done(function() {
+                    if(that.touched) {
+                        that.safeFetch.apply(that, that.touched);
+                    }
+                });
+                return this.fetchXhr;
+            },
+            _onerror: function(collection, response, options) {
+                var messages = splunkDUtils.xhrErrorResponseParser(response, this.id);
+                this.trigger('serverValidated', false, this, messages);
+            },
+            _onsync: function(collection, response, options) {
+                var messages  = this.parseSplunkDMessages(response),
+                    hasErrors = _(messages).any(function(message) {
+                        return (message.type === splunkDUtils.ERROR || message.type === splunkDUtils.FATAL);
+                    });
+                this.trigger('serverValidated', !hasErrors, this, messages);
+            },
+            parseSplunkDMessages: function(response) {
+                if(!response) {
+                    return [];
+                }
+                return splunkDUtils.parseMessagesObject(response.messages);
+            },
+            deepOff: function() {
+                xhrmanagement.deepOff.apply(this, arguments);
+                this.each(function(model) {
+                    if (_.isFunction(model.deepOff)) {
+                        model.deepOff();
+                    }
+                });
+            },
+            associatedOff: function(events, callback, context) {
+                _(this.associated).each(function(associated) {
+                    associated.off(events, callback, context);
+                    if(_.isFunction(associated.associatedOff)) {
+                        associated.associatedOff(events, callback, context);
+                    }
+                }, this);
+                
+                this.each(function(model) {
+                    if(_.isFunction(model.associatedOff)) {
+                        model.associatedOff(events, callback, context);
+                    }
+                });
+                // fetchData is not part of the associated container, but should still be unbound
+                this.fetchData.off(events, callback, context);
+            },
+            previousModelsOff: function(models, options) {
+                _(options.previousModels).each(function(model) {
+                    if (_.isFunction(model.deepOff)) {
+                        model.deepOff();
+                    }
+                });
+            },
+            reverse: function(options) {
+                options || (options = {});
+                var reversedModels = [].concat(this.models).reverse();
+                if (options.mutate===false) {
+                    return reversedModels;
+                }
+                this.reset(reversedModels, options);
+            },
+            isValid: function(options) {
+                return this.all(function(model) { return model.isValid(options); });
+            },
+            // Backbone's collection clone makes a shallow copy (the models are shared references)
+            // this version will clone each model and put the clones in the new collection
+            deepClone: function() {
+                return new this.constructor(this.invoke('clone'));
+            },
+            /* start patches */
+            _reset: function() {
+                this.length = 0;
+                this.models = [];
+                this._byId  = {};
+            },
+            //where and findWhere are from backbone 1.0 
+            where: function(attrs, first) {
+                if (_.isEmpty(attrs)) return first ? void 0 : [];
+                return this[first ? 'find' : 'filter'](function(model) {
+                  for (var key in attrs) {
+                    if (attrs[key] !== model.get(key)) return false;
+                  }
+                  return true;
+                });
+            },
+            findWhere: function(attrs) {
+                return this.where(attrs, true);
+            }
+            /* end patches */
+        });
+        _.extend(BaseCollection.prototype, xhrmanagement);
+        
+        return BaseCollection;
+    }
+);
+
+define('collections/SplunkDsBase',
+    [
+        'jquery',
+        'underscore',
+        'backbone',
+        'models/SplunkDBase',
+        'models/fetch_data/EAIFetchData',
+        'collections/Base',
+        'util/splunkd_utils'
+    ],
+    function(
+        $,
+        _,
+        Backbone,
+        SplunkDBaseModel,
+        EAIFetchData,
+        Base,
+        splunkDUtils
+    )
+    {
+        return Base.extend({
+            model: SplunkDBaseModel,
+            initialize: function(models, options) {
+                options = options || {};
+                options.fetchData = options.fetchData || new EAIFetchData();
+                Base.prototype.initialize.call(this, models, options);
+            },
+            sync: function(method, collection, options) {
+                options = options || {};
+                var bbXHR, url,
+                    defaults = {data: {output_mode: 'json'}, traditional: true};
+
+                switch (method) {
+                    case 'read':
+                        if((window.$C['SPLUNKD_FREE_LICENSE'] || options.isFreeLicense) && collection.FREE_PAYLOAD) {
+                            if(options.success) {
+                                options.success(collection, collection.FREE_PAYLOAD, options);
+                            }
+                            var dfd = $.Deferred();
+                            return dfd.resolve.apply(dfd, [collection, collection.FREE_PAYLOAD, options]);
+                        }
+                        url = _.isFunction(collection.url) ? collection.url() : collection.url;
+                        var appOwner = {};
+                        if(options.data){
+                            appOwner = $.extend(appOwner, { //JQuery purges undefined
+                                app: options.data.app || undefined,
+                                owner: options.data.owner || undefined,
+                                sharing: options.data.sharing || undefined
+                            });
+                        }
+                        defaults.url = splunkDUtils.fullpath(url, appOwner);
+                        $.extend(true, defaults, options);
+
+                        delete defaults.data.app;
+                        delete defaults.data.owner;
+                        delete defaults.data.sharing;
+
+                        return Backbone.sync.call(this, "read", collection, defaults);
+                    default:
+                        throw new Error('invalid method: ' + method);
+                }
+            },
+            parse: function(response){
+                var results = response.entry,
+                    header = $.extend(true, {}, response);
+                delete header.entry;
+
+                return _.map(results, function(result) {
+                    var container = $.extend(true, {}, header);
+                    container.entry = [$.extend(true, {}, result)];
+                    return container;
+                });
+            },
+            setFromSplunkD: function(payload, options){
+                // have to use parse=true or the reset won't work correctly
+                this.reset(payload, $.extend({parse: true}, options));
+            }
+        }, {
+            // When fetching with user equal to wildcard adding this string to the search param will 
+            // limit results to items shared with or created by the owner.
+            availableWithUserWildCardSearchString: function(owner) {
+                return '((eai:acl.sharing="user" AND eai:acl.owner="' + owner + '") OR (eai:acl.sharing!="user"))';
+            }
+        });
+    }
+);
+define('collections/services/data/ui/Times',
+    [
+        'models/services/data/ui/Time',
+        'collections/SplunkDsBase'
+    ],
+    function(TimeModel, SplunkDsBaseCollection) {
+        return SplunkDsBaseCollection.extend({
+            url: 'data/ui/times',
+            model: TimeModel,
+            initialize: function() {
+                SplunkDsBaseCollection.prototype.initialize.apply(this, arguments);
+            },
+            filterToRealTime: function(type) {
+                return this.filter(function(model) {
+                    return model.isRealTime();
+                });
+            },
+            filterToPeriod: function(type) {
+                return this.filter(function(model) {
+                    return model.isPeriod();
+                });
+            },
+            filterToLast: function(type) {
+                return this.filter(function(model) {
+                    return model.isLast();
+                });
+            },
+            filterToOther: function(type) {
+                return this.filter(function(model) {
+                    return model.isOther();
+                });
+            },
+            comparator: function(model) {
+                return parseInt(model.entry.content.get('order'), 10);
+            }
+        });
+    }
+);
+define('models/services/server/ServerInfo',
+[
+    'models/SplunkDBase',
+    'splunk.util'
+],
+function(
+    SplunkDBaseModel,
+    splunk_util
+) {
+    return SplunkDBaseModel.extend({
+        urlRoot: "server/info",
+        id: 'server-info',
+        initialize: function() {
+            SplunkDBaseModel.prototype.initialize.apply(this, arguments);
+        },
+        hasAddOn: function(addOn) {
+            var addOns = this.entry.content.get('addOns');
+            if (!addOns) {
+                return false;
+            }
+            return addOns.hasOwnProperty(addOn);
+        },
+        hasHadoopAddon: function() {
+            return this.hasAddOn('hadoop');
+        },
+        isFreeLicense: function() {
+            return splunk_util.normalizeBoolean(this.entry.content.get('isFree'));
+        },
+        hasEnterpriseLicense: function() {
+            return this.entry.content.get('activeLicenseGroup') == 'Enterprise';
+        },
+        getBranding: function() {
+            return this.entry.content.get('product_type');
+        }
+    });
+});
+
+define('collections/services/AppLocals',
+    [
+        "jquery",
+        "underscore",
+        "backbone",
+        "models/services/AppLocal",
+        "collections/SplunkDsBase",
+        'util/general_utils'
+    ],
+    function($, _, Backbone, AppModel, SplunkDsBaseCollection, general_utils) {
+        return SplunkDsBaseCollection.extend({
+            model: AppModel,
+            url: "apps/local",
+            initialize: function() {
+                SplunkDsBaseCollection.prototype.initialize.apply(this, arguments);
+            },
+            /* sort the apps collection based on user preference (appOrderString).
+            any app not declared in the indexDictionary, is sorted alphabetically */
+            sortWithString: function(appOrderString){
+                //FOR SAFETY cast to string
+                appOrderString = typeof appOrderString === 'string' ? appOrderString : '';
+                var indexDictionary = {};
+                var appOrderArray = appOrderString.split(',');
+                if(_.isArray(appOrderArray) && appOrderArray.length > 0){
+                    for(var i=0, len=appOrderArray.length; i<len; i++){
+                        indexDictionary[appOrderArray[i]] = i;
+                    }
+                }
+
+                this.comparator = function(appA, appB){
+                    var nameA = appA.entry.get('name'),
+                        nameB = appB.entry.get('name'),
+                        labelA = appA.entry.content.get('label'),
+                        labelB = appB.entry.content.get('label'),
+                        positionA = indexDictionary[nameA],
+                        positionB = indexDictionary[nameB],
+                        isNumberA = _.isNumber(positionA),
+                        isNumberB = _.isNumber(positionB);
+                    if(isNumberA && isNumberB){
+                        return positionA < positionB ? -1 : 1;
+                    }
+                    if(!isNumberA && !isNumberB){
+                        return general_utils.compareWithDirection(labelA, labelB, false);
+                    }
+                    if(isNumberA && !isNumberB){
+                        return -1;
+                    }
+                    if(!isNumberA && isNumberB){
+                        return 1;
+                    }
+                };
+                this.sort();
+            }
+        });
+    }
+);
+define('splunkjs/mvc/sharedmodels',['require','exports','module','jquery','underscore','models/Application','models/services/AppLocal','models/services/authentication/User','collections/services/data/ui/Times','./utils','splunk.config','util/splunkd_utils','models/services/server/ServerInfo','collections/services/AppLocals'],function(require, exports, module) {    
+    var $ = require('jquery');
+    var _ = require('underscore');
+    var AppModel = require('models/Application');
+    var AppLocalModel = require('models/services/AppLocal');
+    var UserModel = require('models/services/authentication/User');
+    var TimeRangesCollection = require('collections/services/data/ui/Times');
+    var utils = require('./utils');
+    var splunkConfig = require('splunk.config');
+    var splunkd_utils = require('util/splunkd_utils');
+    var ServerInfo = require('models/services/server/ServerInfo');
+    var AppLocalCollection = require('collections/services/AppLocals');
+
+    var pageInfo = utils.getPageInfo();
+    
+    // The format for this object is:
+    //  model name:
+    //      model: an instance of the model
+    //      fetch: a function with no arguments to use the above model and call
+    //          'fetch' on it, storing the returned deferred on the model and returning
+    //          that deferred. If the model does not need a fetch, just have a
+    //          function that returns a deferred.
+    var _STORAGE = {
+        appLocal: {
+            model: new AppLocalModel(),
+            fetch: _.memoize(function() {
+                var appModel = _STORAGE['app'].model;
+                var model = _STORAGE['appLocal'].model;
+                var dfd = model.dfd = model.fetch({
+                    url: splunkd_utils.fullpath(model.url + "/" + appModel.get("app")),
+                    data: {
+                        app: appModel.get("app"),
+                        owner: appModel.get("owner")
+                    }
+                });
+                
+                model.dfd = dfd;
+                return dfd;
+            })
+        },
+        user: {
+            model: new UserModel(),
+            fetch: _.memoize(function() {
+                var appModel = _STORAGE['app'].model;
+                var model = _STORAGE['user'].model;
+                var dfd = model.dfd = model.fetch({
+                    url: splunkd_utils.fullpath(model.url + "/" + appModel.get("owner")),
+                    data: {
+                        app: appModel.get("app"),
+                        owner: appModel.get("owner")
+                    }
+                });
+                
+                model.dfd = dfd;
+                return dfd;
+            })
+        },
+        times: {
+            model: new TimeRangesCollection(),
+            fetch: _.memoize(function() {
+                var appModel = _STORAGE['app'].model;
+                var model = _STORAGE['times'].model;
+                var dfd = model.dfd = model.fetch({
+                    data: {
+                        app: appModel.get("app"),
+                        owner: appModel.get("owner")
+                    }
+                });
+                
+                return dfd;
+            })
+        },
+        app: {
+            model: new AppModel({
+                owner: splunkConfig.USERNAME,
+                locale: pageInfo.locale,
+                app: pageInfo.app,
+                page: pageInfo.page
+            }),
+            fetch: function() { return $.Deferred().resolve(_STORAGE['app'].model); }
+        },
+        serverInfo: {
+            model: new ServerInfo(),
+            fetch: _.memoize(function() {
+                var model = _STORAGE['serverInfo'].model;
+                var dfd = model.dfd = model.fetch();
+                return dfd;
+            })
+        },
+        appLocals: {
+            model: new AppLocalCollection(),
+            fetch: _.memoize(function() {
+                var appModel = _STORAGE['app'].model;
+                var model = _STORAGE['appLocals'].model;
+                var dfd = model.dfd = model.fetch({
+                    data: {
+                        sort_key: 'name',
+                        sort_dir: 'desc',
+                        app: '-' ,
+                        owner: appModel.get('owner'),
+                        search: 'visible=true AND disabled=0 AND name!=launcher',
+                        count: -1
+                    }
+                });
+
+                return dfd;
+            })
+        }
+    };
+    
+    return {
+        get: function(name) {
+            if (!_STORAGE.hasOwnProperty(name)) {
+                throw new Error("There is no shared model '" + name + "'");
+            }
+            
+            var container = _STORAGE[name];
+            container.fetch();
+            
+            return container.model;
+        }
+    };
+});
+/**
+ * @author sfishel
+ *
+ * Model representation of the intentions parser endpoint.
+ *
+ * The endpoint is still in flux, so there is a little hackery here to try to expose the interface we will eventually have
+ * from splunkd but don't have yet.
+ *
+ * Sample REST response:
+
+   {
+        "remoteSearch": "litsearch * | eval  myfield = 10  | search somefield = somevalue  | addinfo  type=count label=prereport_events | fields  keepcolorder=t \"_bkt\" \"_cd\" \"_si\" \"host\" \"index\" \"linecount\" \"prestats_reserved_*\" \"psrsvd_*\" \"source\" \"sourcetype\" \"splunk_server\"  | remotetl  nb=300 et=2147483647.000000 lt=0.000000 max_count=1000 max_prefetch=100 | prestats  count",
+        "remoteTimeOrdered": true,
+        "eventsSearch": "search *   | eval myfield = 10  | search somefield = somevalue ",
+        "eventsTimeOrdered": true,
+        "eventsStreaming": true,
+        "reportsSearch": "stats  count",
+        "canSummarize": false,
+        "commands": [
+            {
+                "command": "search",
+                "rawargs": "*  ",
+                "pipeline": "streaming",
+                "args": {
+                    "search": [
+                        "*"
+                    ]
+                },
+                "isGenerating": true,
+                "streamType": "SP_STREAM"
+            },
+            {
+                "command": "eval",
+                "rawargs": "myfield = 10 ",
+                "pipeline": "streaming",
+                "args": " myfield = 10 ",
+                "isGenerating": false,
+                "streamType": "SP_STREAM"
+            },
+            {
+                "command": "search",
+                "rawargs": "somefield = somevalue ",
+                "pipeline": "streaming",
+                "args": {
+                    "search": [
+                        "somefield = somevalue "
+                    ]
+                },
+                "isGenerating": false,
+                "streamType": "SP_STREAM"
+            },
+            {
+                "command": "stats",
+                "rawargs": "count",
+                "pipeline": "report",
+                "args": {
+                    "stat-specifiers": [
+                        {
+                            "function": "count",
+                            "rename": "count"
+                        }
+                    ]
+                },
+                "isGenerating": false,
+                "streamType": "SP_STREAMREPORT",
+                "isStreamingOpRequired": false,
+                "preStreamingOp": "prestats count"
+            }
+        ]
+    }
+ */
+
+define('models/services/search/IntentionsParser',[
+            'jquery',
+            'underscore',
+            'backbone',
+            'models/Base',
+            'util/splunkd_utils',
+            'splunk.util'
+        ],
+        function(
+            $,
+            _,
+            Backbone,
+            Base,
+            splunkDUtils,
+            splunkUtils
+        ) {
+
+    var DELIMITER = ':!:';
+
+    return Base.extend({
+
+        url: 'search/intentionsparser',
+
+        sync: function(method, model, options) {
+            if(method !== 'read') {
+                throw new Error('Sync operation not supported: ' + method);
+            }
+
+            options = $.extend(true, {}, options);
+            // these URLs can be quite long, so we make this request by POST
+            options.type = 'POST';
+            var data = options.data;
+            if(_.isArray(data.field)) {
+                data.field = data.field.join(DELIMITER);
+                data.value = data.value.join(DELIMITER);
+            }
+
+            // TEMPORARY: currently a different endpoint has to be used if you just want to parse the search with no action
+            // eventually they will be unified in the same endpoint so we just switch the URL here for the time being
+            var url = (options.data && options.data.action) ? model.url : 'search/parser',
+                syncOptions = splunkDUtils.prepareSyncOptions(options, url);
+
+            if(syncOptions.data && syncOptions.data.q) {
+                syncOptions.data.q = splunkUtils.addLeadingSearchCommand(syncOptions.data.q, true);
+            }
+
+            return Base.prototype.sync.call(this, 'read', model, syncOptions);
+        },
+        fullSearch: function() {
+            var fullSearch = this.get('fullSearch');
+            
+            if(fullSearch) {
+                return splunkUtils.stripLeadingSearchCommand(fullSearch);
+            }
+
+            var reportsSearch = this.get('reportsSearch') || '',
+                eventsSearch = splunkUtils.stripLeadingSearchCommand(this.get('eventsSearch') || '');
+            if (reportsSearch) {
+                reportsSearch = ' | ' + reportsSearch;
+            }
+            return eventsSearch + reportsSearch;
+        },
+
+        isReportsSearch: function() {
+            var reportsSearch = this.get('reportsSearch');
+            return reportsSearch ? true : false;
+        }
+
+    });
+
+});
+
+define('splunkjs/mvc/drilldown',['require','underscore','jquery','./utils','splunk.util','uri/route','util/console','splunk.util','./sharedmodels','models/services/search/IntentionsParser','util/general_utils'],function (require) {
+    var _ = require('underscore'),
+        $ = require('jquery'),
+        utils = require('./utils'),
+        splunkUtils = require('splunk.util'),
+        route = require('uri/route'),
+        console = require('util/console'),
+        util = require('splunk.util'),
+        shared_models = require('./sharedmodels'),
+        IntentionsParser = require('models/services/search/IntentionsParser'),
+        general_utils = require('util/general_utils');
+
+    var Drilldown = {
+
+        intentionsParser: new IntentionsParser(),
+        applyPivotDrilldownIntention: function(clickInfo, drilldownType, manager) {
+            var intentionDFD, field, value;
+            var applicationModel = shared_models.get('app');
+            var query = manager.query.resolve({ qualified: true });
+            var dfd = $.Deferred();
+            var earliest = manager.job.properties().searchEarliestTime,
+                latest = manager.job.properties().searchLatestTime,
+                params = { q: query, namespace: utils.getCurrentApp() },
+                values = [];
+
+            if (!earliest && manager.job.properties().earliestTime){
+                earliest = util.getEpochTimeFromISO(manager.job.properties().earliestTime);
+            }
+            if (!latest && manager.job.properties().latestTime){
+                latest = util.getEpochTimeFromISO(manager.job.properties().latestTime);
+            }
+            Drilldown.intentionsParser.clear({silent: true});
+            if(clickInfo.type === 'legendClick') {
+                // if the legend click has a name and value (this happens for scatter charts), use them
+                if(clickInfo.hasOwnProperty('name') && clickInfo.hasOwnProperty('value')) {
+                    intentionDFD = Drilldown.intentionsParser.fetch({
+                        data: {
+                            q: query,
+                            action: 'fieldvalue',
+                            field: clickInfo.name,
+                            value: clickInfo.value,
+                            fieldMetaData: JSON.stringify(manager.job.properties().fieldMetadataResults),
+                            app: applicationModel.get('app'),
+                            owner: applicationModel.get('owner')
+                        }
+                    });
+                }
+                // otherwise do a keyword search based on name2
+                else {
+                    intentionDFD = Drilldown.intentionsParser.fetch({
+                        data: {
+                            q: query,
+                            action: 'keyword',
+                            field: clickInfo.name2,
+                            fieldMetaData: JSON.stringify(manager.job.properties().fieldMetadataResults),
+                            app: applicationModel.get('app'),
+                            owner: applicationModel.get('owner')
+                        }
+                    });
+                }
+            }
+            else {
+                if(clickInfo._span) {
+                    Drilldown.intentionsParser.set({
+                        'dispatch.earliest_time': clickInfo.value,
+                        'dispatch.latest_time': JSON.stringify(parseFloat(clickInfo.value) + clickInfo._span)
+                    }, {silent: true});
+                }
+                if(drilldownType === 'row') {
+                    field = _(clickInfo.rowContext).keys().map(function(f) { return f.replace('row.', ''); });
+                    value = _(clickInfo.rowContext).values();
+                } else if(clickInfo.name === '_time') {
+                    field = clickInfo.name2;
+                    value = clickInfo.value2;
+                } else {
+                    if(clickInfo.name && clickInfo.name2){
+                        field = [clickInfo.name, clickInfo.name2];
+                        value = [clickInfo.value, clickInfo.value2];
+                    } else if(clickInfo.name) {
+                        field = clickInfo.name;
+                        value = clickInfo.value;
+                    } else {
+                        field = clickInfo.name2;
+                        value = clickInfo.value2;
+                    }
+                }
+
+                intentionDFD = Drilldown.intentionsParser.fetch({
+                    data: {
+                        q: query,
+                        action: 'fieldvalue',
+                        field: field || '',
+                        value: value || '',
+                        fieldMetaData: JSON.stringify(manager.job.properties().fieldMetadataResults),
+                        app: applicationModel.get('app'),
+                        owner: applicationModel.get('owner')
+                    }
+                });
+
+            }
+            intentionDFD.done(function(){
+                dfd.resolve({
+                    'q': Drilldown.intentionsParser.get('fullSearch'),
+                    'earliest': Drilldown.intentionsParser.get('dispatch.earliest_time') || earliest || 0,
+                    'latest': Drilldown.intentionsParser.get('dispatch.latest_time') || latest || 'now'
+                });
+            });
+            return dfd;
+
+        },
+
+        applyDrilldownIntention: function (clickInfo, drilldownType, manager) {
+            var query = manager.query.resolve({ qualified: true });
+            if (general_utils.isValidPivotSearch(query)){
+                return Drilldown.applyPivotDrilldownIntention(clickInfo, drilldownType, manager);
+            }
+            var dfd = $.Deferred();
+            var earliest = manager.job.properties().searchEarliestTime,
+                latest = manager.job.properties().searchLatestTime,
+                params = { q: query, namespace: utils.getCurrentApp() },
+                values = [];
+
+            if (!earliest && manager.job.properties().earliestTime){
+                earliest = util.getEpochTimeFromISO(manager.job.properties().earliestTime);
+            }
+            if (!latest && manager.job.properties().latestTime){
+                latest = util.getEpochTimeFromISO(manager.job.properties().latestTime);
+            }
+
+            if (clickInfo.name === '_time') {
+                if (clickInfo.hasOwnProperty('_span')) {
+                    earliest = parseInt(clickInfo.value, 10);
+                    latest = earliest + parseInt(clickInfo._span, 10);
+                } else {
+                    earliest = parseInt(clickInfo.value, 10);
+                    latest = earliest + 1;
+                }
+                values.push(['_time', [earliest, latest].join('-')]);
+            } else {
+                values.push([clickInfo.name, clickInfo.value]);
+            }
+
+            if ((drilldownType === 'all' || drilldownType === 'cell') && clickInfo.hasOwnProperty('name2')) {
+                values.push([clickInfo.name2, clickInfo.value2]);
+            } else {
+                values.push(values[0]);
+            }
+
+            params.intentions = JSON.stringify([
+                {
+                    arg: { vals: values},
+                    flags: ['keepevents'],
+                    name: 'drilldown'
+                }
+            ]);
+            // Apply the intention using the legacy search parser
+            // TODO-Sigi: Replace this with the new intentions parser
+            $.ajax({
+                url: splunkUtils.make_full_url('parser/parse'),
+                data: params,
+                type: 'post',
+                dataType: 'json',
+                async: false,
+                success: function (data) {
+                    var result = { q: splunkUtils.stripLeadingSearchCommand(data.search) || params.q };
+                    if(earliest !== undefined) {
+                        result.earliest = earliest;
+                    }
+                    if(latest !== undefined) {
+                        result.latest = latest;
+                    }
+                    dfd.resolve(result);
+                },
+                error: function (xhr, status, error) {
+                    dfd.reject(error);
+                }
+            });
+            return dfd.promise();
+        },
+
+        handleDrilldown: function(click, drilldownType, manager, target) {
+            Drilldown.applyDrilldownIntention(click, drilldownType, manager).done(function(params){
+                var pageInfo = utils.getPageInfo(), url = route.search(pageInfo.root, pageInfo.locale, pageInfo.app, {
+                    data: params
+                });
+                utils.redirect(url, click.modifierKey, target);
+            });
+        }
+
+    };
+
+    return Drilldown;
+
+});
+
+define('splunkjs/mvc/basemanager',['require','exports','module','underscore','backbone','util/console','./mvc'],function(require, exports, module) {
+    var _ = require('underscore');
+    var Backbone = require('backbone');
+    var console = require('util/console');
+    var mvc = require('./mvc');
+    
+    var BaseManager = Backbone.Model.extend({
+        constructor: function(attributes, options) {
+            attributes = attributes || {};
+            options = options || {};
+            
+            // Get or generate a name
+            var id = options.id || attributes.id;
+ 
+            if (id === undefined) {
+                id = options.name || attributes.name;
+                if (id !== undefined) {
+                    console.log("Use of 'name' to specify the ID of a Splunk model is deprecated.");
+                }
+            }
+            
+            if (id === undefined) {
+                id = _.uniqueId('manager_');
+            }
+            
+            // Store it on the instance/options
+            this.id = this.name = options.name = options.id = id;
+            var returned = Backbone.Model.prototype.constructor.apply(this, arguments);
+            
+            // Register it on the global registry
+            mvc.Components.registerInstance(this.id, this, { replace: options.replace });
+            
+            return returned;
+        },
+        
+        _start: function() {}
+    });
+    
+    return BaseManager;
+});
+
+define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore','backbone','splunkjs/mvc','./tokenescapestring','./tokensafestring','./utils','util/console','./tokenutils','models/Base'],function(require, exports, module) {
     var _ = require('underscore');
     var Backbone = require('backbone');
     var mvc = require("splunkjs/mvc");
+    var TokenEscapeString = require("./tokenescapestring");
     var TokenSafeString = require("./tokensafestring");
     var Utils = require('./utils');
     var console = require("util/console");
     var TokenUtils = require('./tokenutils');
     var BaseModel = require('models/Base');
+    
     // Enables logging of when values are propagated between models.
     var VERBOSE = false;
     
@@ -55241,7 +60127,7 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
      *      this.get('color', {tokens: true});
      *      >> '$color$'
      *      
-     *      // If a property depends on an uninitialize token,
+     *      // If a property depends on an uninitialized token,
      *      // it takes on an 'undefined' value.
      *      this.get('color');
      *      >> undefined
@@ -55258,24 +60144,28 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
      *      this.get('color');
      *      >> '#cafeba'
      *      this.get('color', {tokens: true});
-     *      >> undefined
+     *      >> '#cafeba'
      *      mvc.Components.getInstance('default').get('color');
      *      >> '#ff0000'
      */
-    // NOTE: This class is intended to eventually replace the same-named
-    //       class declared in contextbound.js
+    // DOC: BaseModel is a private superclass.
+    //      Backbone.Model is the nearest public superclass.
     var TokenAwareModel = BaseModel.extend({
-        // TODO: Remove this hack when contextbound.js is removed. (DVPL-2494)
-        // HACK: Used by contextbound.js to detect whether a Backbone model
-        //       is a TokenAwareModel. Cannot use instanceof because it
-        //       creates a cyclic dependency:
-        //       [mvc.js -> contextbound.js -> tokenawaremodel.js -> mvc.js]
-        _isTokenAwareModel: true,
-
-        // Enables token replacement by default for set()
+        /**
+         * (Deprecated) Enables token replacement by default for set().
+         * 
+         * When true, all calls to set() implicitly take the option
+         * {tokens: true}.
+         */
         applyTokensByDefault: false,
 
-        // Enables retrieval of raw (unreplaced) tokens for get() and toJSON()
+        /**
+         * (Deprecated) Enables retrieval of raw (unreplaced) tokens for
+         * get() and toJSON().
+         * 
+         * When true, all calls to get() and toJSON() implicitly take the
+         * option {tokens: true}.
+         */
         retrieveTokensByDefault: false,
 
         /**
@@ -55297,10 +60187,14 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
          * @param options.tokenEscaper
          *                      Escaping function that will be used to escape
          *                      all expanded token values.
-         * @param options.tokenRegistry
+         * @param options.*     Interpreted the same way as in TokenAwareModel.set().
+         */
+        /*
+         * Private API:
+         * 
+         * @param options._tokenRegistry
          *                      An alternate token registry to use other than
          *                      `mvc.Components`. For use by tests only.
-         * @param options.*     Interpreted the same way as in TokenAwareModel.set().
          */
         // NOTE: Must override constructor() and not initialize()
         //       because this._templates and listeners need to be
@@ -55312,32 +60206,41 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
             attributes = attributes || {};
             options = options || {};
 
+            // Save options whose effects persist beyond the constructor
             this._tokenNamespace = options.tokenNamespace || undefined;
             this._retainUnmatchedTokens = options.retainUnmatchedTokens;
             this._tokenEscaper = options.tokenEscaper || undefined;
-            this._tokenRegistry = options.tokenRegistry || mvc.Components;
+            this._tokenRegistry = options._tokenRegistry || mvc.Components;
+            // TODO: Remove. Unused in this file.
+            //       It does not make sense to persist the 'tokens' option
+            //       because it is intended to only apply to this single
+            //       constructor call; it should not change behavior later.
             this.tokens = !!options.tokens;
+            this._applyTokensByDefault = 
+                (options.hasOwnProperty('applyTokensByDefault'))
+                    ? options.applyTokensByDefault
+                    : this.applyTokensByDefault;
+            this._retrieveTokensByDefault = 
+                (options.hasOwnProperty('retrieveTokensByDefault'))
+                    ? options.retrieveTokensByDefault
+                    : this.retrieveTokensByDefault;
             
             // Initialize self to empty
             BaseModel.prototype.constructor.call(this, {});
             this._templates = new BaseModel({});
             this._bindings = {};
             this._pushed_properties = [];
-            this._applyTokensByDefault = (options.hasOwnProperty('applyTokensByDefault') && options.applyTokensByDefault)
-                                          || this.applyTokensByDefault;
-            this._retrieveTokensByDefault = (options.hasOwnProperty('retrieveTokensByDefault') && options.retrieveTokensByDefault)
-                                                      || this.retrieveTokensByDefault;
 
             // When property templates change, update property bindings
             this._templates.on('change', function(model, options) {
-                that._updateBindingsForProperties(model.changed);
+                that._updateBindingsForProperties(model.changed, options);
             });
             
             // Initialize property values and templates
             this.set(attributes, options);
         },
         
-        _updateBindingsForProperties: function(properties) {
+        _updateBindingsForProperties: function(properties, options) {
             var that = this;
             _.each(properties, function(propTemplate, propName) {
                 var newBinding;
@@ -55350,7 +60253,7 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
                     var tokens = TokenUtils.getTokens(propTemplate, {
                         tokenNamespace: that._tokenNamespace
                     });
-                    var computeValueFunc = function() {
+                    var computeValueFunc = function(_retainUnmatchedTokens) {
                         // If template is a solitary token escape and the token
                         // has a non-string value, pass through that value.
                         // (String values may still need to go through additional
@@ -55373,7 +60276,7 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
                         });
                         
                         var propValue;
-                        if (templateSatisfied || that._retainUnmatchedTokens) {
+                        if (templateSatisfied || that._retainUnmatchedTokens || _retainUnmatchedTokens) {
                             propValue = TokenUtils.replaceTokens(
                                 propTemplate, that._tokenRegistry, {
                                     tokenNamespace: that._tokenNamespace,
@@ -55391,7 +60294,7 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
                     };
                 }
                 
-                that._setBinding(propName, newBinding);
+                that._setBinding(propName, newBinding, options);
             });
         },
         
@@ -55403,7 +60306,7 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
          * of a "binding", its "observed properties" and its "target property".
          * To reiterate, it should not be aware of tokens.
          */
-        _setBinding: function(propName, newBinding) {
+        _setBinding: function(propName, newBinding, options) {
             var that = this;
             
             // Destroy the old binding, unregistering old listeners
@@ -55453,21 +60356,30 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
                  * computed value based on the new binding.
                  */
                 if (this._isPushEnabled(propName) && this.get(propName) !== undefined) {
-                    this._pushPropertyValue(propName);
+                    this._pushPropertyValue(propName, options);
                 } else {
-                    this._pullPropertyValue(propName);
+                    this._pullPropertyValue(propName, options);
                 }
             }
         },
         
-        _pullPropertyValue: function(propName) {
+        _pullPropertyValue: function(propName, options) {
             var binding = this._bindings[propName];
             var propValue = binding.computeValue();
             
             if (VERBOSE) {
                 console.log('PROPAGATE: ' + propName + ' <- ' + propValue);
             }
-            BaseModel.prototype.set.call(this, propName, propValue);
+            
+            // We may have gotten a stashed silent value (see set()), so we have
+            // to unstash it.
+            options = options || {};
+            if (options.hasOwnProperty('_silent')) {
+                options.silent = options._silent;
+                delete options._silent;
+            }
+            
+            BaseModel.prototype.set.call(this, propName, propValue, options);
         },
         
         /**
@@ -55500,11 +60412,10 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
         _configureBindingForPush: function(propName) {
             var binding = this._bindings[propName];
             if (!TokenUtils.isToken(binding.template)) {
-                throw new Error(
-                    'Can only enable push for an existing binding ' +
-                    'that is bound to a single token. ' +
-                    'Property "' + propName + '" was bound to the ' +
-                    'template "' + binding.template + '".');
+                // This property's template is not presently bound to a
+                // single token. Therefore there is no token that can
+                // be pushed to yet.
+                return;
             }
             
             // Forward value changes to solitary token in template
@@ -55521,7 +60432,7 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
             binding._listeners.push(listener);
         },
         
-        _pushPropertyValue: function(propName) {
+        _pushPropertyValue: function(propName, options) {
             var binding = this._bindings[propName];
             var newValue = this.get(propName);
             var observedToken = binding.observes[0];
@@ -55532,34 +60443,16 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
             if (VERBOSE) {
                 console.log('PROPAGATE: ' + newValue + ' -> ' + observedPropName);
             }
-            observedContext.set(observedPropName, newValue);
             
-            // If value is a dictionary, push its keys as dotted
-            // subproperties of the primary property name.
-            if (!_.isArray(newValue) && _.isObject(newValue)) {
-                var isSingleLevel = _.every(newValue, function(newSubValue) {
-                    return !_.isObject(newSubValue);
-                }) && !_.isEmpty(newValue);
-                
-                if (isSingleLevel) {
-                    _.each(newValue, function(newSubValue, newSubPropName) {
-                        if (VERBOSE) {
-                            console.log('PROPAGATE: ' + 
-                                newSubValue + ' -> ' + 
-                                observedPropName + '.' + newSubPropName);
-                        }
-                        observedContext.set(
-                            observedPropName + '.' + newSubPropName,
-                            newSubValue);
-                    });
-                } else {
-                    throw new Error(
-                        'Unable to push value of property "' + propName + '" ' +
-                        'because it is a dictionary with nested dictionaries. ' +
-                        'Only scalar values and single-level dictionaries are ' +
-                        'supported in the current implementation.');
-                }
+            // We may have gotten a stashed silent value (see set()), so we have
+            // to unstash it.
+            options = options || {};
+            if (options.hasOwnProperty('_silent')) {
+                options.silent = options._silent;
+                delete options._silent;
             }
+            
+            observedContext.set(observedPropName, newValue, options);
         },
         
         /**
@@ -55586,7 +60479,7 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
             }
             options = options || {};
 
-            if(!options.hasOwnProperty('tokens')) {
+            if (!options.hasOwnProperty('tokens')) {
                 options.tokens = this._applyTokensByDefault;
             }
 
@@ -55594,31 +60487,51 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
             var bulkTemplateSets = {};
             var bulkTemplateUnsets = [];
             var bulkSelfSets = {};
+            var queueTemplateSet = function(propName, propTemplate) {
+                bulkTemplateSets[propName] = propTemplate;
+            };
+            var queueLiteralSet = function(propName, propValue) {
+                if (!that._isPushEnabled(propName)) {
+                    // Blank out any preexisting template unless this
+                    // is a pushed property
+                    bulkTemplateUnsets.push(propName);
+                }
+                bulkSelfSets[propName] = propValue;
+            };
             _.each(attrs, function(propValue, propName) {
                 if (propValue instanceof TokenSafeString) {
                     // Interpret as template.
-                    bulkTemplateSets[propName] = propValue.value;
+                    queueTemplateSet(propName, propValue.value);
+                } else if (propValue instanceof TokenEscapeString) {
+                    // Interpret as literal value.
+                    queueLiteralSet(propName, propValue.value);
                 } else if (_.isString(propValue) && options.tokens) {
                     // Interpret as template.
-                    bulkTemplateSets[propName] = propValue;
+                    queueTemplateSet(propName, propValue);
                 } else {
                     // Otherwise interpret as a literal value.
-                    if (!that._isPushEnabled(propName)) {
-                        // Blank out any preexisting template unless this
-                        // is a pushed property
-                        bulkTemplateUnsets.push(propName);
-                    }
-                    bulkSelfSets[propName] = propValue;
+                    queueLiteralSet(propName, propValue);
                 }
             });
             
+            // If we do a set/unset on _templates, we can't pass in 
+            // {silent: true}, as that will preclude us from getting a change
+            // event, and we won't be able to set up any bindings. Instead,
+            // we stash the silent value in _silent, and only use these 
+            // modified options for _templates.
+            var optionsForTemplates = _.clone(options);
+            if (options.hasOwnProperty('silent')) {
+                optionsForTemplates._silent = options.silent;
+                delete optionsForTemplates.silent;
+            }
+            
             // Perform changes in bulk
             if (!_.isEmpty(bulkTemplateSets)) {
-                this._templates.set(bulkTemplateSets, options);
+                this._templates.set(bulkTemplateSets, optionsForTemplates);
             }
             if (!_.isEmpty(bulkTemplateUnsets)) {
                 _.each(bulkTemplateUnsets, function(propName) {
-                    that._templates.unset(propName);
+                    that._templates.unset(propName, optionsForTemplates);
                 });
             }
             if (!_.isEmpty(bulkSelfSets)) {
@@ -55637,13 +60550,17 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
          */
         get: function(key, options) {
             options || (options = {});
-
-            if(!options.hasOwnProperty('tokens')) {
+            if (!options.hasOwnProperty('tokens')) {
                 options.tokens = this._retrieveTokensByDefault;
             }
 
-            if (options.tokens && this._templates.has(key)) {
-                return this._templates.get(key);
+            if (options.tokens) {
+                if (this._templates.has(key)) {
+                    return this._templates.get(key);
+                } else {
+                    return TokenUtils.quoteAsTokenString(
+                        BaseModel.prototype.get.call(this, key));
+                }
             } else {
                 return BaseModel.prototype.get.call(this, key);
             }
@@ -55684,20 +60601,53 @@ define('splunkjs/mvc/tokenawaremodel',['require','exports','module','underscore'
             });
             return extractedProperties;
         },
-
-        toJSON: function(options){
+        
+        /**
+         * Returns a copy of all properties on this model.
+         * 
+         * @param options.tokens    If true, returns the template string for
+         *                          the specified property instead of the
+         *                          property's current value. Defaults to false.
+         */
+        toJSON: function(options) {
             options || (options = {});
-            if(!options.hasOwnProperty('tokens')) {
+            if (!options.hasOwnProperty('tokens')) {
                 options.tokens = this._retrieveTokensByDefault;
             }
-            var result = BaseModel.prototype.toJSON.call(this, arguments);
-            if(options && options.tokens) {
+            
+            if (options.tokens) {
+                var that = this;
+                
+                var result = {};
+                // Fill in quoted literals
+                _.each(this.attributes, function(value, key) {
+                    result[key] = that.get(key, {tokens: true});
+                });
+                // Fill in real templates
                 result = _.extend(result, this._templates.toJSON());
+                return result;
+            } else {
+                return BaseModel.prototype.toJSON.call(this, arguments);
             }
-            return result;
         }
-
     });
+    
+    /*
+     * Creates an empty report model for use by low-level Core UI views.
+     * 
+     * Core UI views expect that templated properties can always be
+     * accessed and that they retain unmatched tokens. It is also assumed
+     * that templated properties can be set without specifying {tokens: true}
+     * explicitly.
+     * 
+     * Package-private.
+     */
+    TokenAwareModel._createReportModel = function(attributes) {
+        return new TokenAwareModel(attributes || {}, {
+            applyTokensByDefault: true,
+            retainUnmatchedTokens: true
+        });
+    };
     
     return TokenAwareModel;
 });
@@ -55722,6 +60672,16 @@ define('splunkjs/mvc/basesplunkview',['require','exports','module','underscore',
     var Settings = require("./settings");
 
     var BaseSplunkView = Backbone.View.extend({
+        _numConfigureCalls: 0,
+        
+        /**
+         * Names of options that will be excluded from this component's
+         * settings model if passed to the constructor.
+         * 
+         * Protected.
+         */
+        omitFromSettings: [],
+        
         /**
          * Creates a new view.
          * 
@@ -55729,6 +60689,9 @@ define('splunkjs/mvc/basesplunkview',['require','exports','module','underscore',
          *                      Defaults to an automatically generated ID.
          * @param options.el    (optional) Preexisting <div> in which this view
          *                      will be rendered.
+         * @param options.settings
+         *                      A Settings model instance to use instead of creating
+         *                      our own.
          * @param options.settingsOptions
          *                      Initial options for this view's settings model.
          * @param options.*     Initial attributes for this view's settings model.
@@ -55739,6 +60702,7 @@ define('splunkjs/mvc/basesplunkview',['require','exports','module','underscore',
         constructor: function(options, settingsOptions) {
             options = options || {};
             settingsOptions = settingsOptions || {};
+            
             options.settingsOptions = _.extend(
                 options.settingsOptions || {},
                 settingsOptions);
@@ -55747,22 +60711,87 @@ define('splunkjs/mvc/basesplunkview',['require','exports','module','underscore',
             var id = options.id;
             if (id === undefined && options.name) {
                 id = options.name;
-                console.log("Use of 'name' to specify the ID of a Splunk model is deprecated.");
+                console.warn("Use of 'name' to specify the ID of a Splunk model is deprecated.");
             }
 
             if (id === undefined) {
-                id = _.uniqueId('manager_');
+                id = _.uniqueId('view_');
             }
 
             this.name = this.id = options.name = options.id = id;
             
             // Delegate to Backbone.View's constructor.
+            // NOTE: This will call initialize() as a side effect.
             var returned = Backbone.View.prototype.constructor.apply(this, arguments);
+            if (this._numConfigureCalls == 0) {
+                // initialize() should have called configure() but did not.
+                // In this case automatically call configure().
+                this.configure();
+            }
             
-            // Register it on the global registry
-            mvc.Components.registerInstance(this.id, this, { replace: settingsOptions.replace});
+            // Register self in the global registry
+            mvc.Components.registerInstance(this.id, this, { replace: settingsOptions.replace });
             
             return returned;
+        },
+        
+        /**
+         * Initializes this view's settings model based on the contents of
+         * this.options.
+         * 
+         * Protected.
+         */
+        configure: function() {
+            this._numConfigureCalls++;
+            if (this._numConfigureCalls > 1) {
+                throw new Error('BaseSplunkView.configure() called multiple times.');
+            }
+            
+            // We may have received a Settings model instance to use instead
+            // of creating our own. If so, we just use it and return immediately.
+            var settings = this.options.settings;
+            if (settings && (settings instanceof Settings)) {
+                this.settings = settings;
+                return this;
+            }
+            
+            // Reinterpret remaining view options as settings attributes.
+            var localOmitFromSettings = (this.omitFromSettings || []).concat(
+                ['model', 'collection', 'el', 'attributes', 
+                 'className', 'tagName', 'events', 'settingsOptions']);
+
+            var settingsAttributes = _.omit(this.options, localOmitFromSettings);
+            var settingsOptions = this.options.settingsOptions;
+
+            // Now, we create our default settings model.
+            this.settings = new Settings(settingsAttributes, settingsOptions);
+
+            return this;
+        },
+        
+        /**
+         * Initializes this view.
+         * 
+         * Subclasses are expected to override this method.
+         * 
+         * All implementations must call configure(), usually at the beginning
+         * of this method.
+         */
+        // TODO: Just invoke configure() from constructor() instead of
+        //       relying on subclasses to do it. (Don't forget to update
+        //       the doc comment above.) (DVPL-2436)
+        initialize: function() {
+            Backbone.View.prototype.initialize.apply(this, arguments);
+        },
+        
+        remove: function() {
+            // Call our super class
+            Backbone.View.prototype.remove.apply(this, arguments);
+            
+            // Remove it from the registry
+            mvc.Components.revokeInstance(this.id);
+            
+            return this;
         },
         
         setElement: function() {
@@ -55782,23 +60811,34 @@ define('splunkjs/mvc/basesplunkview',['require','exports','module','underscore',
                 this.$el.addClass(this.className);
             }
             
+            if (!this.$el.attr('id')) {
+                this.$el.attr('id', this.id);
+            }
+            
             return this;
+        },
+        
+        bindToComponentSetting: function(settingName, fn, fnContext) {
+            this.listenTo(this.settings, "change:" + settingName, function(model, value, options) {
+                var oldComponentName = this.settings.previous(settingName);
+                var newComponentName = value;
+                
+                this.unbindFromComponent(oldComponentName, fn, fnContext);
+                this.bindToComponent(newComponentName, fn, fnContext);
+            }, this);
+            
+            var initialComponentName = this.settings.get(settingName);
+            this.bindToComponent(initialComponentName, fn, fnContext);
         },
 
         bindToComponent: function(id, fn, fnContext) {
-            // A component id is required
-            if (!id) {
-                return this;
-            }
-            
-            // A callback is required
-            if (!fn) {
+            // Abort if required parameters are missing
+            if (!id || !fn) {
                 return this;
             }
             
             // We register on the "change:{id}" event
-            var ev = "change:" + id;
-            this.listenTo(mvc.Components, ev, fn ,fnContext);
+            this.listenTo(mvc.Components, "change:" + id, fn, fnContext);
 
             // However, it could be that the component already exists,
             // in which case, we will invoke the callback manually
@@ -55819,63 +60859,23 @@ define('splunkjs/mvc/basesplunkview',['require','exports','module','underscore',
             }
             
             // We register on the "change:{id}" event
-            var ev = "change:" + id;
-            mvc.Components.off(ev, fn, fnContext);
+            mvc.Components.off("change:" + id, fn, fnContext);
             
             return this;
-        },
-        
-        /**
-         * Initializes this view's settings model based on the contents of
-         * this.options.
-         * 
-         * If this.omitFromSettings is defined, then the named
-         * options will be omitted from the created settings model.
-         * 
-         * See constructor() for the interpretation of different options.
-         * 
-         * Protected.
-         */
-        // TODO: Move this method (and 'initialize') directly after
-        //       'constructor' to more accurately convey its invocation order.
-        configure: function() {
-            // Remove the el component, so we don't maintain a reference to it
-            // in this.options or this.settings.
-            delete this.options.el;
-            
-            var settingsOptions = this.options.settingsOptions;
-            delete this.options.settingsOptions;
-            
-            // Reinterpret remaining view options as settings attributes.
-            var localOmitFromSettings = (this.omitFromSettings || []).concat(
-                ['model', 'collection', 'el', 'attributes', 
-                 'className', 'tagName', 'events']);
-
-            var settingsAttributes = _.omit(this.options, localOmitFromSettings);
-
-            // Now, we create our default settings model.
-            this.settings = new Settings(settingsAttributes, settingsOptions);
-
-            return this;
-        },
-        
-        /**
-         * Initializes this view.
-         * 
-         * Subclasses are expected to override this method.
-         * 
-         * All implementations should call configure() at the beginning
-         * of this method.
-         */
-        // TODO: Just invoke configure() from constructor() instead of
-        //       relying on subclasses to do it. (Don't forget to update
-        //       the doc comment above.) (DVPL-2436)
-        initialize: function() {
-            Backbone.View.prototype.initialize.apply(this, arguments);
         }
     });
     
     return BaseSplunkView;
+});
+
+// 
+
+define('splunkjs/mvc/basemodel',['require','exports','module','backbone'],function(require, exports, module) {
+    var Backbone = require('backbone');
+
+    var BaseModel = Backbone.Model.extend({});
+    
+    return BaseModel;
 });
 
 requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.addBuffer('splunkjs/css/messages.css'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick;
@@ -55894,13 +60894,18 @@ define('splunkjs/mvc/messages',['require','exports','module','underscore','./mvc
         },
         'empty': {
             icon: "blank",
-            level: "blank",
+            level: "info",
             message: ""  
         },
-        'no-events': {
+        'unresolved-search': {
             icon: "warning-sign",
-            level: "warning",
-            message: _("Your search did not return any events.").t()
+            level: "error",
+            message: _("Search query is not fully resolved.").t()
+        },
+        'no-events': {
+            icon: "info-circle", 
+            level: "info", 
+            message: _("Search did not return any events.").t()
         },
         'no-results': {
             icon: "blank",
@@ -55914,8 +60919,8 @@ define('splunkjs/mvc/messages',['require','exports','module','underscore','./mvc
         },
         'no-stats': {
             icon: "warning-sign",
-            level: "warning",
-            message: _("Your search isn't generating any statistical results.").t()
+            level: "error",
+            message: _("Search isn't generating any statistical results.").t()
         },
         'not-started': {
             icon: "info-circle", 
@@ -55948,6 +60953,8 @@ define('splunkjs/mvc/messages',['require','exports','module','underscore','./mvc
 </div>\
 ';
 
+    var SPLUNKD_MESSAGE_ORDER = { 'FATAL': 1, 'ERROR': 2, 'WARN': 3, 'INFO': 4, 'DEBUG': 5 };
+
     var Messages = {
         messageTemplate: messageTemplate,
         messages: messages,
@@ -55968,13 +60975,48 @@ define('splunkjs/mvc/messages',['require','exports','module','underscore','./mvc
             // default compact to false
             info.compact = !!info.compact;
             $el.html(_.template(this.messageTemplate, info));
+        },
+        
+        resolve: function(info) {
+            return this.messages[info];
+        },
+
+        _extractErrorMessage: function(state, contentProperty, combineMessages, defaultMessage) {
+            if (state) {
+                var content = state[contentProperty || 'content'];
+                if (content && content.isZombie) {
+                    return _("The search job terminated unexpectedly.").t();
+                }
+                if (content && content.messages && content.messages.length) {
+                    // Eliminate all non-error/fatal or empty messages
+                    var msgs = _(content.messages).filter(function(msg) {
+                        return (msg.type === 'ERROR' || msg.type === 'FATAL') && !!msg.text;
+                    });
+                    if (msgs.length) {
+                        var result = _.chain(msgs)
+                                // Show fatal messages first
+                                .sortBy(function(msg) { return SPLUNKD_MESSAGE_ORDER[msg.type] || 99; })
+                                // Extract unique message texts
+                                .pluck('text').unique().value();
+
+                        return combineMessages ? result.join('; ') : result[0];
+                    }
+                }
+            }
+            return defaultMessage;
+        },
+
+        getSearchErrorMessage: function(state) {
+            return Messages._extractErrorMessage(state, 'data', true);
+        },
+
+        getSearchFailureMessage: function(jobState) {
+            return Messages._extractErrorMessage(jobState, 'content', false, _("The search failed").t());
         }
     };
 
     return Messages;
 });
-
-// 
 
 define('splunkjs/mvc/splunkresultsmodel',['require','exports','module','underscore','backbone'],function(require, exports, module) {
     var _ = require('underscore');
@@ -56017,7 +61059,7 @@ define('splunkjs/mvc/splunkresultsmodel',['require','exports','module','undersco
                  
             this.handleAutofetch();
             if (this.get("autofetch")) {
-                this.fetch();
+                this._fetch();
             }
         },
         
@@ -56112,6 +61154,13 @@ define('splunkjs/mvc/splunkresultsmodel',['require','exports','module','undersco
 
                 if (err) {
                     error(options, err);
+                    
+                    var message = null;
+                    if (err.data && err.data.messages && err.data.messages.length) {
+                        message = err.data.messages[0];
+                    }
+                    var text = message ? message.text : "An error occurred while fetching data.";
+                    that.trigger("error", text, err);
                 }
                 else {
                     that._data = data;
@@ -56161,6 +61210,10 @@ define('splunkjs/mvc/splunkresultsmodel',['require','exports','module','undersco
             var i, j;
             var data = this.data();
             
+            if (!data) {
+                return new Backbone.Collection();
+            }
+            
             var fields = data.fields || [];
             var items = [];
             
@@ -56198,10 +61251,16 @@ define('splunkjs/mvc/splunkresultsmodel',['require','exports','module','undersco
         
         hasData: function() {
             if (this.data()) {
-                // In the case of output_mode=json --> [{count:0}]
+                // In the case of output_mode=json in Splunk 5 --> [{count:0}]
                 if (_.isArray(this._data) && this._data.length === 1 && this._data[0].count === 0) {
                     return false;
                 }
+                
+                // In the case of output_mode=json in Splunk 6 --> { results: [], ... }
+                if (this._data.results && this._data.results.length === 0) {
+                    return false;
+                }
+                
                 // In the case of output_mode=json_{rows|cols} --> { fields: [], ... }
                 if (this._data.fields && this._data.fields.length === 0) {
                     return false;
@@ -56290,24 +61349,36 @@ define('splunkjs/mvc/searchmodel',['require','exports','module','underscore','./
     var SearchJobModel = TokenAwareModel.extend({});
 
     SearchQueryModel.ALLOWED_ATTRIBUTES = ["search"];
+    
+    // This list is manually collected from the combination of:
+    //  * POST search/jobs
+    //  * POST saved/searches/<name>/dispatch
+    // You can find the various properties in the REST API reference documentation.
     SearchJobModel.ALLOWED_ATTRIBUTES = [
+        "adhoc_search_level",
         "auto_cancel",
         "auto_finalize_ec",
         "auto_pause",
+        "buckets",
         "earliest_time",
         "enable_lookups",
         "exec_mode",
         "force_bundle_replication",
+        "indexedRealtime",
         "latest_time",
+        "label",
+        "lookups",
         "max_count",
         "max_time",
         "namespace",
         "now",
+        "preview",
         "reduce_freq",
         "reload_macros",
         "remote_server_list",
         "required_field_list",
         "rf",
+        "rt_backfill",
         "rt_blocking",
         "rt_indexfilter",
         "rt_maxblocksecs",
@@ -56319,9 +61390,7 @@ define('splunkjs/mvc/searchmodel',['require','exports','module','underscore','./
         "sync_bundle_replication",
         "time_format",
         "timeout",
-        "adhoc_search_level",
-        "label",
-        "preview"
+        "ttl"
     ];
 
     return {
@@ -56330,8 +61399,251 @@ define('splunkjs/mvc/searchmodel',['require','exports','module','underscore','./
     };
 });
 
-define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','./mvc','../splunk','./basemanager','./splunkresultsmodel','./searchmodel','splunkjs/splunk','./tokensafestring','util/console'],function(require, exports, module) {
+define('splunkjs/mvc/jobtracker',['require','underscore','backbone','splunkjs/mvc','util/console'],function(require) {
+    var _ = require('underscore');
+    var Backbone = require('backbone');
+    var mvc = require('splunkjs/mvc');
+    var console = require('util/console');
+
+    var MONITORED_PROPERTIES = [
+        'dispatchState', 'scanCount', 'resultCount', 'eventCount',
+        'eventAvailableCount', 'isDone', 'isFailed', 'isFinalized', 'doneProgress'
+    ];
+    
+    var FAST_FETCH_PERIOD = 200;
+    var SLOW_FETCH_PERIOD = 1000;
+
+    var JobTracker = function() {
+        this.initialize.apply(this, arguments);
+    };
+    _.extend(JobTracker.prototype, Backbone.Events, {
+        initialize: function() {
+            // Stores a model for all jobs that we are tracking
+            this._active = {};
+            
+            // Whether or not we currently have a fetch request in flight
+            this._inflight = null;
+            
+            // A reference to the current timer
+            this._timer = null;
+            
+            // Whether or not we have any new jobs to track, which will influence
+            // how quickly we fetch again.
+            this._fresh = false;
+            
+            // A bound function
+            this._fetch = _.bind(this._fetch, this);
+            
+            // We create a completely wild-carded service, because we have to make
+            // sure we look at all apps/owners. This is because the searches
+            // we are tracking could be created anywhere.
+            this.service = mvc.createService({ app: '-', owner: '-' });
+        },
+        
+        /**
+         * Track the given search job.
+         * 
+         * @param job       The job to track.
+         * @param callbacks An object containing callback functions (ready, progress, done, failed, error).
+         */
+        track: function(job, callbacks) {
+            // Create a model to track this job
+            this._active[job.sid] = this._initializeItem(job, callbacks || {});
+            
+            // Note that we have a new job to track and schedule another fetch
+            this._fresh = true;
+            this._scheduleNextFetch();
+        },
+        
+        /**
+         * Stop tracking the job with the given SID.
+         * 
+         * @param sid   The sid to stop tracking.
+         */
+        untrack: function(sid) {
+            var item = this._active[sid];
+            if (item) {
+                item._stop = true;
+                delete this._active[sid];
+            }
+        },
+        
+        _initializeItem: function(job, callbacks) {
+            var item = {
+                job: job,
+                model: new Backbone.Model()
+            };
+            
+            if (_.isFunction(callbacks.progress)) {
+                item.model.on('change', function() {
+                    callbacks.progress(job);
+                });
+            }
+            if (_.isFunction(callbacks.ready)) {
+                item.model.once('change:dispatchState', item.callbacks.ready);
+            }
+            if (_.isFunction(callbacks.done)) {
+                item.model.on('done', callbacks.done);
+            }
+            if (_.isFunction(callbacks.failed)) {
+                item.model.on('failed', callbacks.failed);
+            }
+            if (_.isFunction(callbacks.error)) {
+                item.model.on('error', callbacks.error);
+            }
+            
+            return item;
+        },
+        
+        _scheduleNextFetch: function() {
+            // If we already have a timer or there is a request in flight, 
+            // then we do nothing
+            if (this._timer || this._inflight) {
+                return;
+            }
+            
+            // Fetch status faster if there have been new jobs added to the tracker recently
+            var timeout = this._fresh ? FAST_FETCH_PERIOD : SLOW_FETCH_PERIOD;
+            this._timer = setTimeout(this._fetch, timeout);
+        },
+        
+        _fetch: function() {
+            this._timer = null;
+            
+            // Make a clone of the jobs we are going to request status for
+            var requestedJobs = _.clone(this._active);
+            if (_.isEmpty(requestedJobs)) {
+                return;
+            }
+            
+            // Create search filter for splunkd request
+            var requestedSIDs = _(requestedJobs).keys();
+            var filter = _(requestedSIDs).map(function(sid) { return ['sid', sid].join('='); }).join(' OR ');
+            
+            var tracker = this;
+            this._inflight = this.service.jobs().get("", { search: filter, count: requestedSIDs.length },
+                function(err, response) {
+                    tracker._inflight = null;
+                    
+                    if (err) {
+                        console.error('Error fetching search jobs: %o', err);
+                        _(requestedJobs).chain().pluck('model').invoke('trigger', [ 'error', err ]);
+                        tracker._scheduleNextFetch();
+                        return;
+                    }
+                    
+                    var data = response.data;
+                    var newActive = {}; 
+                    var oldActive = tracker._active;
+                    
+                    // Extract jobs added after this fetch was initiated. We
+                    // know a job was added by seeing if it is in our cloned
+                    // list.
+                    _(oldActive).each(function(item, sid) {
+                        if (!requestedJobs.hasOwnProperty(sid)) {
+                            newActive[sid] = item;
+                        }
+                    });
+                    
+                    // If there are no new jobs, then we can do a slower ping,
+                    // otherwise we ping faster.
+                    if (_.isEmpty(newActive)) {
+                        tracker._fresh = false;
+                    } else {
+                        tracker._fresh = true;
+                    }
+
+                    // Now that we found all the "brand new" jobs, we can look
+                    // at the returned status
+                    var returnedSIDs = _(data.entry).map(function(entry) {
+                        var sid = entry.content.sid;
+                        var item = requestedJobs[sid];
+                        var job = item.job;
+                        var model = item.model;
+
+                        // Don't update the content for cancelled jobs
+                        if (item._stop) {
+                            return sid;
+                        }
+
+                        // Update job content and the model
+                        job._load(entry);
+                        model.set(_.pick(entry.content, MONITORED_PROPERTIES));
+
+                        var props = job.properties();
+                        var dispatchState = props.dispatchState;
+
+                        // Trigger the correct events depending on the current
+                        // dispatch state of the job.
+                        if (props.isFailed || props.isZombie || dispatchState === 'FAILED') {
+                            model.trigger('failed', job);
+                            model.off();
+                        } else if (props.isDone || dispatchState === 'DONE') {
+                            model.trigger('done', job);
+                            model.off();
+                        } else {
+                            // If it is neither DONE nor FAILED, then we add
+                            // it to our list of jobs to track next time.
+                            newActive[sid] = item;
+                        }
+
+                        return sid;
+                    });
+
+                    // Now that we've looked at all the jobs that splunkd returned,
+                    // we can now try and find the ones that we asked for but
+                    // don't seem to have gotten a response back for.
+                    returnedSIDs = _(returnedSIDs);
+                    _(requestedSIDs).each(function(sid) {
+                        if (!returnedSIDs.contains(sid)) {
+                            var item = oldActive[sid];
+                            
+                            if (!item) {
+                                return;
+                            }
+                            
+                            // If we wanted to stop tracking this job, then this
+                            // is fine, as the job may have been cancelled.
+                            if (item._stop) {
+                                return;
+                            }
+                            
+                            // We want to make sure that if we don't get a response
+                            // for a particular job, that we haven't seen it
+                            // previously in a meaningful way (e.g. a non-undefined
+                            // dispatchState). If we have already seen it, then
+                            // it is an error.
+                            if (!item.model.has('dispatchState') || item.model.get('dispatchState') === undefined) {
+                                newActive[sid] = item;
+                                tracker._fresh = true;
+                            } else {
+                                item.model.trigger('error', _("The job has not been found").t());
+                                tracker._itemDone(item);
+                            }
+                        }
+                    });
+
+                    // Now we track only those jobs that made the cut (brand new
+                    // ones and ones that are not done), and schedule the 
+                    // next fetch.
+                    tracker._active = newActive;
+                    tracker._scheduleNextFetch();
+                });
+        },
+        
+        _itemDone: function(item) {
+            item.model.off();
+        }
+    });
+
+    // Singleton instance
+    return new JobTracker();
+});
+
+define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','jquery','JS_CACHE/config','./mvc','../splunk','./basemanager','./splunkresultsmodel','./searchmodel','splunkjs/splunk','./tokensafestring','util/console','./jobtracker','./messages'],function(require, exports, module) {
     var _ = require("underscore");
+    var $ = require("jquery");
+    var config = require('JS_CACHE/config');
     var mvc = require('./mvc');
     var Async = require('../splunk').Async;
     var BaseManager = require('./basemanager');
@@ -56340,46 +61652,48 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
     var sdk = require('splunkjs/splunk');
     var TokenSafeString = require("./tokensafestring");
     var console = require('util/console');
+    var JobTracker = require('./jobtracker');
+    var Messages = require('./messages');
 
     var SearchManager = BaseManager.extend({ 
         moduleId: module.id,
 
         defaults: {
             autostart: true,
-            cache: false
+            cache: false,
+            cancelOnUnload: true
         },
-        
+
         constructor: function(attributes, options) {
             // This has to be in the constructor, otherwise
             // we will call Model.set before we have created these sub-models.
             this.query = attributes.queryModel || new SearchModels.SearchQuery({}, options);
             this.search = attributes.searchModel || new SearchModels.SearchJob({
-                // TODO: Should wrap this with mvc.tokenEscape() once it
-                //       is implemented to avoid reinterpretation via
-                //       the passthru options such as tokens=true. (DVPL-2030)
                 label: attributes.id
             }, options);
-            
+
             // No need to set it on our model
             delete attributes.queryModel;
             delete attributes.searchModel;
 
             return BaseManager.prototype.constructor.apply(this, arguments);
         },
-        
+
         initialize: function(options) {
             this.service = mvc.createService({app: options.app, owner: options.owner});
             if (!this.search.has("label")) {
                 this.search.set("label", options.id);
             }
-            
-            // We want to change behavior depending on whether autostart is set 
+
+            this._debouncedStartSearch = _.debounce(this.startSearch);
+
+            // We want to change behavior depending on whether autostart is set
             // or not. So we first bind a listener to it changing, and then
             // we invoke that listener manually
             this.on("change:autostart", this.handleAutostart, this);
             this.on("search:error", function(msg) { this.lastError = msg; return true; }, this);
             this.on('all', function(evt){
-                if(evt.substring(0, 'search:'.length) === 'search:') {
+                if (evt.substring(0, 'search:'.length) === 'search:') {
                     this._lastSearchEvent = [ evt, Array.prototype.slice.call(arguments, 1) ];
                 }
             }, this);
@@ -56387,19 +61701,44 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
 
             // Kick off the search. This will only do anything if autostart is enabled
             this._start();
+
+            this._cancelOnUnload = _.bind(this._cancelOnUnload, this);
+            this.on('change:cancelOnUnload change:cache', this.handleCancelOnUnload, this);
+            this.handleCancelOnUnload();
         },
-        
+
         handleAutostart: function() {
             if (this.get("autostart")) {
-                this.query.on("change", this.startSearch, this);
-                this.search.on("change", this.startSearch, this);
+                this.query.on("change", this._debouncedStartSearch, this);
+                this.search.on("change", this._debouncedStartSearch, this);
             }
             else {
-                this.query.off("change", this.startSearch, this);
-                this.search.off("change", this.startSearch, this);
+                this.query.off("change", this._debouncedStartSearch, this);
+                this.search.off("change", this._debouncedStartSearch, this);
             }
         },
-        
+
+        handleCancelOnUnload: function() {
+            $(window).off('unload', this._cancelOnUnload);
+            if (this.get('cancelOnUnload') && !this.get('cache')) {
+                $(window).on('unload', this._cancelOnUnload);
+            }
+        },
+
+        _cancelOnUnload: function() {
+            // Cancel job is it isn't already done
+            if (this.job && !this.job.properties().isDone) {
+                $.ajax({
+                    url: config.PROXY_PATH + this.job.qualifiedPath + '/control',
+                    data: { action: 'cancel' },
+                    type: 'POST',
+                    // Force a synchronous XHR call since an asynchronous request might have no
+                    // effect in the unload phase
+                    async: false
+                });
+            }
+        },
+
         // set(attributeName : String, attributeValue : mixed, options : Object|null)
         // set(attributes : Object, options : Object|null)
         set: function(key, value, options) {         
@@ -56447,6 +61786,21 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
             
             return BaseManager.prototype.set.call(this, attrs, options);
         },
+
+        get: function(attr) {
+            // These attributes are propagated to child objects.  We
+            // should look to the child object for the "official"
+            // version.
+            if (_.contains(SearchModels.SearchJob.ALLOWED_ATTRIBUTES, attr)) {
+                return this.search.get.apply(this.search, arguments);
+            }
+
+            if (_.contains(SearchModels.SearchQuery.ALLOWED_ATTRIBUTES, attr)) {
+                return this.query.get.apply(this.query, arguments);
+            }
+
+            return BaseManager.prototype.get.call(this, attr);
+        },
         
         _isDictionary: function(value) {
             // NOTE: This logic is fragile. Unfortunately there's no good
@@ -56464,6 +61818,10 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
         },
         
         data: function(source, attrs) {
+            if (!source) {
+                throw new Error("Cannot get a results model without specifying the source.");
+            }
+            
             attrs = attrs || {};
             attrs.manager = this;
             attrs.source = source;
@@ -56518,8 +61876,19 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
             
             // Only start a search if we have a search string
             if (!options.search) {
-                this.trigger("search:error", _("No search query provided.").t());
+                if (this.query.get("search", {tokens: true})) {
+                    this.trigger("search:error", Messages.resolve("unresolved-search").message);
+                }
+                else {
+                    this.trigger("search:error", _("No search query provided.").t());   
+                }
                 return;
+            }
+
+            // Skip fetching existing jobs if cache is disabled and directly create a new job
+            if (cache === 0) {
+                this.createSearch();
+                return this;
             }
             
             var filter = {};
@@ -56627,6 +61996,7 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
             }
             
             if (this.job) {
+                JobTracker.untrack(this.job.sid);
                 this.job.cancel();
                 this.job = null;
                 this.trigger("search:cancelled");
@@ -56636,16 +62006,33 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
         
         createSearchPinger: function(job) {
             var that = this;
-            
+
             // As long as the job on the manager is the same
             // as the one we were told to iterate over, keep going.
             Async.whilst(
                 function() { return that.job === job; },
                 function(done) {
-                    // Just ping the job so that it doesn't die, every 10 sec.
-                    Async.sleep(10000, function() {
+                    // Just ping the job so that it doesn't die. We will wait
+                    // a third of the time it takes for the job to expire or to 
+                    // be auto-cancelled before pinging it
+                    var props = job.properties();
+                    var expireDelay, autoCancel;
+
+                    if (props.isDone || props.request === undefined || props.request.auto_cancel === undefined) {
+                        // Use TTL if the job is done or there is not auto_cancel
+                        expireDelay = props.ttl;
+                    } else if (props.request !== undefined) {
+                        autoCancel = props.request && parseInt(props.request.auto_cancel, 10) || Infinity;
+                        expireDelay = Math.min(autoCancel, props.ttl);
+                    }
+
+                    // Do the final calculation, and make sure we have a sensible
+                    // default of 10 seconds.
+                    var delay = parseInt(((expireDelay || 30) * 1000) / 3, 10);
+
+                    Async.sleep(delay, function() {
                         // Make sure it's still our job
-                        if(that.job === job) {
+                        if (that.job === job) {
                             job.fetch(done);
                         }
                     });
@@ -56659,13 +62046,16 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
         
         // Create a search job manager for the given job.
         createManager: function(job) {
-            var that = this, check = _.bind(this._checkJob, this), cacheEnabled = this.get('cache');
+            var that = this;
+            var check = _.bind(this._checkJob, this); 
+            var cacheEnabled = this.get('cache');
             
             this.job = job;
-            job.track({period: 1500}, {
+            this.createSearchPinger(job);
+            JobTracker.track(job, {
                 progress: function(job) {
                     // Check if the event is from current active job
-                    if(!check(job, cacheEnabled)) {
+                    if (!check(job, cacheEnabled)) {
                         return;
                     }
                     var properties = job.properties();
@@ -56684,19 +62074,15 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
                 },
                 done: function(job) {
                     // Check if the event is from current active job
-                    if(!check(job, cacheEnabled)) {
+                    if (!check(job, cacheEnabled)) {
                         return;
                     }
                     var state = job.state();
                     that.trigger("search:done", state, job);
-                    
-                    // Now that the job is done, we need to keep it 
-                    // alive for as long as it is our active job.
-                    that.createSearchPinger(job);
                 },
                 failed: function(job) {
                     // Check if the event is from current active job
-                    if(!check(job, cacheEnabled)) {
+                    if (!check(job, cacheEnabled)) {
                         return;
                     }
                     var state = job.state();
@@ -56708,7 +62094,7 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
         },
 
         _checkJob: function(job, cache){
-            if(this.job !== job) {
+            if (this.job !== job) {
                 if (!cache) {
                     job.cancel();
                 }
@@ -56721,15 +62107,16 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
         createSearch: function() {
             var options = this._createOptionsForSearchJob();
             // Check if we currently have an inflight XHR for creating a job
-            if(this._inflightCreateXHR) {
+            if (this._inflightCreateXHR) {
                 // Abort the inflight XHR
                 this._inflightCreateXHR.abort();
             }
-            var that = this, cache = this.get('cache');
+            var that = this;
+            var cache = this.get('cache');
             var req = this._inflightCreateXHR = this.service.jobs().create(options, function(err, job) {
                 // Check if response is from an obsolete job creation XHR
-                if(req !== that._inflightCreateXHR) {
-                    if(!(err || cache)) {
+                if (req !== that._inflightCreateXHR) {
+                    if (!(err || cache)) {
                         job.cancel();
                     }
                     that._inflightCreateXHR = null;
@@ -56737,7 +62124,15 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
                 }
                 that._inflightCreateXHR = null;
                 if (err) {
-                    that.trigger("search:error", _("Could not create search.").t(), err, job);
+                    // We only want to trigger errors for non-abort cases. This is because
+                    // we are the ones causing the abort (at the beginning of createSearch),
+                    // and we should not cause an error for something we did. Furthermore,
+                    // since we only abort in the case of creating a new search, we are guaranteed
+                    // that the new search will cause some events to happen (even if those events
+                    // are search:error ones).
+                    if (err.status !== "abort") {
+                        that.trigger("search:error", _("Could not create search.").t(), err, job);
+                    }
                     return;
                 }
                 that.createManager(job);
@@ -56745,34 +62140,72 @@ define('splunkjs/mvc/searchmanager',['require','exports','module','underscore','
         },
 
         replayLastSearchEvent: function(listener) {
-            if(this._lastSearchEvent) {
+            var replayed = false;
+            if (this._lastSearchEvent) {
                 var evtName = this._lastSearchEvent[0];
                 var listenerObj = _(this._events[evtName]).find(function(attachedListener){ return attachedListener.ctx === listener; });
-                if(listenerObj) {
+                if (listenerObj) {
                     var args = this._lastSearchEvent[1];
                     listenerObj.callback.apply(listener, args);
+                    replayed = true;
                 }
             }
+            return replayed;
+        },
+        
+        getLastSearchEvent: function() {
+            return this._lastSearchEvent;
         }
     });
     
     return SearchManager;
 });
 
-//
-
-define('splunkjs/mvc/savedsearchmanager',['require','exports','module','./mvc','./searchmanager','underscore','util/console'],function(require, exports, module) {
+define('splunkjs/mvc/savedsearchmanager',['require','exports','module','./mvc','./searchmanager','underscore','util/console','splunkjs/splunk'],function(require, exports, module) {
     var mvc = require('./mvc');
     var SearchManager = require('./searchmanager');
     var _ = require("underscore");    
     var console = require('util/console');
+    var sdk = require('splunkjs/splunk');
+
+    // When dispatching saved searches, we use the 'dispatch.<property>=X' form,
+    // as opposed to when creating search jobs, where we use just '<property>=X'
+    // form. Furthermore, some 'dispatch.' property names differ from their
+    // search job counterparts: 
+    //  * dispatch.buckets ~= status_buckets
+    //  * dispatch.lookups ~= enable_lookups
+    // Given that, the following two lists have both what properties can be
+    // dispatched, as well as their variants and mappings.
+    var DISPATCHABLE_PROPERTIES = {
+        "status_buckets": true,
+        "buckets": true, 
+        "earliest_time": true,
+        "indexedRealtime": true,
+        "latest_time": true,
+        "enable_lookups": true,
+        "lookups": true,
+        "max_count": true,
+        "max_time": true,
+        "reduce_freq": true,
+        "rt_backfill": true,
+        "spawn_process": true,
+        "time_format": true,
+        "ttl": true
+    };
+
+    // Some of the dispatch properties have shortened names
+    var DISPATCH_MAPPINGS = {
+        'status_buckets': 'buckets',
+        'enable_lookups': 'lookups'
+    };
 
     var SavedSearchManager = SearchManager.extend({
         moduleId: module.id,
-                 
+
         defaults: {
             autostart: true,
-            cache: false  
+            cache: false,
+            cancelOnUnload: true
         },
         
         startSearch: function() {
@@ -56797,60 +62230,70 @@ define('splunkjs/mvc/savedsearchmanager',['require','exports','module','./mvc','
             var threshold = cache < 0 ? 
                 (new Date(0)).valueOf() :
                 ((new Date()).valueOf() - cache * 1000);
-
-            // Setup a filter to only ask for searches with the same
-            // name as ours. 
-            var searchNameFilter = '"' + this.get("searchname") + '"';
-            var filter = { search: "name="+searchNameFilter+"*" };
-
+            
+            var search = new sdk.Service.SavedSearch(this.service, this.get("searchname"), {
+                owner: this.service.owner,
+                app: this.service.app,
+                sharing: this.service.sharing
+            });
+            
             var that = this;
-            this.service.savedSearches().fetch(filter, function(err, searches) {
+            search.fetch(function(err, search) {
                 if (err) {
-                    console.log("Error fetching saved searches");
-                    that.trigger("search:error", _("Error fetching saved searches").t());
+                    if (err.status === 404) {
+                        var message = _("Warning: saved search not found: ").t() + '"' + that.get("searchname") + '"';
+                        console.log(message);
+                        that.trigger("search:error", message);
+                    } else {
+                        console.log("Error fetching saved searches");
+                        that.trigger("search:error", _("Error fetching saved searches").t());
+                    }
                     return;
                 }
                 
-                var searchList = searches.list();
-                for (var i = 0; i < searchList.length; ++i) {
-                    var search = searchList[i];
-                    if (search.name === that.get("searchname")) {
-                        that.query.set("search", search.properties().search, {silent: true});
-                        search.history(function(err, list) {
-                            // Find all jobs that match
-                            var matches = [];
-                            for (var i = 0; i < list.length; ++i) {
-                                var potentialJob = list[i];
-                                var published = (new Date(potentialJob.published())).valueOf();
-                                
-                                if (published > threshold) {
-                                    matches.push(potentialJob);
-                                }
-                            }
-                            
-                            // Sort to easily find the latest one
-                            matches.sort(function(a,b) { 
-                                var aValue = (new Date(a.published())).valueOf();
-                                var bValue = (new Date(b.published())).valueOf();
-                                return bValue - aValue;
-                            });
-                            
-                            // If a job exists, then we will use it, otherwise,
-                            // create a new job.
-                            var job = matches[0];
-                            if (job) {
-                                that._startSearchWithExistingJob(job);
-                            }                
-                            else {
-                                that._startSearchWithNewJob(search);
-                            }
-                        });                        
-                        return;
-                    }
+                // Set the query so that someone can fetch it
+                that.query.set("search", search.properties().search, {silent: true});
+                
+                // Skip fetching the saved search history if cache is disabled 
+                // and directly dispatch it
+                if (cache === 0) {
+                    that._startSearchWithNewJob(search);
+                    return;
                 }
-                var message = _("Warning: saved search not found: ").t() + '"' + that.get("searchname") + '"';
-                console.log(message);
-                that.trigger("search:error", message);
+                
+                search.history(function(err, list) {
+                    // Find all jobs that match
+                    var matches = [];
+                    for (var i = 0; i < list.length; ++i) {
+                        var potentialJob = list[i];
+                        var properties = potentialJob.properties() || {};
+                        var published = (new Date(potentialJob.published())).valueOf();
+                        var isScheduled = (cache === "scheduled") && properties.isScheduled;
+                        
+                        // If we are reusing scheduled jobs and this one was scheduled
+                        // or this job is fresh enough, then we can reuse it.
+                        if (isScheduled || published > threshold) {
+                            matches.push(potentialJob);
+                        }
+                    }
+                    
+                    // Sort to easily find the latest one
+                    matches.sort(function(a,b) { 
+                        var aValue = (new Date(a.published())).valueOf();
+                        var bValue = (new Date(b.published())).valueOf();
+                        return bValue - aValue;
+                    });
+                    
+                    // If a job exists, then we will use it, otherwise,
+                    // create a new job.
+                    var job = matches[0];
+                    if (job) {
+                        that._startSearchWithExistingJob(job);
+                    }                
+                    else {
+                        that._startSearchWithNewJob(search);
+                    }
+                });
             });
 
             return this;
@@ -56864,25 +62307,44 @@ define('splunkjs/mvc/savedsearchmanager',['require','exports','module','./mvc','
         // Mocked by unit tests.
         _startSearchWithNewJob: function(search) {
             var that = this;
-            search.dispatch({force_dispatch: false}, function(err, job) {
+            
+            search.dispatch(this._createOptionsForSearchJob(), function(err, job) {
                 if (err) {
                     that.trigger("search:error", _("Error dispatching saved search.").t(), err, job);
                     return;
                 }
+                
                 job.enablePreview();
                 that.createManager(job);
             });
+        },
+        
+        _createOptionsForSearchJob: function() {
+            var options = {};
+            _.each(this.search.toJSON(), function(val, key) {
+                // If there is no value or this is not a valid dispatch.* key,
+                // then we ignore it
+                if (val === undefined || !_.has(DISPATCHABLE_PROPERTIES, key)) {
+                    return;
+                } 
+                
+                // Prefix the key and map it if necessary (e.g. status_buckets -> buckets)
+                var prefixedKey = "dispatch." + (DISPATCH_MAPPINGS[key] || key);
+                options[prefixedKey] = val;
+            });
+            
+            return options;
         }
     });
     
     return SavedSearchManager;
 });
 
-define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore','splunkjs/mvc/basesplunkview','splunkjs/mvc/messages'],function(require, exports, module) {
-
+define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore','./mvc','./basesplunkview','./messages'],function(require, exports, module) {
     var _ = require('underscore');
-    var BaseSplunkView = require("splunkjs/mvc/basesplunkview");
-    var Messages = require("splunkjs/mvc/messages");
+    var mvc = require('./mvc');
+    var BaseSplunkView = require("./basesplunkview");
+    var Messages = require("./messages");
     
     /**
      * An Abstract Base Class for views that display content
@@ -56894,9 +62356,15 @@ define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore
         className: null,
 
         // Format of the data received from Splunk.
-        output_mode: 'json_rows',
-        return_count: 0,
+        outputMode: 'json_rows',
+        returnCount: 0,
         offset: 0,
+        
+        // Any option you want passed into the results model. For example,
+        // a subclass can set:
+        //      resultOptions: { output_time_format: "%s.%Q" }
+        // which will mean _time will be returned in epoch milliseconds format.
+        resultOptions: {},
         
         data_types: {
             'json_rows': 'rows',
@@ -56915,9 +62383,17 @@ define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore
 
         initialize: function() {
             this.configure();
+            
             this._viz = null;
             this._data = null;
-            this.bindToComponent(this.settings.get("managerid"), this._onManagerChange, this);
+            this.bindToComponentSetting('managerid', this._onManagerChange, this);
+            
+            // If we don't have a manager by this point, then we're going to
+            // kick the manager change machinery so that it does whatever is
+            // necessary when no manager is present.
+            if (!this.manager) {
+                this._onManagerChange(mvc.Components, null);
+            }
         },
 
         // Override the next three methods to implement the
@@ -56933,15 +62409,24 @@ define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore
             throw new Error("Not implemented error.");
         },
 
+        /*
+         * Deprecated, use formatResults instead.
+         */
+        onDataChanged: function() {
+            return this.formatResults.apply(this, arguments);
+        },
+
         /** 
          * Override this method if your view needs access to more
          * than just the dataset array.  Overriding this method
          * supersedes overriding formatData().  Return formatted data
          * understood by the visualization library.
          */
-        onDataChanged: function(resultsModel) {
+        formatResults: function(resultsModel) {
             if (!resultsModel) { return []; }
-            var data_type = this.data_types[this.output_mode];
+            // First try the legacy one, and if it isn't there, use the real one.
+            var outputMode = this.output_mode || this.outputMode;
+            var data_type = this.data_types[outputMode];
             var data = resultsModel.data();
             return this.formatData(data[data_type]);
         },
@@ -56950,7 +62435,7 @@ define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore
          * Override this method if your visualization library needs
          * the returned data formatted in a specific way.  Otherwise,
          * the visualization will receive the data in the format
-         * specified according to output_mode.
+         * specified according to outputMode.
          */
         formatData: function(data) {
             return data;
@@ -56964,6 +62449,17 @@ define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore
          */
         updateView: function(viz, formattedData) {
             throw new Error("Not implemented error.");
+        },
+        
+        /**
+         * Override this method if your view needs to render messages in a 
+         * custom way.
+         */
+        displayMessage: function(info) {
+            this._viz = null;
+            Messages.render(info, this.$el);
+            
+            return this;
         },
 
         _checkManagerState: function() {
@@ -56986,7 +62482,7 @@ define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore
 
             var state = manager.job.state();
 
-            if ((state.content.isDone) || (state.content.isFailed)) {
+            if (state && state.content && ((state.content.isDone) || (state.content.isFailed))) {
                 this._onSearchProgress(state);
                 return;
             }
@@ -57012,29 +62508,49 @@ define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore
                 this._displayMessage('no-search');
                 return;
             }
+            
+            // Clear any messages, since we have a new manager.
+            this._displayMessage("empty");
 
-            this.resultsModel = this.manager.data(this.settings.get("data") || "preview", {
-                output_mode: this.output_mode,
-                count: this.return_count,
+            // First try the legacy one, and if it isn't there, use the real one.
+            var outputMode = this.output_mode || this.outputMode;
+            this.resultsModel = this.manager.data(this.settings.get("data") || "preview", _.extend({
+                output_mode: outputMode,
+                count: this.returnCount,
                 offset: this.offset
-            });
+            }, this.resultOptions));
 
             manager.on("search:start", this._onSearchStart, this);
             manager.on("search:progress", this._onSearchProgress, this);
             manager.on("search:cancelled", this._onSearchCancelled, this);
             manager.on("search:error", this._onSearchError, this);
+            manager.on("search:fail", this._onSearchFailed, this);
             this.resultsModel.on("data", this._onDataChanged, this);
+            this.resultsModel.on("error", this._onSearchError, this);
             this._checkManagerState();
+            
+            manager.replayLastSearchEvent(this);
         },
 
         _displayMessage: function(info) {
-            this._viz = null;
-            Messages.render(info, this.$el);
+            return this.displayMessage(info);
         },
         
+        /**
+         * Call this function if you want to (re-)render a view, including 
+         * going through a full data formatting step and view updating.
+         */
         render: function() {
-            // Creates the initial view.  
+            // Creates the view if it hasn't been created
+            // before.  
             this._createView(this._data);
+            
+            // If we have a results model, we can go through a data
+            // change cycle.
+            if (this.resultsModel) {
+                this._onDataChanged();
+            }
+            
             return this;
         },
 
@@ -57068,6 +62584,9 @@ define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore
 
         _onDataChanged: function() {
             if (!this.resultsModel.hasData()) {
+                if (this._isJobDone) {
+                    this._displayMessage('no-results');
+                }
                 return; 
             }
 
@@ -57079,7 +62598,7 @@ define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore
             properties = properties || {};
             var content = properties.content || {};
             var previewCount = content.resultPreviewCount || 0;
-            var isJobDone = content.isDone || false;
+            var isJobDone = this._isJobDone = content.isDone || false;
             
             if (previewCount === 0) {
                 this._displayMessage(isJobDone ? 'no-results' : 'waiting');
@@ -57088,19 +62607,277 @@ define('splunkjs/mvc/simplesplunkview',['require','exports','module','underscore
         },
         
         _onSearchStart: function() { 
+            this._isJobDone = false;
             this._displayMessage('waiting');
         },
         
         _onSearchCancelled: function() { 
+            this._isJobDone = false;
             this._displayMessage('cancelled');
         },
             
-        _onSearchError: function(message) {
-            this._displayMessage(message);
+        _onSearchError: function(message, err) {
+            this._isJobDone = false;
+            var msg = Messages.getSearchErrorMessage(err) || message;
+            this._displayMessage({
+                level: "error",
+                icon: "warning-sign",
+                message: msg
+            });
+        },
+
+        _onSearchFailed: function(state, job) {
+            var msg = Messages.getSearchFailureMessage(state);
+            this._displayMessage({
+                level: "error",
+                icon: "warning-sign",
+                message: msg
+            });
         }
+
     });
 
     return SimpleSplunkView;
 });
 
+define('splunkjs/mvc/postprocessmanager',['require','exports','module','underscore','./mvc','./utils','./basemanager','./searchmodel','./splunkresultsmodel','./messages'],function(require, exports, module) {
+    var _ = require("underscore");
+    var mvc = require('./mvc');
+    var utils = require('./utils');
+    var BaseManager = require('./basemanager');
+    var SearchModels = require('./searchmodel');
+    var SplunkResultsModel = require('./splunkresultsmodel');
+    var Messages = require('./messages');
+
+    function mergeSearch(base, sub) {
+        if (!sub) {
+            return base;
+        }
+        return [ base.replace(/[\|\s]$/g,''), sub.replace(/^[\|\s]/g,'') ].join(' | ');
+    }
+
+    var PostProcessResultsModel = SplunkResultsModel.extend({
+        _requestOptions: function() {
+            var options = SplunkResultsModel.prototype._requestOptions.call(this);
+            var manager = this.get('manager');
+            
+            var postProcessSearch = manager.query.postProcessResolve();
+            if (postProcessSearch) {
+                options.search = mergeSearch(postProcessSearch, options.search);
+            }
+            return options;
+        }
+    });
+    
+    var PostProcessSearchQueryModel = SearchModels.SearchQuery.extend({
+        resolve: function(options) {
+            if (!this.isResolved()) {
+                return undefined;
+            }
+            
+            var parentSearch = this._manager.parent.query.resolve(options);
+            if (parentSearch === undefined) {
+                return undefined;
+            }
+            // Fetch the post-process search but force it to be unqualified - ie. we don't want a leading search command
+            // since we're about to merge it with the base search
+            var thisSearch = SearchModels.SearchQuery.prototype.resolve.call(this, _.defaults({ qualified: false }, options));
+            
+            return mergeSearch(parentSearch, thisSearch);
+        },
+        
+        postProcessResolve: function() {
+            return SearchModels.SearchQuery.prototype.resolve.apply(this, arguments);
+        },
+        
+        isResolved: function() {
+            var resolvedSearch = SearchModels.SearchQuery.prototype.resolve.apply(this, arguments);
+            var tokens = this.get('search', {tokens: true});
+            return resolvedSearch !== undefined || tokens === undefined;
+        }
+    });
+
+    var PostProcessSearchManager = BaseManager.extend({
+        moduleId: module.id,
+
+        defaults: {
+            managerid: null,
+            search: ''
+        },
+        
+        initialize: function(attrs, options) {
+            // Initialize our search query model
+            var postProcessQuery = attrs.postProcess || attrs.search;
+            this.query = new PostProcessSearchQueryModel({search: postProcessQuery}, options);
+            this.query._manager = this;
+            
+            // Initialize the data attribute to the empty object, so that we
+            // never look at our parent's data attribute.
+            this.set("data", {});
+            
+            // Whenever the query changes, we can start our search.
+            this.query.on('change', this.startSearch, this);
+            
+            this.on('all', function(evt) {
+                if (evt.indexOf("search:") === 0) {
+                    this._lastSearchEvent = [ evt, Array.prototype.slice.call(arguments, 1) ];
+                }
+            }, this);
+            
+            // Listen to our parent manager being created
+            var managerid = attrs.managerid || attrs.manager;
+            mvc.Components.bind('change:' + managerid, this.onManagerChange, this);
+            if (mvc.Components.has(managerid)) {
+                this.onManagerChange(mvc.Components, mvc.Components.get(managerid));
+            }
+        },
+        
+        startSearch: function() {
+            if (this.parent && this.parent.job) {
+                var job = this.parent.job;
+                var state = job.state();
+                
+                // We have to trigger a full cycle of start/progress/done if
+                // appropriate.
+                this._onSearchStart(job);
+                this._onSearchTick("search:progress", state, job);
+                
+                if (state && state.content && state.content.isDone) {
+                    this._onSearchTick("search:done", state, job);
+                }
+            }
+        },
+        
+        onManagerChange: function(x, ctx) {
+            if (this.parent) {
+                this.parent.off(null, null, this);
+                delete this.job;
+            }
+            
+            if (!ctx) {
+                return;
+            }
+            
+            this.parent = ctx;
+            
+            // We need to be able to calculate the count for the post process
+            this._countData = this.data("preview", {
+                autofetch: false,
+                output_mode: "json",
+                search: 'stats count'
+            });
+            this._countData.on("error", _.partial(this.trigger, "search:error"), this);
+            
+            // We use the parent's search, so that any search paramater changes
+            // get propagated to it.
+            this.search = this.parent.search;
+            
+            // We set up handlers for the various search events
+            ctx.on('search:start',      this._onSearchStart,                                    this);
+            ctx.on('search:progress',   _.partial(this._onSearchTick,   "search:progress"),     this);
+            ctx.on('search:done',       _.partial(this._onSearchTick,   "search:done"),         this);
+            ctx.on('search:cancelled',  _.partial(this.trigger,         "search:cancelled"),    this);
+            ctx.on('search:fail',       _.partial(this.trigger,         "search:fail"),         this);
+            ctx.on('search:error',      _.partial(this.trigger,         "search:error"),        this);
+            
+            ctx.replayLastSearchEvent(this);
+        },
+        
+        get: function(attr) {
+            if (_.contains(SearchModels.SearchQuery.ALLOWED_ATTRIBUTES, attr)) {
+                return this.query.get.apply(this.query, arguments);
+            }
+            
+            // We only go to the parent if we don't have a property. We can't
+            // use this.has() because it internally uses this.get().
+            if (!_.has(this.attributes, attr) && this.parent && this.parent.has(attr)) {
+                return this.parent.get.apply(this.parent, arguments);
+            }
+            
+            return BaseManager.prototype.get.apply(this, arguments);
+        },
+        
+        _onSearchStart: function(job) {
+            this.job = job;
+            
+            if (this.query.isResolved()) {
+                this.trigger("search:start", job);
+            }
+            else {
+                this.trigger("search:error", Messages.resolve('unresolved-search').message);
+            }
+        },
+        
+        _onSearchTick: function(eventName, properties, job) {
+            // If we don't have a query (e.g. it is not set, or it is not resolved),
+            // then do nothing.
+            if (!this.query.isResolved()) {
+                return;
+            }
+            
+            // We have to create a clone of properties and content, as we are
+            // going to be modifying them.
+            properties = _.clone(properties || {});
+            var content = properties.content = _.clone(properties.content || {});
+            var previewCount = content.resultPreviewCount || 0;
+
+            var that = this;
+            var trigger = function() {
+                that.trigger(eventName, properties, job);
+                
+                if (eventName === "search:progress") {
+                    that.set("data", properties.content);
+                }
+            };
+
+            // Regardless if the parent search has any results, we always look
+            // at the post process result count. This is because the post process
+            // can both remove results and/or create results, and as such, the
+            // parent search counts are not reliable.
+            this._countData.fetch({
+                success: function() {
+                    var count = 0;
+                    if (that._countData.hasData()) {
+                        var data = that._countData.data();
+                        count = parseInt(data.results[0].count, 10);
+                    }
+                    
+                    content.resultPreviewCount = count;
+                    content.resultCount = count;
+                    trigger();
+                }
+            });
+        },
+        
+        data: function(source, args) {
+            if (!source) {
+                throw new Error("Cannot get a results model without specifying the source.");
+            }
+            
+            args = _.defaults({ manager: this, source: source }, args);
+            return new PostProcessResultsModel(args);
+        },
+        
+        replayLastSearchEvent: function(listener) {
+            // We want to look at our own search events (as they have our modified
+            // counts), and not our parent's search events.
+            var replayed = false;
+            if (this._lastSearchEvent) {
+                var lastSearchEvent = this._lastSearchEvent;
+                var evtName = lastSearchEvent[0];
+                var listenerObj = _(this._events[evtName]).find(function(attachedListener) { 
+                    return attachedListener.ctx === listener; 
+                });
+                if (listenerObj) {
+                    var args = lastSearchEvent[1];
+                    replayed = true;
+                    listenerObj.callback.apply(listener, args);
+                }
+            }
+            return replayed;
+        }
+    });
+
+    return PostProcessSearchManager;
+});
 requirejs.s.contexts._.nextTick = function(f){f()}; require(['css'], function(css) { css.setBuffer('/*\nVersion: 3.3.1 Timestamp: Wed Feb 20 09:57:22 PST 2013\n*/\n.select2-container {\n    position: relative;\n    display: inline-block;\n    /* inline-block for ie7 */\n    zoom: 1;\n    *display: inline;\n    vertical-align: top;\n}\n\n.select2-container,\n.select2-drop,\n.select2-search,\n.select2-search input{\n  /*\n    Force border-box so that % widths fit the parent\n    container without overlap because of margin/padding.\n\n    More Info : http://www.quirksmode.org/css/box.html\n  */\n  -webkit-box-sizing: border-box; /* webkit */\n   -khtml-box-sizing: border-box; /* konqueror */\n     -moz-box-sizing: border-box; /* firefox */\n      -ms-box-sizing: border-box; /* ie */\n          box-sizing: border-box; /* css3 */\n}\n\n.select2-container .select2-choice {\n    display: block;\n    height: 26px;\n    padding: 0 0 0 8px;\n    overflow: hidden;\n    position: relative;\n\n    border: 1px solid #aaa;\n    white-space: nowrap;\n    line-height: 26px;\n    color: #444;\n    text-decoration: none;\n\n    -webkit-border-radius: 4px;\n       -moz-border-radius: 4px;\n            border-radius: 4px;\n\n    -webkit-background-clip: padding-box;\n       -moz-background-clip: padding;\n            background-clip: padding-box;\n\n    -webkit-touch-callout: none;\n      -webkit-user-select: none;\n       -khtml-user-select: none;\n         -moz-user-select: none;\n          -ms-user-select: none;\n              user-select: none;\n\n    background-color: #fff;\n    background-image: -webkit-gradient(linear, left bottom, left top, color-stop(0, #eeeeee), color-stop(0.5, white));\n    background-image: -webkit-linear-gradient(center bottom, #eeeeee 0%, white 50%);\n    background-image: -moz-linear-gradient(center bottom, #eeeeee 0%, white 50%);\n    background-image: -o-linear-gradient(bottom, #eeeeee 0%, #ffffff 50%);\n    background-image: -ms-linear-gradient(top, #ffffff 0%, #eeeeee 50%);\n    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr = \'#ffffff\', endColorstr = \'#eeeeee\', GradientType = 0);\n    background-image: linear-gradient(top, #ffffff 0%, #eeeeee 50%);\n}\n\n.select2-container.select2-drop-above .select2-choice {\n    border-bottom-color: #aaa;\n\n    -webkit-border-radius:0 0 4px 4px;\n       -moz-border-radius:0 0 4px 4px;\n            border-radius:0 0 4px 4px;\n\n    background-image: -webkit-gradient(linear, left bottom, left top, color-stop(0, #eeeeee), color-stop(0.9, white));\n    background-image: -webkit-linear-gradient(center bottom, #eeeeee 0%, white 90%);\n    background-image: -moz-linear-gradient(center bottom, #eeeeee 0%, white 90%);\n    background-image: -o-linear-gradient(bottom, #eeeeee 0%, white 90%);\n    background-image: -ms-linear-gradient(top, #eeeeee 0%,#ffffff 90%);\n    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr=\'#ffffff\', endColorstr=\'#eeeeee\',GradientType=0 );\n    background-image: linear-gradient(top, #eeeeee 0%,#ffffff 90%);\n}\n\n.select2-container .select2-choice span {\n    margin-right: 26px;\n    display: block;\n    overflow: hidden;\n\n    white-space: nowrap;\n\n    -ms-text-overflow: ellipsis;\n     -o-text-overflow: ellipsis;\n        text-overflow: ellipsis;\n}\n\n.select2-container .select2-choice abbr {\n    display: block;\n    width: 12px;\n    height: 12px;\n    position: absolute;\n    right: 26px;\n    top: 8px;\n\n    font-size: 1px;\n    text-decoration: none;\n\n    border: 0;\n    background: url(\'contrib/select2-3.3.1/select2.png\') right top no-repeat;\n    cursor: pointer;\n    outline: 0;\n}\n.select2-container .select2-choice abbr:hover {\n    background-position: right -11px;\n    cursor: pointer;\n}\n\n.select2-drop-mask {\n    position: absolute;\n    left: 0;\n    top: 0;\n    z-index: 9998;\n    opacity: 0;\n}\n\n.select2-drop {\n    width: 100%;\n    margin-top:-1px;\n    position: absolute;\n    z-index: 9999;\n    top: 100%;\n\n    background: #fff;\n    color: #000;\n    border: 1px solid #aaa;\n    border-top: 0;\n\n    -webkit-border-radius: 0 0 4px 4px;\n       -moz-border-radius: 0 0 4px 4px;\n            border-radius: 0 0 4px 4px;\n\n    -webkit-box-shadow: 0 4px 5px rgba(0, 0, 0, .15);\n       -moz-box-shadow: 0 4px 5px rgba(0, 0, 0, .15);\n            box-shadow: 0 4px 5px rgba(0, 0, 0, .15);\n}\n\n.select2-drop.select2-drop-above {\n    margin-top: 1px;\n    border-top: 1px solid #aaa;\n    border-bottom: 0;\n\n    -webkit-border-radius: 4px 4px 0 0;\n       -moz-border-radius: 4px 4px 0 0;\n            border-radius: 4px 4px 0 0;\n\n    -webkit-box-shadow: 0 -4px 5px rgba(0, 0, 0, .15);\n       -moz-box-shadow: 0 -4px 5px rgba(0, 0, 0, .15);\n            box-shadow: 0 -4px 5px rgba(0, 0, 0, .15);\n}\n\n.select2-container .select2-choice div {\n    display: block;\n    width: 18px;\n    height: 100%;\n    position: absolute;\n    right: 0;\n    top: 0;\n\n    border-left: 1px solid #aaa;\n    -webkit-border-radius: 0 4px 4px 0;\n       -moz-border-radius: 0 4px 4px 0;\n            border-radius: 0 4px 4px 0;\n\n    -webkit-background-clip: padding-box;\n       -moz-background-clip: padding;\n            background-clip: padding-box;\n\n    background: #ccc;\n    background-image: -webkit-gradient(linear, left bottom, left top, color-stop(0, #ccc), color-stop(0.6, #eee));\n    background-image: -webkit-linear-gradient(center bottom, #ccc 0%, #eee 60%);\n    background-image: -moz-linear-gradient(center bottom, #ccc 0%, #eee 60%);\n    background-image: -o-linear-gradient(bottom, #ccc 0%, #eee 60%);\n    background-image: -ms-linear-gradient(top, #cccccc 0%, #eeeeee 60%);\n    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr = \'#eeeeee\', endColorstr = \'#cccccc\', GradientType = 0);\n    background-image: linear-gradient(top, #cccccc 0%, #eeeeee 60%);\n}\n\n.select2-container .select2-choice div b {\n    display: block;\n    width: 100%;\n    height: 100%;\n    background: url(\'contrib/select2-3.3.1/select2.png\') no-repeat 0 1px;\n}\n\n.select2-search {\n    display: inline-block;\n    width: 100%;\n    min-height: 26px;\n    margin: 0;\n    padding-left: 4px;\n    padding-right: 4px;\n\n    position: relative;\n    z-index: 10000;\n\n    white-space: nowrap;\n}\n\n.select2-search-hidden {\n    display: block;\n    position: absolute;\n    left: -10000px;\n}\n\n.select2-search input {\n    width: 100%;\n    height: auto !important;\n    min-height: 26px;\n    padding: 4px 20px 4px 5px;\n    margin: 0;\n\n    outline: 0;\n    font-family: sans-serif;\n    font-size: 1em;\n\n    border: 1px solid #aaa;\n    -webkit-border-radius: 0;\n       -moz-border-radius: 0;\n            border-radius: 0;\n\n    -webkit-box-shadow: none;\n       -moz-box-shadow: none;\n            box-shadow: none;\n\n    background: #fff url(\'contrib/select2-3.3.1/select2.png\') no-repeat 100% -22px;\n    background: url(\'contrib/select2-3.3.1/select2.png\') no-repeat 100% -22px, -webkit-gradient(linear, left bottom, left top, color-stop(0.85, white), color-stop(0.99, #eeeeee));\n    background: url(\'contrib/select2-3.3.1/select2.png\') no-repeat 100% -22px, -webkit-linear-gradient(center bottom, white 85%, #eeeeee 99%);\n    background: url(\'contrib/select2-3.3.1/select2.png\') no-repeat 100% -22px, -moz-linear-gradient(center bottom, white 85%, #eeeeee 99%);\n    background: url(\'contrib/select2-3.3.1/select2.png\') no-repeat 100% -22px, -o-linear-gradient(bottom, white 85%, #eeeeee 99%);\n    background: url(\'contrib/select2-3.3.1/select2.png\') no-repeat 100% -22px, -ms-linear-gradient(top, #ffffff 85%, #eeeeee 99%);\n    background: url(\'contrib/select2-3.3.1/select2.png\') no-repeat 100% -22px, linear-gradient(top, #ffffff 85%, #eeeeee 99%);\n}\n\n.select2-drop.select2-drop-above .select2-search input {\n    margin-top: 4px;\n}\n\n.select2-search input.select2-active {\n    background: #fff url(\'contrib/select2-3.3.1/select2-spinner.gif\') no-repeat 100%;\n    background: url(\'contrib/select2-3.3.1/select2-spinner.gif\') no-repeat 100%, -webkit-gradient(linear, left bottom, left top, color-stop(0.85, white), color-stop(0.99, #eeeeee));\n    background: url(\'contrib/select2-3.3.1/select2-spinner.gif\') no-repeat 100%, -webkit-linear-gradient(center bottom, white 85%, #eeeeee 99%);\n    background: url(\'contrib/select2-3.3.1/select2-spinner.gif\') no-repeat 100%, -moz-linear-gradient(center bottom, white 85%, #eeeeee 99%);\n    background: url(\'contrib/select2-3.3.1/select2-spinner.gif\') no-repeat 100%, -o-linear-gradient(bottom, white 85%, #eeeeee 99%);\n    background: url(\'contrib/select2-3.3.1/select2-spinner.gif\') no-repeat 100%, -ms-linear-gradient(top, #ffffff 85%, #eeeeee 99%);\n    background: url(\'contrib/select2-3.3.1/select2-spinner.gif\') no-repeat 100%, linear-gradient(top, #ffffff 85%, #eeeeee 99%);\n}\n\n.select2-container-active .select2-choice,\n.select2-container-active .select2-choices {\n    border: 1px solid #5897fb;\n    outline: none;\n\n    -webkit-box-shadow: 0 0 5px rgba(0,0,0,.3);\n       -moz-box-shadow: 0 0 5px rgba(0,0,0,.3);\n            box-shadow: 0 0 5px rgba(0,0,0,.3);\n}\n\n.select2-dropdown-open .select2-choice {\n    border-bottom-color: transparent;\n    -webkit-box-shadow: 0 1px 0 #fff inset;\n       -moz-box-shadow: 0 1px 0 #fff inset;\n            box-shadow: 0 1px 0 #fff inset;\n\n    -webkit-border-bottom-left-radius: 0;\n        -moz-border-radius-bottomleft: 0;\n            border-bottom-left-radius: 0;\n\n    -webkit-border-bottom-right-radius: 0;\n        -moz-border-radius-bottomright: 0;\n            border-bottom-right-radius: 0;\n\n    background-color: #eee;\n    background-image: -webkit-gradient(linear, left bottom, left top, color-stop(0, white), color-stop(0.5, #eeeeee));\n    background-image: -webkit-linear-gradient(center bottom, white 0%, #eeeeee 50%);\n    background-image: -moz-linear-gradient(center bottom, white 0%, #eeeeee 50%);\n    background-image: -o-linear-gradient(bottom, white 0%, #eeeeee 50%);\n    background-image: -ms-linear-gradient(top, #ffffff 0%,#eeeeee 50%);\n    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr=\'#eeeeee\', endColorstr=\'#ffffff\',GradientType=0 );\n    background-image: linear-gradient(top, #ffffff 0%,#eeeeee 50%);\n}\n\n.select2-dropdown-open .select2-choice div {\n    background: transparent;\n    border-left: none;\n    filter: none;\n}\n.select2-dropdown-open .select2-choice div b {\n    background-position: -18px 1px;\n}\n\n/* results */\n.select2-results {\n    max-height: 200px;\n    padding: 0 0 0 4px;\n    margin: 4px 4px 4px 0;\n    position: relative;\n    overflow-x: hidden;\n    overflow-y: auto;\n    -webkit-tap-highlight-color: rgba(0,0,0,0);\n}\n\n.select2-results ul.select2-result-sub {\n    margin: 0;\n}\n\n.select2-results ul.select2-result-sub > li .select2-result-label { padding-left: 20px }\n.select2-results ul.select2-result-sub ul.select2-result-sub > li .select2-result-label { padding-left: 40px }\n.select2-results ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub > li .select2-result-label { padding-left: 60px }\n.select2-results ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub > li .select2-result-label { padding-left: 80px }\n.select2-results ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub > li .select2-result-label { padding-left: 100px }\n.select2-results ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub > li .select2-result-label { padding-left: 110px }\n.select2-results ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub ul.select2-result-sub > li .select2-result-label { padding-left: 120px }\n\n.select2-results li {\n    list-style: none;\n    display: list-item;\n    background-image: none;\n}\n\n.select2-results li.select2-result-with-children > .select2-result-label {\n    font-weight: bold;\n}\n\n.select2-results .select2-result-label {\n    padding: 3px 7px 4px;\n    margin: 0;\n    cursor: pointer;\n\n    -webkit-touch-callout: none;\n      -webkit-user-select: none;\n       -khtml-user-select: none;\n         -moz-user-select: none;\n          -ms-user-select: none;\n              user-select: none;\n}\n\n.select2-results .select2-highlighted {\n    background: #3875d7;\n    color: #fff;\n}\n\n.select2-results li em {\n    background: #feffde;\n    font-style: normal;\n}\n\n.select2-results .select2-highlighted em {\n    background: transparent;\n}\n\n.select2-results .select2-highlighted ul {\n    background: white;\n    color: #000;\n}\n\n\n.select2-results .select2-no-results,\n.select2-results .select2-searching,\n.select2-results .select2-selection-limit {\n    background: #f4f4f4;\n    display: list-item;\n}\n\n/*\ndisabled look for disabled choices in the results dropdown\n*/\n.select2-results .select2-disabled.select2-highlighted {\n    color: #666;\n    background: #f4f4f4;\n    display: list-item;\n    cursor: default;\n}\n.select2-results .select2-disabled {\n  background: #f4f4f4;\n  display: list-item;\n  cursor: default;\n}\n\n.select2-results .select2-selected {\n    display: none;\n}\n\n.select2-more-results.select2-active {\n    background: #f4f4f4 url(\'contrib/select2-3.3.1/select2-spinner.gif\') no-repeat 100%;\n}\n\n.select2-more-results {\n    background: #f4f4f4;\n    display: list-item;\n}\n\n/* disabled styles */\n\n.select2-container.select2-container-disabled .select2-choice {\n    background-color: #f4f4f4;\n    background-image: none;\n    border: 1px solid #ddd;\n    cursor: default;\n}\n\n.select2-container.select2-container-disabled .select2-choice div {\n    background-color: #f4f4f4;\n    background-image: none;\n    border-left: 0;\n}\n\n.select2-container.select2-container-disabled .select2-choice abbr {\n    display: none\n}\n\n\n/* multiselect */\n\n.select2-container-multi .select2-choices {\n    height: auto !important;\n    height: 1%;\n    margin: 0;\n    padding: 0;\n    position: relative;\n\n    border: 1px solid #aaa;\n    cursor: text;\n    overflow: hidden;\n\n    background-color: #fff;\n    background-image: -webkit-gradient(linear, 0% 0%, 0% 100%, color-stop(1%, #eeeeee), color-stop(15%, #ffffff));\n    background-image: -webkit-linear-gradient(top, #eeeeee 1%, #ffffff 15%);\n    background-image: -moz-linear-gradient(top, #eeeeee 1%, #ffffff 15%);\n    background-image: -o-linear-gradient(top, #eeeeee 1%, #ffffff 15%);\n    background-image: -ms-linear-gradient(top, #eeeeee 1%, #ffffff 15%);\n    background-image: linear-gradient(top, #eeeeee 1%, #ffffff 15%);\n}\n\n.select2-locked {\n  padding: 3px 5px 3px 5px !important;\n}\n\n.select2-container-multi .select2-choices {\n    min-height: 26px;\n}\n\n.select2-container-multi.select2-container-active .select2-choices {\n    border: 1px solid #5897fb;\n    outline: none;\n\n    -webkit-box-shadow: 0 0 5px rgba(0,0,0,.3);\n       -moz-box-shadow: 0 0 5px rgba(0,0,0,.3);\n            box-shadow: 0 0 5px rgba(0,0,0,.3);\n}\n.select2-container-multi .select2-choices li {\n    float: left;\n    list-style: none;\n}\n.select2-container-multi .select2-choices .select2-search-field {\n    margin: 0;\n    padding: 0;\n    white-space: nowrap;\n}\n\n.select2-container-multi .select2-choices .select2-search-field input {\n    padding: 5px;\n    margin: 1px 0;\n\n    font-family: sans-serif;\n    font-size: 100%;\n    color: #666;\n    outline: 0;\n    border: 0;\n    -webkit-box-shadow: none;\n       -moz-box-shadow: none;\n            box-shadow: none;\n    background: transparent !important;\n}\n\n.select2-container-multi .select2-choices .select2-search-field input.select2-active {\n    background: #fff url(\'contrib/select2-3.3.1/select2-spinner.gif\') no-repeat 100% !important;\n}\n\n.select2-default {\n    color: #999 !important;\n}\n\n.select2-container-multi .select2-choices .select2-search-choice {\n    padding: 3px 5px 3px 18px;\n    margin: 3px 0 3px 5px;\n    position: relative;\n\n    line-height: 13px;\n    color: #333;\n    cursor: default;\n    border: 1px solid #aaaaaa;\n\n    -webkit-border-radius: 3px;\n       -moz-border-radius: 3px;\n            border-radius: 3px;\n\n    -webkit-box-shadow: 0 0 2px #ffffff inset, 0 1px 0 rgba(0,0,0,0.05);\n       -moz-box-shadow: 0 0 2px #ffffff inset, 0 1px 0 rgba(0,0,0,0.05);\n            box-shadow: 0 0 2px #ffffff inset, 0 1px 0 rgba(0,0,0,0.05);\n\n    -webkit-background-clip: padding-box;\n       -moz-background-clip: padding;\n            background-clip: padding-box;\n\n    -webkit-touch-callout: none;\n      -webkit-user-select: none;\n       -khtml-user-select: none;\n         -moz-user-select: none;\n          -ms-user-select: none;\n              user-select: none;\n\n    background-color: #e4e4e4;\n    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr=\'#eeeeee\', endColorstr=\'#f4f4f4\', GradientType=0 );\n    background-image: -webkit-gradient(linear, 0% 0%, 0% 100%, color-stop(20%, #f4f4f4), color-stop(50%, #f0f0f0), color-stop(52%, #e8e8e8), color-stop(100%, #eeeeee));\n    background-image: -webkit-linear-gradient(top, #f4f4f4 20%, #f0f0f0 50%, #e8e8e8 52%, #eeeeee 100%);\n    background-image: -moz-linear-gradient(top, #f4f4f4 20%, #f0f0f0 50%, #e8e8e8 52%, #eeeeee 100%);\n    background-image: -o-linear-gradient(top, #f4f4f4 20%, #f0f0f0 50%, #e8e8e8 52%, #eeeeee 100%);\n    background-image: -ms-linear-gradient(top, #f4f4f4 20%, #f0f0f0 50%, #e8e8e8 52%, #eeeeee 100%);\n    background-image: linear-gradient(top, #f4f4f4 20%, #f0f0f0 50%, #e8e8e8 52%, #eeeeee 100%);\n}\n.select2-container-multi .select2-choices .select2-search-choice span {\n    cursor: default;\n}\n.select2-container-multi .select2-choices .select2-search-choice-focus {\n    background: #d4d4d4;\n}\n\n.select2-search-choice-close {\n    display: block;\n    width: 12px;\n    height: 13px;\n    position: absolute;\n    right: 3px;\n    top: 4px;\n\n    font-size: 1px;\n    outline: none;\n    background: url(\'contrib/select2-3.3.1/select2.png\') right top no-repeat;\n}\n\n.select2-container-multi .select2-search-choice-close {\n    left: 3px;\n}\n\n.select2-container-multi .select2-choices .select2-search-choice .select2-search-choice-close:hover {\n  background-position: right -11px;\n}\n.select2-container-multi .select2-choices .select2-search-choice-focus .select2-search-choice-close {\n    background-position: right -11px;\n}\n\n/* disabled styles */\n.select2-container-multi.select2-container-disabled .select2-choices{\n    background-color: #f4f4f4;\n    background-image: none;\n    border: 1px solid #ddd;\n    cursor: default;\n}\n\n.select2-container-multi.select2-container-disabled .select2-choices .select2-search-choice {\n    padding: 3px 5px 3px 5px;\n    border: 1px solid #ddd;\n    background-image: none;\n    background-color: #f4f4f4;\n}\n\n.select2-container-multi.select2-container-disabled .select2-choices .select2-search-choice .select2-search-choice-close {\n    display: none;\n}\n/* end multiselect */\n\n\n.select2-result-selectable .select2-match,\n.select2-result-unselectable .select2-match {\n    text-decoration: underline;\n}\n\n.select2-offscreen {\n    position: absolute;\n    left: -10000px;\n}\n\n/* Retina-ize icons */\n\n@media only screen and (-webkit-min-device-pixel-ratio: 1.5), only screen and (min-resolution: 144dpi)  {\n  .select2-search input, .select2-search-choice-close, .select2-container .select2-choice abbr, .select2-container .select2-choice div b {\n      background-image: url(\'contrib/select2-3.3.1/select2x2.png\') !important;\n      background-repeat: no-repeat !important;\n      background-size: 60px 40px !important;\n  }\n  .select2-search input {\n      background-position: 100% -21px !important;\n  }\n}\n.splunk-message-container {\n    padding: 54px 40px 90px 40px;\n}\n\n.splunk-message-container.compact {\n    padding: 0px 40px 10px 40px;\n    text-align: center;\n}'); }); requirejs.s.contexts._.nextTick = requirejs.nextTick; 

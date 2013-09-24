@@ -1,7 +1,7 @@
-.splunk-radio input {
+.splunk-radiogroup input {
     margin-left: 2px;
     margin-right: 10px;
 }
-.splunk-radio .choice label {
+.splunk-radiogroup .choice label {
     display: inline;
 }

@@ -2,6 +2,7 @@ from django.core.exceptions import ValidationError
 from django.forms import Field as _Field
 from django.forms import Form as _Form
 import inspect
+from splunklib.binding import UrlEncoded
 from splunklib.client import Entity
 import urllib
 
@@ -69,7 +70,7 @@ def wrap_field_class(DjangoField):
             if self._load is not None:
                 return self._load(request, form_cls, self)
             
-            entity = Entity(request.service, self._entity_path)
+            entity = self._get_entity(request.service)
             return entity[self._field_name]
         
         def save(self, request, form, value):
@@ -79,10 +80,13 @@ def wrap_field_class(DjangoField):
                 self._save(request, form, self, value)
                 return
             
-            entity = Entity(request.service, self._entity_path)
+            entity = self._get_entity(request.service)
             entity.update(**{
                 self._field_name: value
             })
+        
+        def _get_entity(self, service):
+            return Entity(service, UrlEncoded(self._entity_path, skip_encode=True))
         
         @property
         def _entity_path(self):
