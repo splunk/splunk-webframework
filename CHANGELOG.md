@@ -1,43 +1,101 @@
-# Splunk Application Framework Changelog
+# Splunk Web Framework Changelog
 
 ## Version 1.0
+This is the first GA release of the Splunk Web Framework (formerly called "The
+new Splunk Application Framework").
 
-### Bugs
+### Breaking changes
 
-- Various cross-browser bugs where fixed with tokens, as regex implementations
-differ.
+* Several APIs have been renamed. 
 
-- Charts will no longer momentarily render old data when the search it is bound
-to changes.
+    - These components (name and path) have been renamed as follows:
 
-- `TokenAwareModel` now fully supports setting values with `{silent: true}`.
+        * **DropdownView**, `'splunkjs, mvc, dropdownview'` 
 
-- Improved messaging behavior (e.g. "waiting...") across all the views.
+          Used to be: SelectView, `'splunkjs, mvc, selectview'`
 
-- DropdownView now supports having a choice with a value of `""` (i.e. the empty string).
+        * **MultiDropdownView**, `'splunkjs, mvc, multidropdownview'` 
 
-### Breaking
+          Used to be: MultiSelectView , `'splunkjs, mvc, multiselectview'`
 
-- All views which have a `change` event now have a consistent signature:    
+        * **TextInputView**, `'splunkjs, mvc, textinputview'` 
+
+          Used to be: TextBoxView, `'splunkjs, mvc, textboxview'`
+
+        * **TimeRangeView**, `'splunkjs, mvc, timerangeview'` 
+
+          Used to be: TimePickerView, `'splunkjs, mvc, timepickerview'`
+
+        * **PostProcessManager**, `'splunkjs, mvc, postprocessmanager'` 
+
+          Used to be: PostProcess, `'splunkjs, mvc, postprocess'`
+
+
+        Note that these names have been deprecated but are supported
+        for backwards compatibility. 
+
+    - The timerange-related properties of SearchBarView have been renamed
+       to reflect the scheme above: `timepicker_*` has been changed
+       to `timerange_*`. For example:
+
+        ```
+        new SearchBarView({timerange_earliest_time: "-1d", ...});
+        ```
+   
+* The ability to set tokens to simple objects has been removed due to the number 
+    of limitations. 
+
+* All views that have a `change` event now have the following signature:    
 
     ```
     myView.on("change", function(value, input, options) { ... });
     ```
 
-- A token can now include essentially any character, including spaces. For example,
-`$abc # def$` is a valid token. To escape the literal `$`, you can use `$$`.
+* The semantics have changed for what happens when the default value of an 
+  input view (TextInputView, DropdownView, CheckboxView, RadioGroupView, 
+  SearchBarView, or TimeRangeView) changes after initialization, as follows: 
 
-- The semantics of what happens when the default value changes after initialization
-has changed:
-    1. If the current value is undefined, it will be changed to the new default value.
-    2. If the current value is equal to the old default value, it will be changed to the new default value.
-    3. In all other cases, the value will not be changed.
-    
-- Drilldown behavior is now normalized across TableView, EventsViewerView, ChartView and SplunkMapView:
-    1. These views will redirect to the search page by default.
-    2. The drilldown event is now `click` rather than `drilldown` (some views, like TableView and ChartView, 
-    have specific events like `click:row` and `click:legend` as well).
-    3. The function signature for the `click` event is:
+    - If the current value is undefined, it will be changed to the new default 
+         value.
+
+    - If the current value is equal to the old default value, it will be changed
+        to the new default value.
+
+    - In all other cases, the value will not be changed.
+
+
+### Bug fixes
+
+* Various cross-browser bugs have been fixed using tokens rather than regex, 
+    because regex implementations differ.
+
+* ChartView no longer momentarily renders old data when the search it is bound
+    to changes.
+
+
+### New features and changes
+
+* New apps you create using `splunkdj createapp` are now created under 
+    **/$SPLUNK_HOME/etc/apps/**, and use a different directory structure.
+
+* CheckboxGroupView has been added to allow groups of checkboxes. 
+
+* The SimpleSplunkView base class (`'splunkjs/mvc/simplesplunkview'`) has been
+    added, allowing you to create custom
+    views by inheriting from it and overriding methods as needed.
+
+* A token can now include almost any character, including spaces. For example,
+  `$abc # def$` is a valid token. To escape the literal dollar sign character 
+  `$`, use `$$`.
+
+* Drilldown behavior has been normalized across TableView, 
+    EventsViewerView, ChartView, and SplunkMapView:
+    - The default drilldown action for these views is to redirect to the search 
+        page.
+    - The drilldown event is now `click` rather than `drilldown`. (Some views 
+        such as TableView and ChartView also have specific events like 
+        `click:row` and `click:legend`.)
+    - The function signature for the `click` event is:
     
         ```
             myTable.on('click', function(e) {
@@ -46,78 +104,60 @@ has changed:
             });
         ```
         
-        - `e.preventDefault()` will stop the view from redirecting.
-        - `e.drilldown()` will do the default drilldown action at any point.
+        - `e.preventDefault()` stops the view from redirecting.
+        - `e.drilldown()` performs the default drilldown action at any point.
         
-    4. These views have a `drilldownRedirect=true|false` property, which will
-    keep drilldown enabled (i.e. events will still be triggered), but will not 
-    cause redirects.
+    - These views have a `drilldownRedirect` property that enables 
+        drilldown (events are still triggered), but does not redirect to the 
+        search page.
 
-- The various Form Input Views were renamed. The old names are there to avoid
-breaking existing code. The new names are (view name/filename):
-    * `SelectView`/`splunkjs/mvc/selectview` -> `DropdownView`/`splunkjs/mvc/dropdownview`
-    * `MultiSelectView`/`splunkjs/mvc/multiselectview` -> `MultiDropdownView`/`splunkjs/mvc/multidropdownview`
-    * `TextBoxView`/`splunkjs/mvc/textboxview` -> `TextInputView`/`splunkjs/mvc/textinputview`
-    * `TimePickerView`/`splunkjs/mvc/timepickerview` -> `TimeRangeView`/`splunkjs/mvc/timerangeview`
+* The `TokenAwareModel` now fully supports setting values with `{silent: true}`.
+
+* Messaging behavior (e.g. "waiting...") has been improved across all views.
+
+* DropdownView now supports having a choice with a value of `""` (an 
+    empty string).
     
-- In addition to the above rename, the SearchBarView now takes time range related
-values using `timerange_` rather than `timepicker_`:
+* The styling for DropdownView has been improved to match Splunk's styling.
 
-    ```
-    new SearchBarView({timerange_earliest_time: "-1d", ...});
-    ```
-    
-- Previously, if you set a token to a simple object:
+* PostProcessManager has been completely revamped and now behaves more like
+    a regular search manager. (These changes are backwards compatible.)
 
-    ```
-    var myView = new MyView({id: "foo", value: mvc.tokenSafe("$bar$")});
-    myView.settings.set('value', {a:1, b:2});
-    ```
+* Performance has been improved for many searches running on a page: all search
+    tracking is now consolidated into a single request, significantly reducing
+    XHR chatter. The only change that is visible to the end user is the 
+    improvement in performance. 
 
-    Then you would be able to access tokens `bar.a` and `bar.b`. This functionality
-    has been removed as it had too many limitations.
-    
-- `splunkjs/mvc/postprocess` has been renamed to `splunkjs/mvc/postprocessmanager`.
+* The `get` and `set` methods of SearchManager are now symmetric.
 
-### Changes
-    
-- The styling for DropdownView has been improved to match Splunk's styling.
-
-- PostProcessManager has been completely revamped, and now behaves more like
-a regular search manager. All changes are backwards compatible though.
-
-- Performance improvement with many searches running on a page: all search
-tracking is now coalesced into a single request, which significantly reduces
-the XHR chatter. This has no user-visible impact, except performance.
-
-- SearchManager.get/.set calls are now symmetric. For example, `myManager.get('search') 
-and `myManager.set('search') will now do the same thing.
-
-- The TimelineView now supports getting and setting values using the `myTimeline.val(...)` pattern:
+* TimelineView now supports getting and setting values using the 
+    `myTimeline.val(...)` pattern:
 
     ```
     var currentSelection = myTimeline.val(); // get
-    myTimeline.val({earliest_time: 1380565955, latest_time: 1380561955});
+    myTimeline.val({earliest_time: 1380565955, latest_time: 1380561955}); // set
     ```
     
-- The SavedSearchManager will now respect dispatchable properties:
+* SavedSearchManager now respects dispatchable properties, for example:
 
     ```
     myManager.search.set('status_buckets', 300);
     ```
-    
-- The TableView now supports different kinds of values for the `fields` property:
-    1. An actual array: `myTable.settings.set("fields", ["field1", "field2", "fields with spaces"]);`
-    2. A comma/space separated string: `myTable.settings.set("fields", 'field1, field2, "fields with spaces"');`
-    3. A JSON-encoded array: `myTable.settings.set("fields", '["field1", "field2", "fields with spaces"]');`
+   
+* TableView now supports different types of values for the `fields` property:
+    - An array: `myTable.settings.set("fields", ["field1", "field2", "fields with spaces"]);`
+    - A comma- or space-separated string: `myTable.settings.set("fields", 'field1, field2, "fields with spaces"');`
+    - A JSON-encoded array: `myTable.settings.set("fields", '["field1", "field2", "fields with spaces"]');`
 
-- SearchManagers will now cancel running searches on page unload. This can be 
-disabled by passing `cancelOnUnload=False`. Complete searches and search managers
-with `cache!=False` will not be cancelled.
+* SearchManager now cancels running searches on page unload. This feature can be 
+    disabled by using the `cancelOnUnload` property set to `false`. Complete 
+    searches and search managers with `cache` not equal to `false` will not be 
+    cancelled.
 
-- SearchManagers will now coalesce search changes into a single call to the server,
-which will happen once per event loop. So, for example, a SearchManager with `autostart=True`
-will only call once to the server for the following sequence of calls:
+* SearchManager now consolidates search changes into a single call to the server,
+    which happens once per event loop. So, for example, a SearchManager with 
+    `autostart` set to `true` only calls once to the server for the following 
+    sequence of calls:
 
     ```
     myManager.set('search', ...);
@@ -125,8 +165,8 @@ will only call once to the server for the following sequence of calls:
     myManager.search.set('rf', '*');
     ```
 
-- TableView has a BaseCellRenderer property, which you can use to create
-custom cell renderers:
+* TableView has a `BaseCellRenderer` property that you can use to create
+    custom cell renderers, as follows:
         
         var ICONS = {
             severe: "alert-circle",
@@ -152,53 +192,58 @@ custom cell renderers:
         });
         
     
-- Components which inherit from `BaseSplunkView` or `SimpleSplunkView` have the
-option to use `bindToComponentSetting`. This function allows you to easily bind
-to the setting itself, rather than a specific value. The most common usage is the
-following:
+* Components that inherit from `BaseSplunkView` or `SimpleSplunkView` can use 
+    the `bindToComponentSetting` function, which allows you to easily bind to 
+    the setting itself rather than to a specific value. The most common usage is
+    the following:
 
     ```
     this.bindToComponentSetting('managerid', this._onManagerChange, this);
     ```
 
-- SavedSearchManager's `cache` property can now take a value of `scheduled`. This
-value will only use previously run searches which were scheduled by Splunk.
+* The `cache` property of SavedSearchManager can now take a value of `scheduled`,
+    which causes the search manager to only use previously-run searches that 
+    were scheduled by Splunk.
 
-- TimeRangeView has two special derivative tokens, `earliest_time` and `latest_time`:
+* TimeRangeView has two special derivative tokens, `earliest_time` and `latest_time`:
 
     ```
     new TimeRangeView({"value": mvc.tokenSafe("$mytoken$")});
     ```
     
-    While `$mytoken$` will have store an object, `$mytoken.earliest_time$` and `$mytoken.latest_time$`
-    will store the individual values.
+    While `$mytoken$` stores an object, `$mytoken.earliest_time$` and `$mytoken.latest_time$`
+    store the individual values.
 
-- You can now escape strings for token-like reference using `mvc.tokenEscape`:
+* You can now escape strings for token-like references using `mvc.tokenEscape`
+    as follows:
 
     ```
     mvc.tokenEscape("I got $20 in my pocket, you have no $ in yours");
     ```
     
-- When you `.remove()` a view, it is now removed from the registry as well.
+* When you use the `remove` method to remove a view, the view is now also removed 
+    from the registry.
 
-- SavedSearchManager now properly respects app/user scope when finding saved
-searches.
+* SavedSearchManager now properly respects the app/user scope when finding saved
+    reports. 
 
-- The `SimpleSplunkView` base class has been made more consistent:
-    1. The `onDataChanged` method is now `formatResults`.
-    2. The `return_count` property is now `returnCount`.
-    3. The `output_mode` property is now `outputMode`.
-    4. The 'render' method can now be called multiple times, so it is appropriate
-    to use it for event bindings:
+* The `SimpleSplunkView` base class has been made more consistent:
+    - The `onDataChanged` method is now `formatResults`.
+    - The `return_count` property is now `returnCount`.
+    - The `output_mode` property is now `outputMode`.
+    - The `render` method can now be called multiple times, so it is appropriate
+    to use it for event bindings as follows:
         
         ```
         this.settings.on("change:someProperty", this.render, this);
         ```
         
-    5. You can now set custom attributes to your SimpleSplunkView subclass, such
-    that when your class fetches data from the server, it will use those properties.
-    For example, to set the `output_time_format` property such that we get
-    data in milliseconds, we would do:
+    - You can now set custom attributes to your `SimpleSplunkView` subclass, 
+        such that when your class fetches data from the server, the class will 
+        use those properties.
+
+        For example, to set the `output_time_format` property to get data in 
+        milliseconds:
     
             SimpleSplunkView.extend({
                 ...
@@ -208,6 +253,7 @@ searches.
                 ...
                 
             }
+
 
 ## Version 0.8 Beta
 
