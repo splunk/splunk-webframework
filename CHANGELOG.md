@@ -270,6 +270,12 @@ with the `type=password` property.
   
     * Use `"splunkjs/mvc/eventsviewer"` in JavaScript. 
  
+* The **ResultTable** view has been replaced with the **Table** view:
+
+    * Use the `{% table %}` template tag.
+  
+    * Use `"splunkjs/mvc/tableview"` in JavaScript. 
+ 
 * The **Radio** view is now called **RadioGroup** view:
 
     * Use the `{% radiogroup %}` template tag.
