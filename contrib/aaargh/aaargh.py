@@ -1,6 +1,6 @@
 # Aaargh 0.4
 # Taken from https://github.com/wbolster/aaargh
-# BSD License per setup.py
+# BSD License per setup.cfg
 
 """
 Aaargh, an astonishingly awesome application argument helper
