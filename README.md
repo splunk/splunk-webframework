@@ -6,7 +6,7 @@ The Splunk Web Framework lets developers quickly create custom Splunk apps by us
 
 The Splunk Web Framework uses the [Django web framework](https://www.djangoproject.com/), the [Splunk SDK for Python](https://github.com/splunk/splunk-sdk-python), and the [Splunk SDK for JavaScript](https://github.com/splunk/splunk-sdk-javascript). The Web Framework also depends on a few JavaScript libraries for the client-side of code, such as Backbone.js for eventing, and jQuery for working with the document object model (DOM).
 
-The version of the Splunk Web Framework contained in this repository is designed to work in a standalone mode to work against Splunk 5.x. If you are using Splunk 6, the Splunk Web Framework is included within the core Splunk product. You can use this standalone version with Splunk 6, but that is a more advanced use case. 
+The version of the Splunk Web Framework contained in this repository is designed to work in a standalone mode to work against Splunk 5.x. If you are using Splunk 6, the Splunk Web Framework is included within the core Splunk product. You can use the standalone version of the Web Framework with Splunk 6, but this is only useful for very specific and advanced use cases.
 
 **Note** Significant changes have been made since the Preview release, such as names of components and APIs and the way components are instantiated in JavaScript. Any code you created for the Preview of the Splunk Web Framework will not work with the GA release. Overall concepts of the Web Framework remain the same. See the [Splunk Developer Portal](http://dev.splunk.com/view/web-framework/SP-CAAAER6) for more information.
 
