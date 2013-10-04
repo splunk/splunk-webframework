@@ -66,8 +66,7 @@ new Splunk Application Framework").
 
 ### Bug fixes
 
-* Various cross-browser bugs have been fixed using tokens rather than regex, 
-    because regex implementations differ.
+* Various cross-browser bugs have been fixed when using tokens. 
 
 * ChartView no longer momentarily renders old data when the search it is bound
     to changes.
@@ -115,8 +114,8 @@ new Splunk Application Framework").
 
 * Messaging behavior (e.g. "waiting...") has been improved across all views.
 
-* DropdownView now supports having a choice with a value of `""` (an 
-    empty string).
+* Choice-based views (e.g. DropdownView) now supports having a choice with 
+    a value of `""` (an empty string).
     
 * The styling for DropdownView has been improved to match Splunk's styling.
 
