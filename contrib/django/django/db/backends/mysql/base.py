@@ -123,7 +123,7 @@ class CursorWrapper(object):
         except Database.OperationalError as e:
             # Map some error codes to IntegrityError, since they seem to be
             # misclassified and Django would prefer the more logical place.
-            if e[0] in self.codes_for_integrityerror:
+            if e.args[0] in self.codes_for_integrityerror:
                 six.reraise(utils.IntegrityError, utils.IntegrityError(*tuple(e.args)), sys.exc_info()[2])
             six.reraise(utils.DatabaseError, utils.DatabaseError(*tuple(e.args)), sys.exc_info()[2])
         except Database.DatabaseError as e:
@@ -137,7 +137,7 @@ class CursorWrapper(object):
         except Database.OperationalError as e:
             # Map some error codes to IntegrityError, since they seem to be
             # misclassified and Django would prefer the more logical place.
-            if e[0] in self.codes_for_integrityerror:
+            if e.args[0] in self.codes_for_integrityerror:
                 six.reraise(utils.IntegrityError, utils.IntegrityError(*tuple(e.args)), sys.exc_info()[2])
             six.reraise(utils.DatabaseError, utils.DatabaseError(*tuple(e.args)), sys.exc_info()[2])
         except Database.DatabaseError as e:
@@ -383,8 +383,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             kwargs = {
                 'conv': django_conversions,
                 'charset': 'utf8',
-                'use_unicode': True,
             }
+            if not six.PY3:
+                kwargs['use_unicode'] = True
             settings_dict = self.settings_dict
             if settings_dict['USER']:
                 kwargs['user'] = settings_dict['USER']

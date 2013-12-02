@@ -10955,20 +10955,26 @@ define('splunk.i18n',['strftime', 'splunk.util'], function() {
     // maintain a hash of locales where custom string replacements are needed to get correct translation
     var CUSTOM_LOCALE_FORMATS = {
         'ja_JP': [
-            ['d', 'd\u65e5'],
-            ['YYYY', 'YYYY\u5e74']
+            // match only the last 'd' of a block of 'd's
+            [/d(?! d)/, 'd\u65e5'],
+            // match only 'MM', not 'MMM'
+            [/(?:^|[^M])(MM)(?:[^M]|$)/, 'MM\u6708'],
+            [/YYYY/, 'YYYY\u5e74']
         ],
         'ko_KR': [
-            ['d', 'd\uc77c'],
-            ['YYYY', 'YYYY\ub144']
+            [/d(?! d)/, 'd\uc77c'],
+            [/(?:^|[^M])(MM)(?:[^M]|$)/, 'MM\uc6d4'],
+            [/YYYY/, 'YYYY\ub144']
         ],
         'zh_CN': [
-            ['d', 'd\u65e5'],
-            ['YYYY', 'YYYY\u5e74']
+            [/d(?! d)/, 'd\u65e5'],
+            [/(?:^|[^M])(MM)(?:[^M]|$)/, 'MM\u6708'],
+            [/YYYY/, 'YYYY\u5e74']
         ],
         'zh_TW': [
-            ['d', 'd\u65e5'],
-            ['YYYY', 'YYYY\u5e74']
+            [/d(?! d)/, 'd\u65e5'],
+            [/(?:^|[^M])(MM)(?:[^M]|$)/, 'MM\u6708'],
+            [/YYYY/, 'YYYY\u5e74']
         ]
     };
 
@@ -10993,9 +10999,20 @@ define('splunk.i18n',['strftime', 'splunk.util'], function() {
             }
             if(format && locale in CUSTOM_LOCALE_FORMATS) {
                 replacements = CUSTOM_LOCALE_FORMATS[locale];
-
                 for(i = 0; i < replacements.length; i++) {
-                    format = format.replace(replacements[i][0], replacements[i][1]);
+                    // SPL-75443, match the regex to the format string, use the most specific match
+                    // (if there is a capture group, use it) and replace the last occurrence
+                    var replacement = replacements[i],
+                        regex = replacement[0],
+                        replace = replacement[1],
+                        matches = format.match(regex);
+
+                    if(matches && matches.length > 0) {
+                        var find = matches[matches.length - 1],
+                            lastIndex = format.lastIndexOf(find);
+
+                        format = format.substr(0, lastIndex) + replace + format.substr(lastIndex + find.length);
+                    }
                 }
             }
         }
@@ -21466,7 +21483,7 @@ define('splunkjs/mvc/mvc',['require','exports','module','underscore','backbone',
             var http = options.http || new sdk.ProxyHttp(config.PROXY_PATH);
             options.version = options.version || "5.0";
             options.app = options.app || utils.getPageInfo().app || "-";
-            options.owner = options.owner || splunkConfig.USERNAME;
+            options.owner = options.owner || encodeURIComponent(splunkConfig.USERNAME);
             
             return new sdk.Service(http, options);
         },
@@ -21534,6 +21551,11 @@ define('splunkjs/mvc/mvc',['require','exports','module','underscore','backbone',
         },
         
         _decodeOptionValue: function(optionValue) {
+            // Treat falsy values as literal values
+            if (!optionValue) {
+                return optionValue;
+            }
+            
             switch (optionValue.type) {
                 case "token_safe":
                     return new TokenSafeString(optionValue.value);
@@ -55445,9 +55467,7 @@ define('splunkjs/compiled/splunkd_utils',['require','exports','module','util/spl
     var utils = require("util/splunkd_utils");
     var config = require("JS_CACHE/config");
     
-    // This regex captures things of the form: "/{locale}/splunkd/__raw", e.g.
-    // "/en-US/splunkd/__raw".
-    var regexp = new RegExp("/[^\/]*/splunkd\/__raw", "g");
+    // The original fullpath method.
     var fullpath = utils.fullpath;
     
     // The original splunkd_utils.fullpath() method is hard coded to use
@@ -55456,8 +55476,15 @@ define('splunkjs/compiled/splunkd_utils',['require','exports','module','util/spl
     // intercept the call, and replace any use of the above with the actual
     // PROXY_PATH, which we have as our configuration.
     utils.fullpath = function() {
+        // Resolve the path using the original function.
         var resolvedPath = fullpath.apply(utils, arguments);
-        return resolvedPath.replace(regexp, config.PROXY_PATH);
+        
+        // Calculate where the __raw ends and find the remainder.
+        var pathIndex = resolvedPath.indexOf("__raw") + 5;
+        var apiPath = resolvedPath.substr(pathIndex);
+        
+        // The new path is simply the proxy path prefixed to the API path.
+        return config.PROXY_PATH + apiPath;
     };
     
     return utils; 
@@ -59667,6 +59694,7 @@ define('splunkjs/mvc/sharedmodels',['require','exports','module','jquery','under
         app: {
             model: new AppModel({
                 owner: splunkConfig.USERNAME,
+                root: pageInfo.root,
                 locale: pageInfo.locale,
                 app: pageInfo.app,
                 page: pageInfo.page
@@ -61279,11 +61307,10 @@ define('splunkjs/mvc/splunkresultsmodel',['require','exports','module','undersco
     return ResultsModel;
 });
 
-define('splunkjs/mvc/searchmodel',['require','exports','module','underscore','./tokenawaremodel','./tokensafestring','./tokenutils','splunk.util'],function(require, exports, module) {
+define('splunkjs/mvc/searchmodel',['require','exports','module','underscore','./tokenawaremodel','./tokensafestring','splunk.util'],function(require, exports, module) {
     var _ = require("underscore");
     var TokenAwareModel = require('./tokenawaremodel');
     var TokenSafeString = require("./tokensafestring");
-    var TokenUtils = require('./tokenutils');
     var splunkUtils = require('splunk.util');
 
     var SearchQueryModel = TokenAwareModel.extend({
@@ -61322,27 +61349,7 @@ define('splunkjs/mvc/searchmodel',['require','exports','module','underscore','./
             return result;
         },
         resolve: function(options) {
-            var args = this.toJSON();
-            var search = this.get("search", options);
-
-            _.each(args, function(value, key) {
-                if (key === "search"){
-                    return;
-                }
-
-                var finalValue = value;
-                if (_.isFunction(value)) {
-                    finalValue = value();
-                }
-
-                var regex = new RegExp("\\$" + key + "\\$", "g");
-                search = search.replace(regex, finalValue);
-            });
-
-            // If the resolved search still has any tokens in it, 
-            // then we return undefined instead, as the search is not fully
-            // resolved.
-            return TokenUtils.hasToken(search) ? undefined : search;
+            return this.get("search", options);
         }
     });
 
@@ -62826,6 +62833,13 @@ define('splunkjs/mvc/postprocessmanager',['require','exports','module','undersco
                 that.trigger(eventName, properties, job);
                 
                 if (eventName === "search:progress") {
+                    // Backbone does a deep equality check on sets, and since
+                    // properties is an object, and the object contents may have
+                    // not changed (e.g. due to a cached job), Backbone might not
+                    // fire a "change" event. This ensures that a change
+                    // event is fired every time by doing a silent unset followed
+                    // by a set.
+                    that.unset("data", {silent: true});
                     that.set("data", properties.content);
                 }
             };

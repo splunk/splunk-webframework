@@ -54,6 +54,9 @@ class SplunkAppEnabledMiddleware(object):
     """
     
     def _verify_app_is_enabled(self, service, app_name):
+        if app_name and app_name == 'homefx':
+            return
+        
         # We need to use the most general service as the app may be disabled.
         service = create_derived_service(service, app=None, owner=None)
         try:

@@ -115,23 +115,6 @@ def _long_to_bin(x, hex_format_string):
     return binascii.unhexlify((hex_format_string % x).encode('ascii'))
 
 
-def _fast_hmac(key, msg, digest):
-    """
-    A trimmed down version of Python's HMAC implementation.
-
-    This function operates on bytes.
-    """
-    dig1, dig2 = digest(), digest()
-    if len(key) > dig1.block_size:
-        key = digest(key).digest()
-    key += b'\x00' * (dig1.block_size - len(key))
-    dig1.update(key.translate(_trans_36))
-    dig1.update(msg)
-    dig2.update(key.translate(_trans_5c))
-    dig2.update(dig1.digest())
-    return dig2
-
-
 def pbkdf2(password, salt, iterations, dklen=0, digest=None):
     """
     Implements PBKDF2 as defined in RFC 2898, section 5.2
@@ -159,11 +142,21 @@ def pbkdf2(password, salt, iterations, dklen=0, digest=None):
 
     hex_format_string = "%%0%ix" % (hlen * 2)
 
+    inner, outer = digest(), digest()
+    if len(password) > inner.block_size:
+        password = digest(password).digest()
+    password += b'\x00' * (inner.block_size - len(password))
+    inner.update(password.translate(hmac.trans_36))
+    outer.update(password.translate(hmac.trans_5C))
+
     def F(i):
         def U():
             u = salt + struct.pack(b'>I', i)
             for j in xrange(int(iterations)):
-                u = _fast_hmac(password, u, digest).digest()
+                dig1, dig2 = inner.copy(), outer.copy()
+                dig1.update(u)
+                dig2.update(dig1.digest())
+                u = dig2.digest()
                 yield _bin_to_long(u)
         return _long_to_bin(reduce(operator.xor, U()), hex_format_string)
 

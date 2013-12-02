@@ -457,6 +457,8 @@ define('views/shared/Modal',
                         keyboard: true,
                         backdrop: true
                     };
+                    this.keydownEventCode = null;
+                    this.keydownEventTarget = null;
                     this.$el.modal(_.extend({}, defaults, _.pick(this.options, ['backdrop', 'keyboard', 'show', 'remote'])));
                     this.shown = false;
 
@@ -493,6 +495,9 @@ define('views/shared/Modal',
                     },
                     'keydown': function(e) {
                         var keyCode = e.which;
+                        this.keydownEventCode = e.which;
+                        this.keydownEventTarget = e.target;
+
                         if (keyCode === KEY_CODES.TAB) {
                             var tabbableSelectors = 'a[href], area[href], input:not([disabled]),' +
                                                     'select:not([disabled]), textarea:not([disabled]),' +
@@ -523,12 +528,16 @@ define('views/shared/Modal',
                                     tabbableElements[_.indexOf(tabbableElements, e.target) + 1].focus();
                                 }
                             }
-                        }                        
+                        }
                     },
                     'keyup': function(e) {
                         var keyCode = e.which;
-                        if (keyCode === KEY_CODES.ENTER) {
+                        if (keyCode === KEY_CODES.ENTER && this.keydownEventCode === KEY_CODES.ENTER) {
                             var $target = $(e.target);
+
+                            if(e.target !== this.keydownEventTarget && $(this.keydownEventTarget).is('input')  && $(this.keydownEventTarget).attr('type') === 'text')
+                                $target = $(this.keydownEventTarget);
+
                             if ($target.is('input') && $target.attr('type') === 'text' && this.$el.find('.btn-primary:visible').length === 1) {
                                 // if the currently focused element is any kind of text input,
                                 // make sure to blur it so that any change listeners are notified
@@ -536,6 +545,8 @@ define('views/shared/Modal',
                                     $target.blur();
                                 }
                                 e.preventDefault();
+                                this.keydownEventCode = null;
+                                this.keydownEventTarget = null;
                                 this.$el.find('.btn-primary:visible').click();
                             }
                         }

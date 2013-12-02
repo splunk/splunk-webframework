@@ -53,6 +53,17 @@ def get_token(request):
     return request.META.get("CSRF_COOKIE", None)
 
 
+def rotate_token(request):
+    """
+    Changes the CSRF token in use for a request - should be done on login
+    for security purposes.
+    """
+    request.META.update({
+        "CSRF_COOKIE_USED": True,
+        "CSRF_COOKIE": _get_new_csrf_key(),
+    })
+
+
 def _sanitize_token(token):
     # Allow only alphanum
     if len(token) > CSRF_KEY_LENGTH:

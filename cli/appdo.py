@@ -157,7 +157,7 @@ def check_splunk():
         
     # Make sure it is greater than Splunk 5.0, or an internal build
     if (version[0] < 5 and not version[0] > 1000):
-        print "You have Splunk %s, but the Splunk Application Framework requires Splunk 5.0 or later." % info.version
+        print "You have Splunk %s, but the Splunk Web Framework requires Splunk 5.0 or later." % info.version
         sys.exit(1)
 
 def setup_django_environment():
@@ -709,7 +709,7 @@ def run(file):
         # Django internally uses a process fork to allow for code reloading,
         # so we give it a bit of time to catchup.
         sleep(2)
-        print "The Splunk Application Framework is running now. Browse to http://localhost:%s/%s." % (config['proxy_port'], config['mount'])
+        print "The Splunk Web Framework is running now. Browse to http://localhost:%s/%s." % (config['proxy_port'], config['mount'])
         
         django.block()
     except KeyboardInterrupt:
@@ -734,7 +734,7 @@ def start(file):
         # Django internally uses a process fork to allow for code reloading,
         # so we give it a bit of time to catchup.
         sleep(2)
-        print "The Splunk Application Framework is running now. Browse to http://localhost:%s/%s." % (config['proxy_port'], config['mount'])
+        print "The Splunk Web Framework is running now. Browse to http://localhost:%s/%s." % (config['proxy_port'], config['mount'])
     except KeyboardInterrupt:
         pass
     
@@ -787,7 +787,7 @@ def clean(file):
 def setup(file, nodeploy):
     """Set up a new Web Framework Django server instance"""
         
-    print "\nSetting up the Splunk Application Framework..."
+    print "\nSetting up the Splunk Web Framework..."
     try:
         splunk_home = os.environ.get("SPLUNK_HOME", "")
         
@@ -860,7 +860,7 @@ def setup(file, nodeploy):
             splunkdj_proxy_port = splunkdj_proxy_port or SPLUNKDJ_PROXY_DEFAULT_PORT
             splunkdj_proxy_path = splunkdj_proxy_path or SPLUNKDJ_PROXY_DEFAULT_PATH
         
-            print "\nThe Splunk Application Framework will use the following values:"
+            print "\nThe Splunk Web Framework will use the following values:"
             print " - Splunkd scheme: %s" % splunkd_scheme
             print " - Splunkd host: %s" % splunkd_host
             print " - Splunkd port: %s" % splunkd_port
@@ -969,7 +969,7 @@ def setup(file, nodeploy):
         print
         sys.exit(0)
         
-    print "\nThe Splunk Application Framework setup is complete -- enter 'splunkdj run' to start."
+    print "\nThe Splunk Web Framework setup is complete -- enter 'splunkdj run' to start."
 
 def create_config_file(config_file_path=None, generate_secret_key=True, **kwargs):
     if config_file_path is None:

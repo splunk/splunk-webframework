@@ -44,7 +44,7 @@ class _SimplerAES(object):
     def decrypt(self, edata):
         password = self._rawkey
         
-        edata = base64.urlsafe_b64decode(edata)
+        edata = base64.urlsafe_b64decode(str(edata))
 
         m = hashlib.sha1()
         m.update(password)

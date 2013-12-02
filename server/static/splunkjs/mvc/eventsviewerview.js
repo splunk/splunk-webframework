@@ -155,7 +155,7 @@ define('views/shared/eventsviewer/shared/TableHead',
             render: function() {
                 this.$el.html(this.compiledTemplate({
                     _: _,
-                    is_ie7: (user_agent.isIE7()) ? 'ie7': '',
+                    is_ie7: (user_agent.isIE7() || (user_agent.isIE() && user_agent.isInIE7DocumentMode())) ? 'ie7': '',
                     labels: this.options.labels || [],
                     allowRowExpand: this.options.allowRowExpand,
                     allowLineNum: this.options.allowLineNum
@@ -255,7 +255,7 @@ define('views/shared/PopTart',
     }
 );
 
-define('contrib/text!views/shared/FieldInfo.html',[],function () { return '<% if (field) { %>\n    <a href="#" class="close"><i class="icon-close"></i></a>\n    <h2 class="field-info-header"><%- field.get(\'name\') %></h2>\n    <div class="divider"></div>\n    <% if (selectableFields) { %>\n        <div class="pull-right">\n            <label class="select-field-label"><%- _("Selected").t() %></label>\n            <div class="btn-group">\n                <% var is_selected_field = selectedFields.findWhere({\'name\': field.get(\'name\')}); %>\n                <button class="btn select <%- is_selected_field ? \'active\' : \'\' %>" data-field-name="<%- field.get(\'name\') %>"><%- _("Yes").t() %></button>\n                <button class="btn unselect <%- is_selected_field ? \'\' : \'active\' %>" data-field-name="<%- field.get(\'name\') %>"><%- _("No").t() %></button>\n            </div>\n        </div>\n    <% } %>\n    <p><%- field.get("is_exact") ? "" : ">" %><%- field.get("distinct_count") %> <%- (field.get("distinct_count")>1) ?  _("Values").t(): _("Value").t() %>, <%= i18n.format_percent(summary.frequency(field.get(\'name\'))) %> <%- _("of events").t() %></p>\n    <h3 class="reports-header"><%- _("Reports").t() %></h3>\n    <% if (field.isNumeric()) { %>\n        <ul class="fields-numeric inline">\n            <li><a href="#" data-visualization="line" data-report="avgbytime" data-field="<%- field.get(\'name\') %>"><%- _("Average over time").t() %></a></li>\n            <li><a href="#" data-visualization="line" data-report="maxbytime" data-field="<%- field.get(\'name\') %>"><%- _("Maximum value over time").t() %></a></li>\n            <li><a href="#" data-visualization="line" data-report="minbytime" data-field="<%- field.get(\'name\') %>"><%- _("Minimum value time").t() %></a></li>\n        </ul>\n    <% } %>\n    <ul class="fields-values inline">\n        <li><a href="#" data-visualization="bar" data-report="top" data-field="<%- field.get(\'name\') %>"><%- _("Top values").t() %></a></li>\n        <li><a href="#" data-visualization="line" data-report="topbytime" data-field="<%- field.get(\'name\') %>"><%- _("Top values by time").t() %></a></li>\n        <li><a href="#" data-visualization="line" data-report="rare" data-field="<%- field.get(\'name\') %>"><%- _("Rare values").t() %></a></li>\n    </ul>\n    <ul class="fields-events inline">\n        <li><a href="#" data-report="fieldvalue" data-field="<%- field.get(\'name\') %>" data-field-value="*"><%- _("Events with this field").t() %></a></li>\n    </ul>\n    <% if (field.isNumeric()) { %>\n        <ul class="field-stats inline">\n            <li>\n                <strong class="stats-label"><%- _("Avg").t() %>:</strong>\n                <span class="val numeric"><%- field.get("mean") %></span>\n            </li>\n            <li>\n                <strong class="stats-label"><%- _("Min").t() %>:</strong>\n                <span class="val numeric"><%- field.get("min") %></span>\n            </li>\n            <li>\n                <strong class="stats-label"><%- _("Max").t() %>:</strong>\n                <span class="val numeric"><%- field.get("max") %></span>\n            </li>\n            <li>\n                <strong class="stats-label"><%- _("Std").t() %>&nbsp;<%- _("Dev").t() %>:</strong>\n                <span class="val numeric"><%- field.get("stdev") %></span>\n            </li>\n        </ul>\n    <% } %>\n    <table class="table table-condensed table-dotted">\n        <thead>\n            <tr>\n            <% if (field.get(\'modes\').length >= 10) { %>\n                <th class="value"><strong><%- _("Top 10 Values").t() %></strong></th>\n            <% } else { %>\n                <th class="value"><strong><%- _("Values").t() %></strong></th>\n            <% } %>\n            <td class="count"><%- _("Count").t() %></td>\n                <td class="percent">%</td>\n                <td class="bar">&nbsp;</td>\n            </tr>\n        </thead>\n        <tbody>\n            <% _.each(field.get(\'modes\'), function(mode) { %>\n                <tr>\n                    <td class="value"><a href="#" data-report="fieldvalue" data-field="<%- field.get(\'name\') %>" data-value="<%- mode.value %>"><%- mode.value %></a></td>\n                    <td class="count"><%- format_decimal(mode.count || -1) %></td>\n                    <% percent = mode.count/field.get(\'count\') %>\n                    <td class="percent"><%- format_percent(percent) %></td>\n                    <td class="bar">\n                        <div style="width:<%- Math.round(percent * 100) %>%;" class="graph-bar"></div>\n                    </td>\n                </tr>\n            <% }); %>\n        </tbody>\n    </table>\n<% } %>\n';});
+define('contrib/text!views/shared/FieldInfo.html',[],function () { return '<% if (field) { %>\n    <a href="#" class="close"><i class="icon-close"></i></a>\n    <h2 class="field-info-header"><%- field.get(\'name\') %></h2>\n    <div class="divider"></div>\n    <% if (selectableFields) { %>\n        <div class="pull-right">\n            <label class="select-field-label"><%- _("Selected").t() %></label>\n            <div class="btn-group">\n                <% var is_selected_field = selectedFields.findWhere({\'name\': field.get(\'name\')}); %>\n                <button class="btn select <%- is_selected_field ? \'active\' : \'\' %>" data-field-name="<%- field.get(\'name\') %>"><%- _("Yes").t() %></button>\n                <button class="btn unselect <%- is_selected_field ? \'\' : \'active\' %>" data-field-name="<%- field.get(\'name\') %>"><%- _("No").t() %></button>\n            </div>\n        </div>\n    <% } %>\n    <p><%- field.get("is_exact") ? "" : ">" %><%- field.get("distinct_count") %> <%- (field.get("distinct_count")>1) ?  _("Values").t(): _("Value").t() %>, <%= i18n.format_percent(summary.frequency(field.get(\'name\'))) %> <%- _("of events").t() %></p>\n    <h3 class="reports-header"><%- _("Reports").t() %></h3>\n    <% if (field.isNumeric()) { %>\n        <ul class="fields-numeric inline">\n            <li><a href="#" data-visualization="line" data-report="avgbytime" data-field="<%- field.get(\'name\') %>"><%- _("Average over time").t() %></a></li>\n            <li><a href="#" data-visualization="line" data-report="maxbytime" data-field="<%- field.get(\'name\') %>"><%- _("Maximum value over time").t() %></a></li>\n            <li><a href="#" data-visualization="line" data-report="minbytime" data-field="<%- field.get(\'name\') %>"><%- _("Minimum value over time").t() %></a></li>\n        </ul>\n    <% } %>\n    <ul class="fields-values inline">\n        <li><a href="#" data-visualization="bar" data-report="top" data-field="<%- field.get(\'name\') %>"><%- _("Top values").t() %></a></li>\n        <li><a href="#" data-visualization="line" data-report="topbytime" data-field="<%- field.get(\'name\') %>"><%- _("Top values by time").t() %></a></li>\n        <li><a href="#" data-visualization="line" data-report="rare" data-field="<%- field.get(\'name\') %>"><%- _("Rare values").t() %></a></li>\n    </ul>\n    <ul class="fields-events inline">\n        <li><a href="#" data-report="fieldvalue" data-field="<%- field.get(\'name\') %>" data-field-value="*"><%- _("Events with this field").t() %></a></li>\n    </ul>\n    <% if (field.isNumeric()) { %>\n        <ul class="field-stats inline">\n            <li>\n                <strong class="stats-label"><%- _("Avg").t() %>:</strong>\n                <span class="val numeric"><%- field.get("mean") %></span>\n            </li>\n            <li>\n                <strong class="stats-label"><%- _("Min").t() %>:</strong>\n                <span class="val numeric"><%- field.get("min") %></span>\n            </li>\n            <li>\n                <strong class="stats-label"><%- _("Max").t() %>:</strong>\n                <span class="val numeric"><%- field.get("max") %></span>\n            </li>\n            <li>\n                <strong class="stats-label"><%- _("Std").t() %>&nbsp;<%- _("Dev").t() %>:</strong>\n                <span class="val numeric"><%- field.get("stdev") %></span>\n            </li>\n        </ul>\n    <% } %>\n    <table class="table table-condensed table-dotted">\n        <thead>\n            <tr>\n            <% if (field.get(\'modes\').length >= 10) { %>\n                <th class="value"><strong><%- _("Top 10 Values").t() %></strong></th>\n            <% } else { %>\n                <th class="value"><strong><%- _("Values").t() %></strong></th>\n            <% } %>\n            <td class="count"><%- _("Count").t() %></td>\n                <td class="percent">%</td>\n                <td class="bar">&nbsp;</td>\n            </tr>\n        </thead>\n        <tbody>\n            <% _.each(field.get(\'modes\'), function(mode) { %>\n                <tr>\n                    <td class="value"><a href="#" data-report="fieldvalue" data-field="<%- field.get(\'name\') %>" data-value="<%- mode.value %>"><%- mode.value %></a></td>\n                    <td class="count"><%- format_decimal(mode.count || -1) %></td>\n                    <% percent = mode.count/field.get(\'count\') %>\n                    <td class="percent"><%- format_percent(percent) %></td>\n                    <td class="bar">\n                        <div style="width:<%- Math.round(percent * 100) %>%;" class="graph-bar"></div>\n                    </td>\n                </tr>\n            <% }); %>\n        </tbody>\n    </table>\n<% } %>\n';});
 
 define('views/shared/FieldInfo',
     [
@@ -1727,7 +1727,7 @@ define('views/shared/JSONTree',
                         $rawevent.addClass('raw-event').show();
                     }
                 } else if(this.options.noSegmentation) {
-                    this.$('.raw-event').append(this.model.event.rawToText());
+                    this.$('.raw-event').append(_.escape(this.model.event.rawToText()));
                 } else {
                     this.$('.raw-event').append(this.model.event.getRaw());
                 }
@@ -2871,12 +2871,12 @@ define('views/shared/eventsviewer/table/TableHead',
             initialize: function() {
                 BaseView.prototype.initialize.apply(this, arguments);
                 this.collection.intersectedFields.on('reset', this.render,this);
-                this.model.entry.content.on('change:display.events.rowNumbers change:display.events.table.sortDirection change:display.events.table.sortColumn', this.render, this);
+                this.model.report.entry.content.on('change:display.events.rowNumbers change:display.events.table.sortDirection change:display.events.table.sortColumn', this.render, this);
             },
             events: {
                 'click th': function(e) {
                     var $target = $(e.currentTarget);
-                    this.model.entry.content.set({
+                    this.model.report.entry.content.set({
                         'display.events.table.sortDirection': ($target.hasClass('asc') ? 'desc' : 'asc'),
                         'display.events.table.sortColumn': $target.attr('data-name')
                     });
@@ -2886,11 +2886,11 @@ define('views/shared/eventsviewer/table/TableHead',
             render: function() {
                 this.$el.html(this.compiledTemplate({
                     collection: this.collection.intersectedFields,
-                    hasRowNum: util.normalizeBoolean(this.model.entry.content.get('display.events.rowNumbers')),
+                    hasRowNum: util.normalizeBoolean(this.model.report.entry.content.get('display.events.rowNumbers')),
                     allowRowExpand: this.options.allowRowExpand,
-                    content: this.model.entry.content,
+                    content: this.model.report.entry.content,
                     reorderableHandle: this.options.selectableFields ? 'on': 'off',
-                    isRealTime: this.options.isRealTime,
+                    isRealTime: this.model.searchJob.entry.content.get('isRealTimeSearch'),
                     is_ie7: (user_agent.isIE7()) ? 'ie7': '',
                     _: _
                 }));
@@ -2909,7 +2909,9 @@ define('views/shared/eventsviewer/table/TableHead',
                         <% var active = (!isRealTime && (content.get("display.events.table.sortColumn") == model.get("name"))) ? "active": ""%>\
                         <% var dir = (!isRealTime && (active==="active")) ? content.get("display.events.table.sortDirection") : ""%>\
                         <% var sorts = (!isRealTime) ? "sorts" : ""; %>\
-                        <th class=" reorderable <%- sorts %> <%-active%> <%-dir%>" data-name="<%- model.get("name") %>"><span class="reorderable-label <%- reorderableHandle %>"><%- _(model.get("name")).t() %></span></th>\
+                        <% var reorderable = (!isRealTime) ? "reorderable" : ""; %>\
+                        <% var reorderableLabel = (!isRealTime) ? "reorderable-label" : ""; %>\
+                        <th class=" <%- reorderable %> <%- sorts %> <%-active%> <%-dir%>" data-name="<%- model.get("name") %>"><span class="<%- reorderableLabel %> <%- reorderableHandle %>"><%- _(model.get("name")).t() %></span></th>\
                     <% }) %>\
                 </tr>\
             '
@@ -3463,7 +3465,10 @@ define('views/shared/eventsviewer/table/Master',
                 this.children.modalize = new Modalize({el: this.el, tbody: '> table > tbody'});
 
                 this.children.head = new TableHeadView({
-                    model: this.model.report,
+                    model: {
+                        report: this.model.report,
+                        searchJob: this.model.searchJob
+                    },
                     collection: { 
                         intersectedFields: this.collection.intersectedFields,
                         selectedFields: this.collection.selectedFields

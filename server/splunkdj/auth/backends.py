@@ -31,7 +31,7 @@ def logout_user(cookies, username):
         pass
 
 class SplunkUser(AbstractUser):
-    def __init__(self, id=None, splunkweb=None, service=None, tz=None, realname="", *args, **kwargs):
+    def __init__(self, id=None, splunkweb=None, service=None, tz=None, realname="", is_free=False, *args, **kwargs):
         super(SplunkUser, self).__init__(*args, **kwargs)
         
         self.id = id
@@ -39,6 +39,7 @@ class SplunkUser(AbstractUser):
         self.realname = realname
         self.service = service
         self.tz = tz
+        self.is_free = is_free
             
     def save(self, *args, **kwargs):
         #TODO:remove if implemented
@@ -56,6 +57,8 @@ def get_user(username, token):
         return None
     
     user = None
+    properties = {}
+    is_free = False
     try:
         service = Service(
             username=username, 
@@ -65,7 +68,20 @@ def get_user(username, token):
             port=settings.SPLUNKD_PORT
         )
         
-        user = service.users[username]
+        server_info = service.info
+        
+        if (server_info.get('isFree', '0') == '0'):
+            user = service.users[username]
+            properties = user.content()
+        else:            
+            is_free = True
+            properties = {
+                "email": "nouser@splunkfree.com",
+                "roles": ["admin"],
+                "realname": "Administrator",
+                "tz": None
+            }
+        
     except Exception, e:
         if hasattr(e, 'status') and e.status == 401:
             logger.error("Failed to get user: %s. Server returned 401: Unauthorized." % username)
@@ -77,7 +93,6 @@ def get_user(username, token):
             logger.exception(e)
             return None
     
-    properties = user.content()
     
     user_id = "%s:%s" % (username, token)
     user_id = aes.encrypt(str(user_id))
@@ -90,6 +105,7 @@ def get_user(username, token):
         is_superuser="admin" in properties["roles"],
         is_staff="admin" in properties["roles"],
         is_active=True,
+        is_free=is_free,
         realname=properties["realname"],
         tz=properties['tz']
     )

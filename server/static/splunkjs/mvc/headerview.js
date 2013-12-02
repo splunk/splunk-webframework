@@ -676,7 +676,7 @@ function(
     });
 });
 
-define('contrib/text!views/shared/splunkbar/HelpMenu.html',[],function () { return '<a href="#" class="dropdown-toggle"><%- _("Help").t() %><b class="caret"></b></a>\n<div class="dropdown-menu" id="global-help-menu">\n    <div class="arrow"></div>\n    <ul>\n        <li><a class="whatsnew" href="#"><%- _("What\'s New in 6.0").t() %></a></li>\n        <li><a class="external" href="<%- makeDocLink(\'search_app.tutorial\') %>" target="_blank"><%- _("Tutorials").t() %></a></li>\n        <li><a class="external" href="http://splunk-base.splunk.com/" target="_blank"><%- _("Splunk Answers").t() %></a></li>\n        <li><a class="external" href="http://www.splunk.com/support" target="_blank"><%- _("Contact Support").t() %></a></li>\n        <li><a class="external" href="<%- makeDocLink(currentPageDocLocation) %>" target="_blank"><%- _("Documentation").t() %></a></li>\n    </ul>\n    <form class="form-search" action="#help" method="get">\n    </form>\n</div>\n';});
+define('contrib/text!views/shared/splunkbar/HelpMenu.html',[],function () { return '<a href="#" class="dropdown-toggle"><%- _("Help").t() %><b class="caret"></b></a>\n<div class="dropdown-menu" id="global-help-menu">\n    <div class="arrow"></div>\n    <ul>\n        <li><a class="whatsnew" href="#"><%- _("What\'s New in 6.0").t() %></a></li>\n        <li><a class="external" href="<%- makeDocLink(\'search_app.tutorial\') %>" target="_blank"><%- _("Tutorials").t() %></a></li>\n        <li><a class="external" href="http://splunk-base.splunk.com/" target="_blank"><%- _("Splunk Answers").t() %></a></li>\n        <li><a class="external" href="http://www.splunk.com/support" target="_blank"><%- _("Contact Support").t() %></a></li>\n        <li><a class="external" href="<%- docLink %>" target="_blank"><%- _("Documentation").t() %></a></li>\n    </ul>\n    <form class="form-search" action="#help" method="get">\n    </form>\n</div>\n';});
 
 define('views/shared/splunkbar/HelpMenu',
 [
@@ -723,15 +723,9 @@ function(
             'click .dropdown-menu a': 'closePopdown'
         },
         render: function(){
-            // location is in form: app.<app_name>.<page_name>
-            var currentPageDocLocation = [
-                    'app',
-                    this.model.application.get('app'),
-                    this.model.application.get('page')
-                ].join(".");
             var html = this.compiledTemplate({
-                makeDocLink: this.makeDocLink.bind(this),
-                currentPageDocLocation: currentPageDocLocation
+                docLink: this.makeDocLinkForPage(),
+                makeDocLink: this.makeDocLink.bind(this)
             });
             this.$el.html(html);
 
@@ -764,6 +758,46 @@ function(
                 this.model.appLocal.appAllowsDisable(),
                 this.model.appLocal.entry.content.get('docs_section_override')
             );
+        },
+        makeDocLinkForPage: function() {
+            //this is the generic doc link based on the current location
+            var link = '/help',
+                location;
+
+            if(this.model.application.get('page') === '_admin'){
+                // making help link for manager page
+                location = 'manager';
+                if(window && window.location && typeof window.location.pathname === 'string'){
+                    //get the location from the browser
+                    var pathname = window.location.pathname;
+                    //remove '/manager/' and all characters before
+                    pathname = pathname.substring(pathname.indexOf('/manager/')+9);
+                    //next we should have app namespace to remove
+                    pathname = pathname.substring(pathname.indexOf('/')+1);
+                    //change slashes to dots
+                    pathname = pathname.replace(new RegExp('/', 'g'), '.');
+                    location += '.'+pathname;
+                }
+
+                link = route.docHelp(
+                    this.model.application.get("root"),
+                    this.model.application.get("locale"),
+                    location
+                );
+
+            }else{
+                // making help link for app page
+                // location is in form: app.<app_name>.<page_name>
+                location = [
+                    'app',
+                    this.model.application.get('app'),
+                    this.model.application.get('page')
+                ].join(".");
+
+                link = this.makeDocLink(location);
+
+            }
+            return link;
         },
         onWhatsNew: function(e){
             if(e){
@@ -1619,7 +1653,7 @@ function(
     });
 });
 
-define('contrib/text!views/shared/appbar/AppLabel.html',[],function () { return '<a class="app-link" href="<%=appLink%>">\n    <div class="app-logo" style="display: none;">\n        <img class="app-logo-img" src="<%=appLogo%>" alt="<%-appLabel%>" />\n    </div>\n\n    <div class="app-name" style="display:none">\n        <span class="app-label">\n            <%-_(appLabel).t()%>\n        </span>\n    </div>\n</a>\n';});
+define('contrib/text!views/shared/appbar/AppLabel.html',[],function () { return '<a class="app-link" href="<%=appLink%>">\n    <div class="app-logo"></div>\n\n    <div class="app-name">\n        <span class="app-label">\n            <%-_(appLabel).t()%>\n        </span>\n    </div>\n</a>\n';});
 
 define('views/shared/appbar/AppLabel',[
     'underscore',
@@ -1639,12 +1673,6 @@ function(
         initialize: function() {
             BaseView.prototype.initialize.apply(this, arguments);
             this.model.appNav.on('change', this.render, this);
-            if (this.model.appNav.get('label') ||
-                this.model.appNav.get('logo') ||
-                this.model.appNav.get('icon'))
-            {
-                this.render();
-            }
         },
         showLogo: function(){
             this.$el.find('.app-logo').show();
@@ -1654,35 +1682,39 @@ function(
             this.$el.find('.app-name').show();
             this.$el.find('.app-logo').hide();
         },
-        render: function() {
-            var self = this;
-            
+        render: function(){
+            var label = this.model.appNav.get('label') || '';
+
             var html = _.template(templateAppLabel, {
                 appLink: this.model.appNav.get('link'),
-                appLabel: this.model.appNav.get('label'),
+                appLabel: label,
                 appIcon: this.model.appNav.get('icon'),
                 appLogo: this.model.appNav.get('logo')
             });
             this.$el.html(html);
 
-            if (this.model.appNav.get('logo')) {
-                var img = this.$el.find('.app-logo-img');
-                if(parseInt(img.width, 10) > 2){
-                    this.showLogo();
-                }else{
-                    this.showName();
-                }
-
-                img.load(function(){
-                    if(parseInt(this.width, 10) > 2){
-                        self.showLogo();
-                    }
-                });
-            } else {
-                this.showName();
-            }
+            this.setAppLabelDisplay();
 
             return this;
+        },
+        setAppLabelDisplay: function(){
+            if (this.model.appNav.get('logo')) {
+                var img = new Image();
+                img.onload = function(){
+                    if(parseInt(img.width, 10) < 2){
+                        this.showName();
+                    }else{
+                        this.$el.find('.app-logo').empty().append(img);
+                        this.showLogo();
+                    }
+                }.bind(this);
+
+                img.onerror = function(){
+                    this.showName();
+                }.bind(this);
+
+                img.src = this.model.appNav.get('logo');
+            }
         }
     });
 });
@@ -2458,7 +2490,7 @@ function(
             var html = _.template(templateMaster);
             this.$el.html(html);
             this.$el.find('.nav').html(this.children.appNav.el);
-            this.$el.find('.app-name').html(this.children.appLabel.el);
+            this.$el.find('.app-name').html(this.children.appLabel.render().el);
 
             return this;
         },

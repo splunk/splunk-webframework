@@ -258,17 +258,18 @@ def get_page_config(request):
     
     return {
         "autoload": "1" == request.GET.get("autoload", "0"),
-        "config": {
+        "config": json.dumps({
+            "SPLUNKD_FREE_LICENSE": request.user.is_free,
             "MRSPARKLE_ROOT_PATH": "/%s" % str(settings.SPLUNK_WEB_MOUNT).strip("/"),
             "DJANGO_ROOT_PATH": "/%s" % str(settings.RAW_MOUNT),
             "MRSPARKLE_PORT_NUMBER": str(settings.SPLUNK_WEB_PORT),
             "DJANGO_PORT_NUMBER": str(settings.DJANGO_PORT),
-            "LOCALE": "en-US",
+            "LOCALE": str(request.LANGUAGE_CODE),
             "JS_LOGGER_MODE": "None",
             "USERNAME": str(request.user.username),
             "USER_DISPLAYNAME": str(request.user.realname),
             "APP": str(app),
             "APP_DISPLAYNAME": str(app_label),
             "SERVER_ZONEINFO": str(zone_info),
-        }
+        })
     }

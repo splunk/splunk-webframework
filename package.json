@@ -1,6 +1,6 @@
 {
     "name" : "splunkdj",
-    "version" : "1.0.0",
+    "version" : "1.0.1",
     "description" : "SDK for usage with the Splunk REST API",
     "homepage": "http://dev.splunk.com",
     "main" : "proxy/proxy.js",

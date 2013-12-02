@@ -5,9 +5,6 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.importlib import import_module
 
-import logging
-logger = logging.getLogger('spl.django.service')
-
 class BaseFinder(object):
     """
     Base class for all app finder classes.
@@ -59,7 +56,7 @@ class SplunkWebAppsFinder(BaseFinder):
             apps_root = bundle_paths.get_base_path()
             slave_apps_root = bundle_paths.get_slaveapps_base_path()
         except Exception, e:
-            logger.exception(e)
+            pass
         
         self.roots = [
             apps_root,

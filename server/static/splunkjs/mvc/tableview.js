@@ -3545,7 +3545,9 @@ define('views/shared/results_table/renderers/SparklineCellRenderer',['require','
 
         render: function($td, cellData) {
             var sparklineSettings = _.extend({}, DEFAULT_SPARKLINE_SETTINGS, cellData.sparklineFormat);
-            $td.sparkline(_.isArray(cellData.value) ? _.map(cellData.value.slice(1), parseFloat) : [], sparklineSettings);
+            $td.sparkline(_.isArray(cellData.value) ? _.map(cellData.value.slice(1), function(v) {
+                return (v && parseFloat(v)) || 0;
+            }) : [], sparklineSettings);
         }
 
     });
@@ -4524,6 +4526,15 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
             }
             if(options.hasOwnProperty('overlay')) {
                 this.settings.set('dataOverlayMode', options['display.statistics.overlay']);
+            }
+            if(options.hasOwnProperty('drilldown')) {
+                if (options.drilldown === 'all') {
+                    this.settings.set('drilldown', 'cell');
+                } else if (options.drilldown === 'off') {
+                    this.settings.set('drilldown', 'none');
+                } else {
+                    this.settings.set('drilldown', options.drilldown);
+                }
             }
             if(options.format) {
                 var sparklineSettings = {};

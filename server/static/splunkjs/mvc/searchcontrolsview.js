@@ -478,44 +478,76 @@ define('views/shared/jobstatus/controls/menu/EditModal',
             events: $.extend({}, Modal.prototype.events, {
                 'click .btn-primary': function(e) {
                     e.preventDefault();
+                    
+                    //TODO: SPL-75065, SPL-75098 because the job endpoint cannot handle parallel requests
+                    //we must send all of our changes serially. Sending these requests serially will
+                    //make the process slower in systems with slow response times. When SplunkD is fixed 
+                    //go back to parallel requests.
 
                     var everyoneRead = this.model.inmem.get('everyoneRead'),
                         selectedTTL = this.model.inmem.entry.content.get("ttl"),
                         isRealTime = this.model.inmem.entry.content.get("isRealTimeSearch"),
-                        aclDeferred, saveDeferred;
+                        aclDeferred = $.Deferred(),
+                        saveDeferred = $.Deferred();
 
                     if (this.everyoneRead !== everyoneRead) {
-                        if (everyoneRead) {
-                            aclDeferred = this.model.inmem.makeWorldReadable();
-                        } else {
-                            aclDeferred = this.model.inmem.undoWorldReadable();
-                        }
-                    } else {
-                        aclDeferred = true;
-                    }
-
-                    if ((this.startTTL !== selectedTTL) && ((selectedTTL === this.defaultTTL) || (selectedTTL === this.defaultSaveTTL))){
-                        if (selectedTTL === this.defaultTTL) {
-                            saveDeferred = this.model.inmem.unsaveJob({
-                                auto_cancel: SearchJobModel.DEFAULT_AUTO_CANCEL
-                            });
-                        }
-
-                        if (selectedTTL === this.defaultSaveTTL) {
-                            if (isRealTime) {
-                                saveDeferred = this.model.inmem.saveJob({
-                                    auto_cancel: SearchJobModel.DEFAULT_AUTO_CANCEL
-                                });
-                            } else {
-                                //if the job is not realtime then we use the job endpoint's inherent clear of auto_pause and auto_cancel
-                                saveDeferred = this.model.inmem.saveJob();
+                        var options = {
+                            success: function(model, response) {
+                                aclDeferred.resolve();
+                            },
+                            error: function(model, response) {
+                                aclDeferred.resolve();
                             }
+                        };
+                        
+                        if (everyoneRead) {
+                            this.model.inmem.makeWorldReadable(options);
+                        } else {
+                            this.model.inmem.undoWorldReadable(options);
                         }
                     } else {
-                        saveDeferred = true;
+                        aclDeferred.resolve();
                     }
 
-                    $.when(aclDeferred, saveDeferred).then(function() {
+                    $.when(aclDeferred).then(function(){
+                        var options = {
+                            success: function(model, response) {
+                                saveDeferred.resolve();
+                            },
+                            error: function(model, response) {
+                                saveDeferred.resolve();
+                            }
+                        };
+                        
+                        if ((this.startTTL !== selectedTTL) && ((selectedTTL === this.defaultTTL) || (selectedTTL === this.defaultSaveTTL))){
+                            if (selectedTTL === this.defaultTTL) {
+                                this.model.inmem.unsaveJob(
+                                   $.extend(true, options, {
+                                       data: {
+                                           auto_cancel: SearchJobModel.DEFAULT_AUTO_CANCEL
+                                       }
+                                   })
+                                );
+                            } else if (selectedTTL === this.defaultSaveTTL) {
+                                if (isRealTime) {
+                                    this.model.inmem.saveJob(
+                                        $.extend(true, options, {
+                                            data: {
+                                                auto_cancel: SearchJobModel.DEFAULT_AUTO_CANCEL
+                                            }
+                                        })
+                                    );
+                                } else {
+                                    //if the job is not realtime then we use the job endpoint's inherent clear of auto_pause and auto_cancel
+                                    this.model.inmem.saveJob(options);
+                                }
+                            }
+                        } else {
+                            saveDeferred.resolve();
+                        }                        
+                    }.bind(this));
+
+                    $.when(saveDeferred).then(function() {
                         this.hide();
                     }.bind(this));
                 },
@@ -710,30 +742,74 @@ define('views/shared/jobstatus/controls/menu/sendbackgroundmodal/Settings',
             events: {
                 "click .modal-btn-primary" : function(e) {
                     e.preventDefault();
+                    
+                    //TODO: SPL-75065, SPL-75098 because the job endpoint cannot handle parallel requests
+                    //we must send all of our changes serially. Sending these requests serially will
+                    //make the process slower in systems with slow response times. When SplunkD is fixed 
+                    //go back to parallel requests.
                                         
                     var shouldEmail = this.model.inmem.get("email"),
                         email_subject = this.model.inmem.get("subject"),
                         email_list = this.model.inmem.get("addresses"),
-                        saveBackgroundDeferred,
-                        saveControlDeferred,
-                        disablePreviewDeferred;
+                        perms = this.model.inmem.entry.acl.permsToObj(),
+                        read = perms.read,
+                        everyoneRead = (_.indexOf(read, "*") != -1),
+                        saveControlDeferred = $.Deferred(),
+                        aclDeferred = $.Deferred(),
+                        disablePreviewDeferred = $.Deferred(),
+                        saveBackgroundDeferred = this.model.inmem.saveIsBackground();
                     
-                    saveBackgroundDeferred = this.model.inmem.saveIsBackground();
+                    $.when(saveBackgroundDeferred).then(function() {
+                        var options = {
+                            success: function(model, response) {
+                                saveControlDeferred.resolve();
+                            },
+                            error: function(model, response) {
+                                saveControlDeferred.resolve();
+                            }
+                        };
+                        
+                        if (shouldEmail) {
+                            this.model.inmem.saveJob(
+                                $.extend(true, options, {
+                                    data: {
+                                        email_list: email_list,
+                                        email_subject: email_subject
+                                    }
+                                })
+                            );
+                        } else {
+                            this.model.inmem.saveJob(options);
+                        } 
+                    }.bind(this));
                     
-                    if (shouldEmail) {
-                        saveControlDeferred = this.model.inmem.saveJob({
-                            data: {
-                                email_list: email_list,
-                                email_subject: email_subject
+                    $.when(saveControlDeferred).then(function() {
+                        if (!everyoneRead) {
+                            this.model.inmem.makeWorldReadable({
+                                success: function(model, response) {
+                                    aclDeferred.resolve();
+                                },
+                                error: function(model, response) {
+                                    aclDeferred.resolve();
+                                }
+                            });
+                        } else {
+                            aclDeferred.resolve();
+                        }                        
+                    }.bind(this));
+
+                    $.when(aclDeferred).then(function() {
+                        this.model.inmem.disablePreview({
+                            success: function(model, response) {
+                                disablePreviewDeferred.resolve();
+                            },
+                            error: function(model, response) {
+                                disablePreviewDeferred.resolve();
                             }
                         });
-                    } else {
-                        saveControlDeferred = this.model.inmem.saveJob();
-                    }
+                    }.bind(this));
                     
-                    disablePreviewDeferred = this.model.inmem.disablePreview();
-                    
-                    $.when(saveBackgroundDeferred, saveControlDeferred, disablePreviewDeferred).then(function(){
+                    $.when(disablePreviewDeferred).then(function(){
                         var fetch = this.model.inmem.fetch();
                         
                         $.when(fetch).then(function() {

@@ -164,9 +164,9 @@ define('models/services/data/ui/View',
                 if(!this.isXML()) {
                     return false;
                 }
-                var data = this.entry.content.get('eai:data'),
-                    $xmlDoc = $($.parseXML(data)),
-                    rootNode = $xmlDoc.find(':eq(0)')[0];
+                var data = this.entry.content.get('eai:data');
+                var $xmlDoc = this.get$XML();
+                var rootNode = $xmlDoc.find(':eq(0)')[0];
                 if (!rootNode) { 
                     return false;
                 }
@@ -176,13 +176,12 @@ define('models/services/data/ui/View',
                         lower(rootNode.nodeName) === lower(nodeName);
             },
             isAdvanced: function(visibility) {
-                var data, $xmlDoc, $root, type, isVisible;
+                var $xmlDoc, $root, type, isVisible;
                 if (!this.isRoot('view')) { 
                     return false; 
                 }
                 if (visibility) {
-                    data = this.entry.content.get('eai:data');
-                    $xmlDoc = $($.parseXML(data));
+                    $xmlDoc = this.get$XML();
                     $root = $xmlDoc.find(':eq(0)');
                     type = $root.attr('type');
                     isVisible = $root.attr('isVisible');
@@ -194,6 +193,18 @@ define('models/services/data/ui/View',
                     }
                 }
                 return true;
+            },
+            get$XML: function() {
+                var data = (this.isXML() && this.entry.content.get('eai:data')) || '<dashboard/>';
+                var xmlDoc;
+                try {
+                    xmlDoc = $.parseXML(data);
+                } catch (e) {
+                    xmlDoc = $.parseXML('<dashboard/>');
+                }
+                // SPL-68158 Prevent any kind of XSS when modifying XML using jQuery
+                $(xmlDoc).find('script').remove();
+                return $(xmlDoc);
             },
             isDashboard: function() {
                 return this.isRoot('dashboard');
@@ -591,6 +602,108 @@ define('models/services/data/ui/WorkflowAction',
                         field_value: fieldValue
                     };
                 return _.template(text, data, settings);
+            },
+            isInFieldMenu: function() {
+                return (this.entry.content.get('display_location') != 'event_menu');
+            },
+            isInEventMenu: function() {
+                return (this.entry.content.get('display_location') != 'field_menu');
+            },
+            isRestrictedByPresenceOfAllFields: function(event) {
+                var eventFields   = event.toJSON(),
+                    fieldsPresent = 0,
+                    fields = _(this.entry.content.get('fields').split(',')).map(function(field) { 
+                        return $.trim(field); 
+                    },this),
+                    fieldsMatching = new Array(fields.length),
+                    len = fields.length;
+
+                /*
+                 * Iterate through all fields in the event until all specified fields in the workflow
+                 * action have been found to be present or not.
+                 */ 
+                for (var field in eventFields) {
+                    
+                    //iteration over fields specified in workflow action
+                    for(var k=0; k<len; k++) {
+                        var rex = this.globber(fields[k]);
+                        
+                        if(rex) {
+                            var value = rex.exec(field);
+                            if(!fieldsMatching[k] && value && value.length > 0) {
+                                fieldsMatching[k] = true;
+                                fieldsPresent++;
+                                
+                                if(fieldsPresent >= len) {
+                                    return false;
+                                } 
+                            }
+                        }
+                    }
+                }
+                return true;
+            }, 
+            isRestrictedByEventtype: function(event) {
+                var eventtypes, eventTypeFromEvent;
+                
+                if(this.entry.content.has('eventtypes')) {
+                    
+                    eventtypes = _((this.entry.content.get('eventtypes')).split(',')).map(function(eventtype) {
+                        return $.trim(eventtype);
+                    },this);
+                    
+                    if(event.has('eventtype')) {
+                        eventTypeFromEvent = event.get('eventtype');
+                        
+                        var eventtypesLen = eventtypes.length,
+                            j = 0;
+
+                        for(j; j<eventtypesLen; j++) {
+                            var rex = this.globber(eventtypes[j]);
+                            if(rex) {
+                                
+                                var len = eventTypeFromEvent.length,
+                                    i = 0;
+                                for(i; i<len; i++) {
+                                    var value = rex.exec(eventTypeFromEvent[i]);
+                                    if(value && value.length > 0) {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        if(eventtypes.indexOf('*') > -1) {
+                            return false;
+                        }
+                    }
+
+                } else {
+                    return false;
+                }
+
+                return true;
+            },
+            globber: function(str) {
+                var rex, 
+                    chars = str.split('');
+
+
+                //build rex for exact match
+                if(_.first(chars) !== '*') {
+                    chars.unshift('^');
+                }
+
+                if(_.last(chars) !== '*') {
+                    chars.push('$');
+                }
+                str = chars.join('').replace(/\*/g, '.*');
+                
+                try { 
+                    rex = new RegExp(str); 
+                } catch(e) {}
+
+                return rex;
             }
         });
     }
@@ -614,60 +727,34 @@ define('collections/services/data/ui/WorkflowActions',
             getEventActions: function(event) {
                 var idxs = [];
                 this.each(function(model, i) {
-                    if(model.entry.content.get('display_location') != 'field_menu'){
+                    if(model.isInEventMenu() && !model.isRestrictedByEventtype(event) && !model.isRestrictedByPresenceOfAllFields(event)){
                         idxs.push(i);
                     }
                 },this);
                 return idxs;
             },
             getFieldActions: function(field, event) {
-                return this._filterByField(field, event);
-            },
-            _filterByField: function(field, event) {
                 var idxs = [];
-                this.each(function(model, i) {
-                    var fields_str = model.entry.content.get('fields'),
-                        fields = _(fields_str.split(',')).map(function(field) { return $.trim(field); },this),
-                        eventtypes = _((model.entry.content.get('eventtypes') || '').split(',')).map(function(eventtype) {
-                            return $.trim(eventtype);
-                        },this),
-                        eventtype = event.get('eventtype');
-
-                    if(eventtype && _(eventtype).intersection(eventtypes).length > 0) {
-                        if(model.entry.content.get('display_location') != "event_menu") {
-                            if(fields.length == 1){
-                                var f = fields[0];
-                                if(f.indexOf('*')>-1){
-                                     if(f === '*'){
-                                        idxs.push(i);
-                                     } else {
-                                        var r;
-                                        try { r = new RegExp(f); } catch(e) {}
-                                        if(r) {
-                                            var result = r.exec(field);
-                                            if(result && result.length>0) {
-                                                idxs.push(i);
-                                            }
-                                        }
-                                     }
-                                } else {
-                                    if(f == field){
-                                        idxs.push(i);
-                                    }    
+                this.each(function(model, q) {
+                    
+                    if(model.isInFieldMenu() && !model.isRestrictedByEventtype(event)) {
+                        var fields = _(model.entry.content.get('fields').split(',')).map(function(field) { 
+                                return $.trim(field); 
+                            },this),
+                            k = 0,
+                            len = fields.length;
+                            
+                        for(k; k<len; k++) {
+                            var rex = model.globber(fields[k]);
+                            
+                            if(rex) {
+                                var value = rex.exec(field);
+                                if(value && value.length > 0) {
+                                    idxs.push(q);
+                                    break;
                                 }
-                            } else {
-                                if(fields_str.indexOf('*') == -1){ 
-                                    var allFieldsPresent = true;
-                                    if(fields.indexOf(field) > -1) {
-                                        _(fields).each(function(f) {
-                                            if(!event.get(f)){
-                                                allFieldsPresent = false;
-                                            }
-                                        },this);
-                                        allFieldsPresent && idxs.push(i);
-                                    }
-                                }                        
                             }
+                            
                         }
                     }
                 },this);
@@ -2998,7 +3085,7 @@ define('models/services/search/jobs/Result',
                 return _.intersection(this.keys(), this.timeFields);
             },
             isTruncated: function() {
-                return (this.rawToText().split('\n').length < this.get('linecount'));
+                return this.has('_fulllinecount'); 
             },
             getFieldsLength: function(fields) {
                 return _(fields).reduce(function(m, f){ 
@@ -3031,7 +3118,7 @@ define('models/services/search/jobs/Result',
                         if(typeof leaf === 'object' ) {
                             html.push('<span class="t'+((leaf.highlight)?' a':'')+'">', _rawToHtml(leaf.array), '</span>');
                         } else {
-                            html.push(tokens[leaf] || '');
+                            html.push(_.escape(tokens[leaf] || ''));
                         }
                     }
                     return html.join('');
@@ -3045,7 +3132,7 @@ define('models/services/search/jobs/Result',
             },
             getRaw: function(){
                 var raw = this.get('_raw');
-                return _.isArray(raw) ? raw[0]: this.rawToHTML();
+                return _.isArray(raw) ? _.escape(raw[0]): this.rawToHTML();
             },
             formattedTime: function() {
                 var time = this.get('_time');
@@ -3328,6 +3415,10 @@ define('helpers/user_agent',['underscore'], function(_) {
 
         isIELessThan: function(testVersion) {
             return helper.isIE() && parseFloat(TESTS.IE.exec(helper.agentString)[1]) < testVersion;
+        },
+
+        isInIE7DocumentMode: function() {
+            return document.documentMode == 7 ? true : false;
         },
 
         hasUrlLimit: function() {

@@ -433,7 +433,7 @@ define('views/shared/timerangepicker/dialog/Relative',
                     cid: this.cid,
                     time: this.model.workingRange.get('relative_earliest_value') || "",
                     rangeMap: this.rangeMap,
-                    selectedRange: this.model.workingRange.get('relative_range_unit') || _("mon").t(),
+                    selectedRange: this.model.workingRange.get('relative_range_unit') || "mon",
                     _: _
                 });
                 this.$el.html(template);
@@ -1674,16 +1674,13 @@ function(
                 'focusout input[type="text"]': 'update_hint'
             },
             update_hint: function(event) {
-                var time = time_utils.stripRTSafe((this.$('input').val() || this.options.blankValue), this.options.isLatest) || 'now',
-                    id = time_utils.stripRTSafe(this.model.timeParser.id, this.options.isLatest);
+                var time = time_utils.stripRTSafe((this.$('input').val() || this.options.blankValue), this.options.isLatest) || 'now';
 
-                if (time !== id) {
-                    this.model.timeParser.fetch({
-                        data: {
-                            time: time_utils.stripRTSafe(time, this.options.isLatest)
-                        }
-                    });                   
-                } 
+                this.model.timeParser.fetch({
+                    data: {
+                        time: time
+                    }
+                });                   
             },
             update_value: function() {
                 var time = this.model.working.get(this.options.modelAttribute) || "";

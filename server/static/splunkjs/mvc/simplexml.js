@@ -165,13 +165,6 @@ define('models/Dashboard',
                 ViewModel.prototype.associatedOff.apply(this, arguments);
                 this.meta.off(e, cb, ctx);
             },
-            get$XML: function() {
-                var data = (this.isXML() && this.entry.content.get('eai:data')) || '<dashboard/>',
-                    xmlDoc = $.parseXML(data);
-                // SPL-68158 Prevent any kind of XSS when modifying XML using jQuery
-                $(xmlDoc).find('script').remove();
-                return $(xmlDoc);
-            },
             set$XML: function($xml) {
                 var raw = xmlUtils.serialize(this.indent ? xmlUtils.formatXMLDocument($xml) : $xml);
                 this.setXML(raw);
@@ -588,7 +581,11 @@ define('splunkjs/mvc/simplexml/controller',['require','models/Dashboard','util/r
             }
 
             this._applyTitle(newNode, settings);
-            this._applySearch(newNode, settings);
+            if (settings.search && settings.search.type === 'global') {
+                this._applyGlobalSearch($xml, settings);
+            } else {
+                this._applySearch(newNode, settings);
+            }
             this._applyOptions(newNode, settings);
             this._applyTags(newNode, settings);
 
@@ -754,6 +751,7 @@ define('splunkjs/mvc/simplexml/controller',['require','models/Dashboard','util/r
                 var titleNode = newNode.find('title');
                 switch(settings.search.type) {
                     case 'inline':
+                    case 'global': // Apply global search as an inline search for flattened XML
                         var searchNode = xmlUtils.$node('<searchString/>').text(settings.search.search);
                         if(titleNode.length) {
                             searchNode.insertAfter(titleNode);
@@ -788,6 +786,27 @@ define('splunkjs/mvc/simplexml/controller',['require','models/Dashboard','util/r
                     default:
                         throw new Error("Unknown search type: " + settings.search.type);
                 }
+            }
+        },
+        _applyGlobalSearch: function($xml, settings) {
+            var root = $xml.find(':eq(0)');
+            root.children('searchTemplate,earliestTime,latestTime').remove();
+            var labelNode = root.children('label');
+            var descNode = root.children('description');
+
+            var searchNode = xmlUtils.$node('<searchTemplate/>').text(settings.search.search);
+            if (descNode.length) {
+                searchNode.insertAfter(descNode);
+            } else if (labelNode.length) {
+                searchNode.insertAfter(labelNode);
+            } else {
+                searchNode.prependTo(root);
+            }
+            if (settings.search.latest_time) {
+                xmlUtils.$node('<latestTime/>').text(settings.search.latest_time).insertAfter(searchNode);
+            }
+            if (settings.search.earliest_time) {
+                xmlUtils.$node('<earliestTime/>').text(settings.search.earliest_time).insertAfter(searchNode);
             }
         },
         _clearEmptyItems: function(itemOrder){
@@ -896,13 +915,13 @@ define('splunkjs/mvc/simplexml/controller',['require','models/Dashboard','util/r
         },
         view: function() {
             console.log('ROUTE: view');
-            this.model.set('edit', false);
             this.page.apply(this, arguments);
+            this.model.set('edit', false);
         },
         edit: function() {
             console.log('ROUTE: edit');
-            this.model.set('edit', true);
             this.page.apply(this, arguments);
+            this.model.set('edit', true);
         },
         rootedView: function(root) {
             this.app.set('root', root);
@@ -3220,16 +3239,64 @@ define('views/shared/vizcontrols/components/XAxis',
             initialize: function(options) {
                 Base.prototype.initialize.apply(this, arguments);
                 var controls = this.vizToGeneralComponents[this.model.get('viz_type')];
-
-                if(_.indexOf(controls, 'title')>-1){ 
+                
+                if (_.indexOf(controls, 'title')>-1) { 
                     this.children.title = new AxisTitleControlGroup({
                         model: this.model,
                         xAxis: true
                     });
                 }
+                if(_.indexOf(controls, 'scale')>-1) {
+                    this.children.scale = new AxisScaleControlGroup({
+                        model: this.model,
+                        className: 'scale control-group',
+                        controlClass: 'controls-halfblock',
+                        xAxis: true
+                    });
+                }
+                if(_.indexOf(controls, 'interval')>-1) {
+                    this.children.interval = new  AxisIntervalControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-block',
+                        xAxis: true
+                    });
+                }    
+                if(_.indexOf(controls, 'min')>-1) {
+                    this.children.min = new AxisMinValueControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-block',
+                        xAxis: true
+                    });
+                }
+                if(_.indexOf(controls, 'max')>-1) {
+                    this.children.max = new AxisMaxValueControlGroup({
+                        model: this.model,
+                        controlClass: 'controls-block',
+                        xAxis: true
+                    });
+                }
+                if(this.model.get('display.visualizations.charting.axisX.scale')=='log') {
+                    this.children.interval.$el.hide();
+                }
+            },
+            events: {
+                'click .scale button': function(e){
+                    this.intervalVal = this.intervalVal || this.model.get('display.visualizations.charting.axisLabelsX.majorUnit');
+                    if(($(e.currentTarget).data('value'))=='log'){
+                        this.children.interval.$el.hide();
+                        this.model.set('display.visualizations.charting.axisLabelsX.majorUnit', '');
+                    } else {   
+                        this.children.interval.$el.show();
+                        this.model.set('display.visualizations.charting.axisLabelsX.majorUnit', this.intervalVal);
+                    }
+                }
             },
             render: function() {
                 this.children.title && this.$el.append(this.children.title.render().el);
+                this.children.scale && this.$el.append(this.children.scale.render().el);
+                this.children.interval && this.$el.append(this.children.interval.render().el);
+                this.children.min && this.$el.append(this.children.min.render().el);
+                this.children.max && this.$el.append(this.children.max.render().el);
                 return this;
             }
         });
@@ -3286,28 +3353,32 @@ define('views/shared/vizcontrols/components/YAxis',
                         xAxis: false
                     });
                 }
-                if(_.indexOf(controls, 'scale')>-1)
+
+                if(_.indexOf(controls, 'scale')>-1) {
                     this.children.scale = new AxisScaleControlGroup({
                         model: this.model,
                         className: 'scale control-group',
                         controlClass: 'controls-halfblock'
                     });
-                if(_.indexOf(controls, 'interval')>-1)
+                }
+                if(_.indexOf(controls, 'interval')>-1) {
                     this.children.interval = new  AxisIntervalControlGroup({
                         model: this.model,
                         controlClass: 'controls-block'
                     });
-                if(_.indexOf(controls, 'min')>-1)
+                }    
+                if(_.indexOf(controls, 'min')>-1) {
                     this.children.min = new AxisMinValueControlGroup({
                         model: this.model,
                         controlClass: 'controls-block'
                     });
-                if(_.indexOf(controls, 'max')>-1)
+                }
+                if(_.indexOf(controls, 'max')>-1) {
                     this.children.max = new AxisMaxValueControlGroup({
                         model: this.model,
                         controlClass: 'controls-block'
                     });
-
+                }
                 if(this.model.get('display.visualizations.charting.axisY.scale')=='log') {
                     this.children.interval.$el.hide();
                 }
@@ -4905,8 +4976,7 @@ define('views/shared/delegates/ModalTimerangePicker',[
             this.$timeRangePicker.hide();
 
         },
-        showTimeRangePicker: function () {
-
+        showTimeRangePicker: function (e) {
             var $from = this.$contentWrapper,
                 $to = this.$timeRangePickerWrapper,
                 anamateDistance = $from.width();
@@ -4947,8 +5017,10 @@ define('views/shared/delegates/ModalTimerangePicker',[
             this.$('.btn.back').show();
             this.$('.btn-primary').hide();
             this.$('.btn.cancel').hide();
+
+            e.preventDefault();
         },
-        closeTimeRangePicker: function () {
+        closeTimeRangePicker: function (e) {
             var $from = this.$timeRangePickerWrapper,
                 $to = this.$contentWrapper,
                 anamateDistance = $to.width();
@@ -4987,6 +5059,8 @@ define('views/shared/delegates/ModalTimerangePicker',[
             this.$('.btn.back').hide();
             this.$('.btn-primary').show();
             this.$('.btn.cancel').show();
+
+            e.preventDefault();
         },
 
         // sets up heights of the 'from' and 'to' elements for a smooth animation
@@ -5524,7 +5598,8 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Step2',
             'views/shared/FlashMessages',
             'splunk.util',
             'uri/route',
-            'util/console'
+            'util/console',
+            'util/pdf_utils'
         ],
         function(
             _,
@@ -5535,13 +5610,17 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Step2',
             FlashMessage,
             splunkUtil,
             route,
-            console
+            console,
+            pdfUtils
         )
         {
         return Base.extend({
             moduleId: module.id,
             initialize: function() {
                 Base.prototype.initialize.apply(this, arguments);
+
+                //deferrs
+                this.deferredPdfAvailable = pdfUtils.isPdfServiceAvailable();
 
                 //views
                 this.children.flashMessage = new FlashMessage({ model: this.model.inmem });
@@ -5588,21 +5667,41 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Step2',
                     help: _('Comma separated list.').t()
                 });
 
-                this.children.emailResultsFormat = new ControlGroup({
-                    controlType: 'SyntheticRadio',
-                    controlOptions: {
-                        modelAttribute: 'ui_include_results',
-                        model: this.model.inmem,
-                        items: [
-                            { label: _('None').t(), value: 'none' },
-                            { label: _('Inline').t(), value: 'inline' },
-                            { label: _('CSV').t(), value: 'csv' },
-                            { label: _('PDF').t(), value: 'pdf' }
-                        ],
-                        elastic: true
-                    },
-                    label: _('Include results').t()
-                });
+                $.when(this.deferredPdfAvailable).then(function(pdfAvailable) {
+                    var formatItems = [
+                        {
+                            label: _('None').t(),
+                            value: 'none'
+                        },
+                        {
+                            label: _('Inline').t(),
+                            value: 'inline'
+                        },
+                        {
+                            label: _('CSV').t(),
+                            value: 'csv'
+                        }
+                    ];
+
+                    if (pdfAvailable) {
+                        formatItems.push({
+                            label: _('PDF').t(),
+                            value: 'pdf'
+                        });
+                    }
+
+                    this.children.emailResultsFormat = new ControlGroup({
+                        controlType: 'SyntheticRadio',
+                        controlOptions: {
+                            modelAttribute: 'ui_include_results',
+                            model: this.model.inmem,
+                            items: formatItems,
+                            elastic: true
+                        },
+                        label: _('Include results').t()
+                    });
+
+                }.bind(this));
 
                 this.children.runScriptBox = new ControlGroup({
                     controlType: 'SyntheticCheckbox',
@@ -5626,6 +5725,7 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Step2',
                 //event listeners
                 this.model.inmem.entry.content.on('change:action.email', this.toggleEmail, this);
                 this.model.inmem.entry.content.on('change:action.script', this.toggleScript, this);
+
             },
             events: {
                 "click .btn-primary" : function(e) {
@@ -5667,42 +5767,46 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Step2',
                 }
             },
             render: function() {
-                this.$el.html(Modal.TEMPLATE);
+                $.when(this.deferredPdfAvailable).then(function() {
+                    this.$el.html(Modal.TEMPLATE);
 
-                this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Schedule").t());
+                    this.$(Modal.HEADER_TITLE_SELECTOR).html(_("Edit Schedule").t());
 
-                this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessage.render().el);
+                    this.$(Modal.BODY_SELECTOR).prepend(this.children.flashMessage.render().el);
 
-                this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL_JUSTIFIED);
+                    this.$(Modal.BODY_SELECTOR).append(Modal.FORM_HORIZONTAL_JUSTIFIED);
 
-                if (this.model.user.isFree()) {
-                    var freeHelpLink = route.docHelp(
-                        this.model.application.get('root'),
-                        this.model.application.get('locale'),
-                        'learnmore.license.features');
-                    this.children.sendEmailBox.disable();
-                    this.children.runScriptBox.disable();
-                    this.$(Modal.BODY_FORM_SELECTOR).append(this.compiledTemplate({
-                        _: _,
-                        splunkUtil: splunkUtil,
-                        link: ' <a href="' + freeHelpLink + '" target="_blank">' + _("Learn More").t() + ' <i class="icon-external"></i></a>'
-                    }));
-                }
+                    if (this.model.user.isFree()) {
+                        var freeHelpLink = route.docHelp(
+                            this.model.application.get('root'),
+                            this.model.application.get('locale'),
+                            'learnmore.license.features');
+                        this.children.sendEmailBox.disable();
+                        this.children.runScriptBox.disable();
+                        this.$(Modal.BODY_FORM_SELECTOR).append(this.compiledTemplate({
+                            _: _,
+                            splunkUtil: splunkUtil,
+                            link: ' <a href="' + freeHelpLink + '" target="_blank">' + _("Learn More").t() + ' <i class="icon-external"></i></a>'
+                        }));
+                    }
 
-                this.$(Modal.BODY_FORM_SELECTOR).append('<p class="control-heading">' + _('Enable Actions').t() + '</p>');
+                    this.$(Modal.BODY_FORM_SELECTOR).append('<p class="control-heading">' + _('Enable Actions').t() + '</p>');
 
-                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.sendEmailBox.render().el);
-                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.emailSubject.render().el);
-                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.emailAddresses.render().el);
-                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.emailResultsFormat.render().el);
-                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.runScriptBox.render().el);
-                this.$(Modal.BODY_FORM_SELECTOR).append(this.children.scriptFilename.render().el);
+                    this.$(Modal.BODY_FORM_SELECTOR).append(this.children.sendEmailBox.render().el);
+                    this.$(Modal.BODY_FORM_SELECTOR).append(this.children.emailSubject.render().el);
+                    this.$(Modal.BODY_FORM_SELECTOR).append(this.children.emailAddresses.render().el);
+                    this.$(Modal.BODY_FORM_SELECTOR).append(this.children.emailResultsFormat.render().el);
+                    this.$(Modal.BODY_FORM_SELECTOR).append(this.children.runScriptBox.render().el);
+                    this.$(Modal.BODY_FORM_SELECTOR).append(this.children.scriptFilename.render().el);
 
-                this.$(Modal.FOOTER_SELECTOR).append('<a href="#" class="btn back pull-left">' + _('Back').t() + '</a>');
-                this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
+                    this.$(Modal.FOOTER_SELECTOR).append('<a href="#" class="btn back pull-left">' + _('Back').t() + '</a>');
+                    this.$(Modal.FOOTER_SELECTOR).append(Modal.BUTTON_SAVE);
 
-                this.toggleEmail();
-                this.toggleScript();
+                    this.toggleEmail();
+                    this.toggleScript();
+                    
+                    return this;
+                }.bind(this));
             },
             template: '\
                 <div class="alert alert-info">\
@@ -5756,7 +5860,7 @@ define('views/shared/reportcontrols/dialogs/schedule_dialog/Master',[
                     report: this.model.report,
                     user: this.model.user,
                     appLocal: this.model.appLocal,
-                    timeRange: new TimeRangeModel(),
+                    timeRange: new TimeRangeModel({enableRealTime:false}),
                     inmem: this.model.report.clone(),
                     cron: Cron.createFromCronString(this.model.report.entry.content.get('cron_schedule') || '0 6 * * 1')
                 };
@@ -6283,35 +6387,36 @@ define('views/shared/documentcontrols/dialogs/permissions_dialog/ACL',[
                 this.toggleEveryone('write');
             }, this);
         },
-        appendRow: function(roleName, className) {
+        appendRow: function(role) {
+            var className = role !== "Everyone" ? 'role' : '';
             this.$('tbody').append(
-                '<tr class="'+ roleName + '">\
-                    <td class="role-name">' + roleName + '</td>\
-                    <td class="perms-read ' + roleName + '-checkbox"></td>\
-                    <td class="perms-write ' + roleName + '-checkbox"></td>\
+                '<tr class="'+ role + '">\
+                    <td class="role-name">' + _.escape(this.model.perms.get(role + '.name')) + '</td>\
+                    <td class="perms-read ' + role + '-checkbox"></td>\
+                    <td class="perms-write ' + role + '-checkbox"></td>\
                 </tr>'
             );
             this.children.readCheckbox = new SyntheticCheckboxControl({
-                modelAttribute: roleName +'.read',
+                modelAttribute: role +'.read',
                 model: this.model.perms,
-                checkboxClassName: className + " " + roleName + " read btn"
+                checkboxClassName: className + " read btn"
             });
             this.children.writeCheckbox = new SyntheticCheckboxControl({
-                modelAttribute: roleName + '.write',
+                modelAttribute: role + '.write',
                 model: this.model.perms,
-                checkboxClassName: className + " " + roleName + " write btn"
+                checkboxClassName: className + " write btn"
             });
 
-            this.$('td.perms-read.'+ roleName + '-checkbox').append(this.children.readCheckbox.render().el);
-            this.$('td.perms-write.'+ roleName + '-checkbox').append(this.children.writeCheckbox.render().el);
+            this.$('td.perms-read.'+ role + '-checkbox').append(this.children.readCheckbox.render().el);
+            this.$('td.perms-write.'+ role + '-checkbox').append(this.children.writeCheckbox.render().el);
 
-            this.children.read.children[roleName ] = this.children.readCheckbox;
-            this.children.write.children[roleName] = this.children.writeCheckbox;
+            this.children.read.children[role] = this.children.readCheckbox;
+            this.children.write.children[role] = this.children.writeCheckbox;
         },
         toggleEveryone: function(col) {
             var everyoneChecked = this.model.perms.get('Everyone.' + col),
-                view = this.children[col];
-            _.each(view.children, function(checkbox, role) {
+                checkboxes = this.children[col];
+            _.each(checkboxes.children, function(checkbox, role) {
                 if (role !== 'Everyone') {
                     if (everyoneChecked) {
                         checkbox.disable();
@@ -6326,10 +6431,13 @@ define('views/shared/documentcontrols/dialogs/permissions_dialog/ACL',[
                 _: _
             }));
 
-            this.appendRow(_("Everyone").t());
-
-            this.collection.each(function(roleModel) {
-                this.appendRow(roleModel.entry.get("name"), 'role');
+            _(this.model.perms.toJSON()).each(function(value, key){
+                var splitKey = key.split('.'),
+                    role = splitKey[0],
+                    type = splitKey[1];
+                if (type === 'name') {
+                    this.appendRow(role);
+                }
             }.bind(this));
 
             this.toggleEveryone('read');
@@ -6358,6 +6466,7 @@ define('views/shared/documentcontrols/dialogs/permissions_dialog/Master',[
     'underscore',
     'backbone',
     'module',
+    'models/Base',
     'models/ACLReadOnly',
     'views/shared/Modal',
     'views/shared/controls/ControlGroup',
@@ -6370,6 +6479,7 @@ define('views/shared/documentcontrols/dialogs/permissions_dialog/Master',[
         _,
         Backbone,
         module,
+        BaseModel,
         ACLReadOnlyModel,
         Modal,
         ControlGroup,
@@ -6394,7 +6504,7 @@ define('views/shared/documentcontrols/dialogs/permissions_dialog/Master',[
         initialize: function(options) {
             Modal.prototype.initialize.apply(this, arguments);
 
-            this.model.perms = new Backbone.Model();
+            this.model.perms = new BaseModel();
             this.model.inmem = new ACLReadOnlyModel($.extend(true, {}, this.model.document.entry.acl.toJSON()));
 
             var defaults = {
@@ -6511,15 +6621,20 @@ define('views/shared/documentcontrols/dialogs/permissions_dialog/Master',[
             }
         }),
         translateToPermsModel: function() {
-            var perms = this.model.inmem.get('perms') || {};
+            var perms = this.model.inmem.permsToObj();
 
+            // add 'Everyone' attributes
+            this.model.perms.set('Everyone.name', _('Everyone').t());
             this.model.perms.set('Everyone.read', _.indexOf(perms.read, '*')!=-1);
             this.model.perms.set('Everyone.write', _.indexOf(perms.write, '*')!=-1);
-            this.collection.each(function(roleModel){
-                var roleName = roleModel.entry.get("name");
-                this.model.perms.set(roleName + '.read', _.indexOf(perms.read, roleName)!=-1);
-                this.model.perms.set(roleName + '.write', _.indexOf(perms.write, roleName)!=-1);
-            }.bind(this));
+
+            // add 'name', 'read' and 'write' attributes for each role
+            this.collection.each(function(roleModel, i){
+                var roleName = roleModel.entry.get("name"), j = i + 1;
+                this.model.perms.set('role_' + j + '.name', roleName);
+                this.model.perms.set('role_' + j + '.read', _.indexOf(perms.read, roleName)!=-1);
+                this.model.perms.set('role_' + j + '.write', _.indexOf(perms.write, roleName)!=-1);
+            }, this);
         },
         translateFromPermsModel: function() {
             var perms = {
@@ -6527,20 +6642,19 @@ define('views/shared/documentcontrols/dialogs/permissions_dialog/Master',[
                 write: []
             };
 
-            if (this.model.perms.get('Everyone.read')) {
-                perms.read.push('*');
-            }
-            if (this.model.perms.get('Everyone.write')) {
-                perms.write.push('*');
-            }
-
-            this.collection.each(function(roleModel){
-                var role = roleModel.entry.get("name");
-                if (this.model.perms.get(role +'.read')) {
-                    perms.read.push(role);
-                }
-                if (this.model.perms.get(role +'.write')) {
-                    perms.write.push(role);
+            _(this.model.perms.toJSON()).each(function(value, key){
+                var splitKey = key.split('.'),
+                    role = splitKey[0],
+                    type = splitKey[1];
+                if (type === 'read' || type === 'write') {
+                    if (value) {
+                        // can read or write
+                        if(role === 'Everyone') {
+                            perms[type].push('*');
+                        } else {
+                            perms[type].push(this.model.perms.get(role + '.name'));
+                        }
+                    }
                 }
             }.bind(this));
 
@@ -7672,13 +7786,15 @@ define('views/shared/dialogs/DialogBase',
                 this.$(".modal-footer").detach();
 
                 var html = this.compiledTemplate({
-                    bodyClassName:this.bodyClassName});
+                    bodyClassName:this.bodyClassName,
+                    showFooter: this.shouldRenderFooter()});
 
                 this.$el.html(html);
 
                 this.renderHeader(this.$(".modal-header"));
                 this.renderBody(this.$(".modal-body"));
-                this.renderFooter(this.$(".modal-footer"));
+                if (this.shouldRenderFooter())
+                    this.renderFooter(this.$(".modal-footer"));
 
                 return this;
             },
@@ -7741,6 +7857,13 @@ define('views/shared/dialogs/DialogBase',
                 return;
             },
             /**
+             * Returns true if we should render the footer
+             * @return {boolean}
+             */
+            shouldRenderFooter: function() {
+                return this.settings.has("primaryButtonLabel") || this.settings.has("cancelButtonLabel");
+            },
+            /**
              * Render the dialog body. Subclasses should override this function
              *
              * @param $el The jQuery DOM object of the body
@@ -7801,7 +7924,9 @@ define('views/shared/dialogs/DialogBase',
             template: '\
                 <div class="modal-header"></div>\
                 <div class="modal-body <%- bodyClassName %>"></div>\
-                <div class="modal-footer"></div>\
+                <% if (showFooter) { %>\
+                    <div class="modal-footer"></div>\
+                <% } %>\
             ',
             _footerTemplate: '\
                 <a href="#" class="btn btn-dialog-cancel label_from_data pull-left" data-dismiss="modal"></a>\
@@ -7909,7 +8034,8 @@ define('views/dashboards/panelcontrols/Master',[
     'uri/route',
     'util/console', 
     'splunk.util',
-    'views/shared/dialogs/TextDialog'
+    'views/shared/dialogs/TextDialog',
+    'bootstrap.tooltip'
 ],
 function(_,
          BaseView,
@@ -7926,9 +8052,10 @@ function(_,
          ReportDialog,
          CreateReportDialog,
          route,
-         console, 
-         splunkUtils, 
-         TextDialog
+         console,
+         splunkUtils,
+         TextDialog,
+         _bootstrapTooltip
     ){
 
     var PanelControls = BaseView.extend({
@@ -7959,6 +8086,9 @@ function(_,
         },
         onChangeSearchString: function(e) {
             e.preventDefault();
+            if ($(e.currentTarget).is('.disabled')) {
+                return;
+            }
             this.children.queryDialogModal = new QueryDialogModal({
                 model:  {
                     report: this.model.report,
@@ -8018,8 +8148,20 @@ function(_,
                 this.$('.panel_actions').prepend('<li><a href="#" class="changeElementTitle">'+_("Edit Title").t()+'</a></li>');
             }
             else {
-                this.$('.panel_actions').prepend($('<li><a class="convertToReport" href="#">'+_("Convert to Report").t()+'</a></li>'));
-                this.$('.panel_actions').prepend('<li><a href="#" class="changeSearchString">'+_("Edit Search String").t()+'</a></li>');
+                var convertToReportItem = $('<li><a class="convertToReport" href="#">' + _("Convert to Report").t() + '</a></li>');
+                var editSearchItem = $('<li><a href="#" class="changeSearchString">' + _("Edit Search String").t() + '</a></li>');
+                if (this.model.report.entry.content.get('display.general.search.type') === 'global') {
+                    convertToReportItem.find('a').addClass('disabled').tooltip({
+                        animation: false,
+                        title: _("Cannot convert global search to report.").t()
+                    });
+                    editSearchItem.find('a').addClass('disabled').tooltip({
+                        animation: false,
+                        title: _("Cannot edit global search.").t()
+                    });
+                }
+                this.$('.panel_actions').prepend(convertToReportItem);
+                this.$('.panel_actions').prepend(editSearchItem);
                 this.$('.panel_actions').prepend('<li><a href="#" class="changeElementTitle">'+_("Edit Title").t()+'</a></li>');
                 this.$('.panel_actions').prepend(panelTypeLI);
             }
@@ -8234,6 +8376,9 @@ function(_,
         },
         convertToReport: function(e){
             e.preventDefault();
+            if ($(e.currentTarget).is('.disabled')) {
+                return;
+            }
             this.children.createReportDialog = new CreateReportDialog({
                 model:  {
                     report: this.model.report, 
@@ -8736,6 +8881,8 @@ define('splunkjs/mvc/simplexml/element/base',['require','underscore','jquery','b
                     if (manager instanceof PostProcessSearchManager) {
                         searchType = 'postprocess';
                         that.model.entry.content.set('fullSearch', manager.query.resolve());
+                    } else if (manager.has('metadata') && manager.get('metadata').global) {
+                        searchType = 'global';
                     }
                     that.model.entry.content.set('display.general.search.type', searchType);
                     that.model.entry.content.set({
@@ -11359,7 +11506,7 @@ define('splunkjs/mvc/simplexml/editdashboard/editmenu',
                     dialog.settings.set("cancelButtonLabel",_("Cancel").t());
                     dialog.settings.set("titleLabel",_("Delete").t());
                     dialog.setText(splunkUtils.sprintf(_("Are you sure you want to delete %s?").t(), 
-                        '<em>' + (this.model.state.get('label') !== "" ? this.model.state.get('label') : this.model.dashboard.entry.get('name')) + '</em>'));
+                        '<em>' + _.escape(this.model.state.get('label') !== "" ? this.model.state.get('label') : this.model.dashboard.entry.get('name')) + '</em>'));
                     dialog.render().appendTo(document.body);
 
                     dialog.once('click:primaryButton', function(){

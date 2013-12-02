@@ -112,6 +112,7 @@ STATICFILES_DIRS = (
 )
 
 SESSION_ENGINE='django.contrib.sessions.backends.signed_cookies'
+SESSION_SERIALIZER='django.contrib.sessions.serializers.JSONSerializer'
 
 # List of finder classes that know how to find static files in
 # various locations.
@@ -136,9 +137,10 @@ TEMPLATE_LOADERS = (
 
 MIDDLEWARE_CLASSES = (
     'splunkdj.middlewares.SplunkDjangoRequestLoggingMiddleware',
-    'splunkdj.middlewares.SplunkResolvedUrlMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'splunkdj.middlewares.SplunkLocaleMiddleware',
+    # NOTE: Middleware which calls resolve/reverse must come after this comment!
+    'splunkdj.middlewares.SplunkResolvedUrlMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'splunkdj.middlewares.SplunkWebSessionMiddleware',

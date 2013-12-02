@@ -273,6 +273,7 @@ class DjangoTestSuiteRunner(object):
         mirrored_aliases = {}
         test_databases = {}
         dependencies = {}
+        default_sig = connections[DEFAULT_DB_ALIAS].creation.test_db_signature()
         for alias in connections:
             connection = connections[alias]
             if connection.settings_dict['TEST_MIRROR']:
@@ -294,7 +295,7 @@ class DjangoTestSuiteRunner(object):
                     dependencies[alias] = (
                         connection.settings_dict['TEST_DEPENDENCIES'])
                 else:
-                    if alias != DEFAULT_DB_ALIAS:
+                    if alias != DEFAULT_DB_ALIAS and connection.creation.test_db_signature() != default_sig:
                         dependencies[alias] = connection.settings_dict.get(
                             'TEST_DEPENDENCIES', [DEFAULT_DB_ALIAS])
 
@@ -309,12 +310,14 @@ class DjangoTestSuiteRunner(object):
 
             for alias in aliases:
                 connection = connections[alias]
-                old_names.append((connection, db_name, True))
                 if test_db_name is None:
                     test_db_name = connection.creation.create_test_db(
                             self.verbosity, autoclobber=not self.interactive)
+                    destroy = True
                 else:
                     connection.settings_dict['NAME'] = test_db_name
+                    destroy = False
+                old_names.append((connection, db_name, destroy))
 
         for alias, mirror_alias in mirrored_aliases.items():
             mirrors.append((alias, connections[alias].settings_dict['NAME']))

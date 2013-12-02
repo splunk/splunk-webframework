@@ -68,10 +68,26 @@ class QuerySet(object):
         """
         # Force the cache to be fully populated.
         len(self)
-
         obj_dict = self.__dict__.copy()
         obj_dict['_iter'] = None
+        obj_dict['_known_related_objects'] = dict(
+            (field.name, val) for field, val in self._known_related_objects.items()
+        )
         return obj_dict
+
+    def __setstate__(self, obj_dict):
+        model = obj_dict['model']
+        if model is None:
+            # if model is None, then self should be emptyqs and the related
+            # objects do not matter.
+            obj_dict['_known_related_objects'] = {}
+        else:
+            opts = model._meta
+            obj_dict['_known_related_objects'] = dict(
+                (opts.get_field(field.name if hasattr(field, 'name') else field), val)
+                for field, val in obj_dict['_known_related_objects'].items()
+            )
+        self.__dict__.update(obj_dict)
 
     def __repr__(self):
         data = list(self[:REPR_OUTPUT_SIZE + 1])
@@ -384,13 +400,11 @@ class QuerySet(object):
             return clone._result_cache[0]
         if not num:
             raise self.model.DoesNotExist(
-                "%s matching query does not exist. "
-                "Lookup parameters were %s" %
-                (self.model._meta.object_name, kwargs))
+                "%s matching query does not exist." %
+                self.model._meta.object_name)
         raise self.model.MultipleObjectsReturned(
-            "get() returned more than one %s -- it returned %s! "
-            "Lookup parameters were %s" %
-            (self.model._meta.object_name, num, kwargs))
+            "get() returned more than one %s -- it returned %s!" %
+            (self.model._meta.object_name, num))
 
     def create(self, **kwargs):
         """
@@ -1699,8 +1713,18 @@ def prefetch_related_objects(result_cache, related_lookups):
             if len(obj_list) == 0:
                 break
 
+            current_lookup = LOOKUP_SEP.join(attrs[0:level+1])
+            if current_lookup in done_queries:
+                # Skip any prefetching, and any object preparation
+                obj_list = done_queries[current_lookup]
+                continue
+
+            # Prepare objects:
             good_objects = True
             for obj in obj_list:
+                # Since prefetching can re-use instances, it is possible to have
+                # the same instance multiple times in obj_list, so obj might
+                # already be prepared.
                 if not hasattr(obj, '_prefetched_objects_cache'):
                     try:
                         obj._prefetched_objects_cache = {}
@@ -1711,9 +1735,6 @@ def prefetch_related_objects(result_cache, related_lookups):
                         # now.
                         good_objects = False
                         break
-                else:
-                    # We already did this list
-                    break
             if not good_objects:
                 break
 
@@ -1738,23 +1759,18 @@ def prefetch_related_objects(result_cache, related_lookups):
                                  "prefetch_related()." % lookup)
 
             if prefetcher is not None and not is_fetched:
-                # Check we didn't do this already
-                current_lookup = LOOKUP_SEP.join(attrs[0:level+1])
-                if current_lookup in done_queries:
-                    obj_list = done_queries[current_lookup]
-                else:
-                    obj_list, additional_prl = prefetch_one_level(obj_list, prefetcher, attr)
-                    # We need to ensure we don't keep adding lookups from the
-                    # same relationships to stop infinite recursion. So, if we
-                    # are already on an automatically added lookup, don't add
-                    # the new lookups from relationships we've seen already.
-                    if not (lookup in auto_lookups and
-                            descriptor in followed_descriptors):
-                        for f in additional_prl:
-                            new_prl = LOOKUP_SEP.join([current_lookup, f])
-                            auto_lookups.append(new_prl)
-                        done_queries[current_lookup] = obj_list
-                    followed_descriptors.add(descriptor)
+                obj_list, additional_prl = prefetch_one_level(obj_list, prefetcher, attr)
+                # We need to ensure we don't keep adding lookups from the
+                # same relationships to stop infinite recursion. So, if we
+                # are already on an automatically added lookup, don't add
+                # the new lookups from relationships we've seen already.
+                if not (lookup in auto_lookups and
+                        descriptor in followed_descriptors):
+                    for f in additional_prl:
+                        new_prl = LOOKUP_SEP.join([current_lookup, f])
+                        auto_lookups.append(new_prl)
+                    done_queries[current_lookup] = obj_list
+                followed_descriptors.add(descriptor)
             else:
                 # Either a singly related object that has already been fetched
                 # (e.g. via select_related), or hopefully some other property
