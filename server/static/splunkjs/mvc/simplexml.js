@@ -384,7 +384,7 @@ define('models/Dashboard',
                     xml = $.parseXML(eaiData);
 
                     dashboard = xml.firstChild;
-                    if (dashboard.nodeName !== 'dashboard' && dashboard.nodeName !== 'form'){
+                    if (dashboard.nodeName !== 'dashboards' && dashboard.nodeName !== 'form'){
                         return {
                             'eai:data': "You must declare a dashboard node."
                         };
@@ -3499,12 +3499,31 @@ define('views/shared/vizcontrols/components/color/ColorPicker',
         'views/shared/PopTart'
     ],
     function(_, $, module, PopTart){
+
+        var COLORS = [
+            '#7e9f44',
+            '#ebe42d',
+            '#d13b3b',
+            '#6cb8ca',
+            '#f7912c',
+            '#956e96',
+            '#c2da8a',
+            '#fac61d',
+            '#ebb7d0',
+            '#324969',
+            '#d85e3d',
+            '#a04558'
+        ];
+
         return PopTart.extend({
             moduleId: module.id,
             className: 'popdown-dialog color-picker-container',
             initialize: function() {
                 PopTart.prototype.initialize.apply(this, arguments);
                 this.clone = this.model.clone();
+                this.on('shown', function() {
+                    this.$('.swatch').first().focus();
+                });
             },
             events: {
                 'click .swatch': function(e) {
@@ -3543,24 +3562,18 @@ define('views/shared/vizcontrols/components/color/ColorPicker',
                 this.$('.popdown-dialog-body').addClass('color-picker-content');
                 var $rangePickerContent = $('<div class="clearfix"></div>').appendTo(this.$('.popdown-dialog-body'));
                 $rangePickerContent.append(this.compiledTemplate({
-                    model: this.clone
+                    model: this.clone,
+                    colors: COLORS
                 }));
             },
             template: '\
                 <div class="swatches">\
                     <ul class="swatch-holder unstyled">\
-                        <li class="swatch" data-color="#7e9f44" style="background-color: #7e9f44"></li>\
-                        <li class="swatch" data-color="#ebe42d" style="background-color: #ebe42d"></li>\
-                        <li class="swatch" data-color="#d13b3b" style="background-color: #d13b3b"></li>\
-                        <li class="swatch" data-color="#6cb8ca" style="background-color: #6cb8ca"></li>\
-                        <li class="swatch" data-color="#f7912c" style="background-color: #f7912c"></li>\
-                        <li class="swatch" data-color="#956e96" style="background-color: #956e96"></li>\
-                        <li class="swatch" data-color="#c2da8a" style="background-color: #c2da8a"></li>\
-                        <li class="swatch" data-color="#fac61d" style="background-color: #fac61d"></li>\
-                        <li class="swatch" data-color="#ebb7d0" style="background-color: #ebb7d0"></li>\
-                        <li class="swatch" data-color="#324969" style="background-color: #324969"></li>\
-                        <li class="swatch" data-color="#d85e3d" style="background-color: #d85e3d"></li>\
-                        <li class="swatch" data-color="#a04558" style="background-color: #a04558"></li>\
+                        <% _(colors).each(function(color) { %>\
+                            <li>\
+                                <a href="#" class="swatch" data-color="<%= color %>" style="background-color: <%= color %>"></a>\
+                            </li>\
+                        <% }) %>\
                     </ul>\
                 </div>\
                 <div class="big-swatch" data-color="<%- model.get("color").substring(2) %>" style="background-color: #<%- model.get("color").substring(2) %>;"></div>\
@@ -3573,8 +3586,8 @@ define('views/shared/vizcontrols/components/color/ColorPicker',
             ',
             _buttonTemplate: '\
                 <div class="color-picker-buttons clearfix">\
-                    <a class="color-picker-cancel btn pull-left">'+_("Cancel").t()+'</a>\
-                    <a class="color-picker-apply btn btn-primary pull-right"> '+_("Apply").t()+'</a>\
+                    <a href="#" class="color-picker-cancel btn pull-left">'+_("Cancel").t()+'</a>\
+                    <a href="#" class="color-picker-apply btn btn-primary pull-right"> '+_("Apply").t()+'</a>\
                 </div>\
             '
         });
@@ -3707,7 +3720,7 @@ define('views/shared/vizcontrols/components/color/Ranges',
                                 <div class="input-append">\
                                     <input  class="first-row-upper range-value" value="<%- collection.at(1).get("value") %>" data-index=1 type="text">\
                                     <div class="add-on color-picker-add-on">\
-                                        <div class="color-square" style="border-color: #<%- collection.at(1).get("shadedcolor")%>; background-color: #<%- collection.at(1).get("color").substring(2) %>;"></div>\
+                                        <a href="#" class="color-square" style="border-color: #<%- collection.at(1).get("shadedcolor")%>; background-color: #<%- collection.at(1).get("color").substring(2) %>;"></a>\
                                     </div>\
                                 </div>\
                             </div>\
@@ -3721,9 +3734,9 @@ define('views/shared/vizcontrols/components/color/Ranges',
                                     <div class="controls input-append">\
                                         <input  class="range-value" value="<%- model.get("value") %>" data-index=<%-i%> type="text">\
                                         <div class="add-on color-picker-add-on">\
-                                            <div class="color-square" style="border-color: #<%- model.get("shadedcolor")%>; background-color: #<%- model.get("color").substring(2) %>;"></div>\
+                                            <a href="#" class="color-square" style="border-color: #<%- model.get("shadedcolor")%>; background-color: #<%- model.get("color").substring(2) %>;"></a>\
                                         </div>\
-                                        <a class="remove-range btn-link"><i class="icon-x-circle"></i></a>\
+                                        <a class="remove-range btn-link" href="#"><i class="icon-x-circle"></i></a>\
                                     </div>\
                                 </div>\
                             </div>\
@@ -3936,41 +3949,44 @@ define('views/shared/vizcontrols/Format',
                 this.children.visualizationControls = new Component({
                     model: this.model.visualization
                 });
-                $(window).on('keydown.' + this.cid, this.windowKeydown.bind(this));
             },
             events: {
                 'click .viz-editor-apply': function(e) {
-                    this.model.visualization.validate();
-                    if(this.model.visualization.isValid()) {
-                        this.model.report.entry.content.set($.extend({}, this.model.visualization.toJSON()));
-                        if(this.options.saveOnApply) {
-                            this.model.report.save();
-                        }
-                        this.hide();
-                    }
                     e.preventDefault();
+                    this.applyChanges(); 
                 },
                 'click .viz-editor-cancel': function(e) {
                     this.hide();
                     e.preventDefault();
+                },
+                'keypress .viz-editor-apply': function(e) {
+                    e.preventDefault();
+                    this.applyChanges(); 
+                },
+                'keypress .viz-editor-cancel': function(e) {
+                    this.hide();
+                    e.preventDefault();
+                },
+                'keypress input:text': function(e) {
+                    var enterKeyCode = 13,
+                        $target = $(e.target);
+
+                    if(e.keyCode == enterKeyCode) {
+                        $target.blur();
+                        e.preventDefault();
+                        this.applyChanges();
+                    }
                 }
             },
-            windowKeydown: function (e) {
-                var escapeKeyCode = 27,
-                    enterKeyCode = 13;
-                
-                if (e.keyCode == escapeKeyCode)  {
-                    $('.viz-editor-cancel').click(); 
+            applyChanges: function() {
+                this.model.visualization.validate();
+                if(this.model.visualization.isValid()) {
+                    this.model.report.entry.content.set($.extend({}, this.model.visualization.toJSON()));
+                    if(this.options.saveOnApply) {
+                        this.model.report.save();
+                    }
+                    this.hide();
                 }
-                
-                if (e.keyCode == enterKeyCode)  {
-                    $('.viz-editor-apply').click(); 
-                }
-            },
-            remove: function() {
-                $(window).off('keydown.' + this.cid);
-                PopTart.prototype.remove.apply(this, arguments);
-                return this;
             },
             render: function() {
                 this.$el.html(PopTart.prototype.template);
@@ -3981,8 +3997,8 @@ define('views/shared/vizcontrols/Format',
                 return this;
             },
             template: '\
-                    <a class="viz-editor-cancel btn pull-left">'+_("Cancel").t()+'</a>\
-                    <a class="viz-editor-apply btn btn-primary pull-right"> '+_("Apply").t()+'</a>\
+                    <a class="viz-editor-cancel btn pull-left" tabindex="0">'+_("Cancel").t()+'</a>\
+                    <a class="viz-editor-apply btn btn-primary pull-right" tabindex="0"> '+_("Apply").t()+'</a>\
             '
         });
     }
@@ -3999,6 +4015,13 @@ define('models/Visualization',
         return BaseModel.extend({
             initialize: function() {
                 BaseModel.prototype.initialize.apply(this, arguments);
+                // SPL-77030, if a line chart is set to log scale on the y-axis, clear any stack mode
+                this.on('change:display.visualizations.charting.axisY.scale', function() {
+                    if(this.get('display.visualizations.charting.chart') === 'line'
+                                && this.get('display.visualizations.charting.axisY.scale') === 'log') {
+                        this.set({ 'display.visualizations.charting.chart.stackMode': 'default' });
+                    }
+                }, this);
             },
             components: {
                 'single': ['gen'],
@@ -4144,6 +4167,10 @@ define('models/Visualization',
             },
 
             validateYScaleAndStacking: function(value, attr, computedState) {
+                // SPL-77030, since line charts ignore stack mode, this validation rule does not apply
+                if(computedState['display.visualizations.charting.chart'] === 'line') {
+                    return false;
+                }
                 var yAxisScale = attr === 'display.visualizations.charting.axisY.scale' ? value :
                                                 computedState['display.visualizations.charting.axisY.scale'],
                     stackMode = attr === 'display.visualizations.charting.chart.stackMode' ? value :
@@ -5018,7 +5045,9 @@ define('views/shared/delegates/ModalTimerangePicker',[
             this.$('.btn-primary').hide();
             this.$('.btn.cancel').hide();
 
-            e.preventDefault();
+            if (e) {
+                e.preventDefault();
+            }
         },
         closeTimeRangePicker: function (e) {
             var $from = this.$timeRangePickerWrapper,
@@ -5060,7 +5089,9 @@ define('views/shared/delegates/ModalTimerangePicker',[
             this.$('.btn-primary').show();
             this.$('.btn.cancel').show();
 
-            e.preventDefault();
+            if (e) {
+                e.preventDefault();
+            }
         },
 
         // sets up heights of the 'from' and 'to' elements for a smooth animation
@@ -7830,13 +7861,15 @@ define('views/shared/dialogs/DialogBase',
              */
             submitKeyPressed: function(event) {
                 var $target = $(event.target);
+                // Only simulate a primaryButtonClick if focus is in a Text input.
                 // if the currently focused element is any kind of text input,
                 // make sure to blur it so that any change listeners are notified
                 if($target.is(TEXT_INPUT_SELECTOR)) {
                     $target.blur();
+                    // manually trigger the primary button click handler
+                    this.primaryButtonClicked();
                 }
-                // manually trigger the primary button click handler
-                this.primaryButtonClicked();
+
             },
             /**
              * Called when the dialog has been shown. Subclasses can override with their own handlers
@@ -9816,10 +9849,10 @@ define('splunkjs/mvc/simpleform/input/base',['require','underscore','jquery','..
             var value = this.settings.get("value");
             var defaultValue = this.settings.get("default");
             // We have a value if one of these conditions is true:
-            // 1. Value is truth-y
+            // 1. Value is not null nor undefined
             // 2. We have no default value
             // 3. Our value and default value are the same
-            return value || defaultValue === undefined || value === defaultValue;
+            return (value !== undefined && value !== null) || defaultValue === undefined || value === defaultValue;
         },
         setValue: function(v) {
             throw 'setValue not implemented';
@@ -10711,8 +10744,6 @@ function($, _, Backbone, SplunkDBase, BaseModel, Val){
         defaults: {
             'is_scheduled': false,
             'action.email.subject': 'Splunk Alert: $name$',
-            'action.email.papersize': 'letter',
-            'action.email.paperorientation': 'portrait',
             'cron_schedule': '0 6 * * 1'
         },
         initialize: function() {
@@ -10828,7 +10859,25 @@ define('views/dashboards/table/controls/SchedulePDF',
             initialize: function() {
                 Modal.prototype.initialize.apply(this, arguments);
 
+
                 this.model.inmem = new ScheduledViewModel.Entry.Content(this.model.scheduledView.entry.content.toJSON());
+                // default come froma different model.  Since this is async, we should only do as needed
+                if (!this.model.inmem.get('action.email.papersize')){
+                    pdfUtils.getEmailAlertSettings().done(_.bind(function(emailSettings) {
+                        // Since async souble check that user hasn't set this yet
+                        if (!this.model.inmem.get('action.email.papersize')){
+                            this.model.inmem.set('action.email.papersize', emailSettings.entry.content.get('reportPaperSize'));
+                        }
+                    }, this));
+                }
+                if (!this.model.inmem.get('action.email.paperorientation')){
+                    pdfUtils.getEmailAlertSettings().done(_.bind(function(emailSettings) {
+                        // Since async souble check that user hasn't set this yet
+                        if (!this.model.inmem.get('action.email.paperorientation')){
+                            this.model.inmem.set('action.email.paperorientation', emailSettings.entry.content.get('reportPaperOrientation'));
+                        }
+                    }, this));
+                }
                  var cronModel = this.model.cron = Cron.createFromCronString(this.model.inmem.get('cron_schedule') || '0 6 * * 1');
                  this.listenTo(cronModel, 'change', function(){
                      this.model.inmem.set('cron_schedule', cronModel.getCronString());
@@ -13085,6 +13134,16 @@ define('splunkjs/mvc/simpleform/input/text',['require','underscore','jquery','./
                 'change input': 'handleChange',
                 'keyup input': 'checkEnterKey'
             });
+        },
+        hasValue: function() {
+            var value = this.settings.get("value");
+            var defaultValue = this.settings.get("default");
+            // We have a value if one of these conditions is true:
+            // 1. Value is not null/undefined nor an empty string
+            // 2. We have no default value
+            // 3. Our value and default value are the same
+            return (value !== undefined && value !== null && value !== '') ||
+                defaultValue === undefined || value === defaultValue;
         },
         getValue: function() {
             return this.textbox.val();

@@ -192,7 +192,7 @@ define('views/shared/footer/Master',[
                         applicationDfd.done(function() {
                             if (options.model.application.get("app") !== 'system') {
                                 options.model.appLocal.fetch({
-                                    url: splunkDUtils.fullpath(options.model.appLocal.url + "/" + options.model.application.get("app")),
+                                    url: splunkDUtils.fullpath(options.model.appLocal.url + "/" + encodeURIComponent(options.model.application.get("app"))),
                                     data: {
                                         app: options.model.application.get("app"),
                                         owner: options.model.application.get("owner")

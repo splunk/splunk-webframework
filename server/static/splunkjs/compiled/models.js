@@ -559,6 +559,7 @@ define('models/services/data/ui/WorkflowAction',
         'models/SplunkDBase'
     ],
     function(Backbone, _, SplunkDBaseModel) {
+        var RAW_REX = /\$_raw\$/g;
         return SplunkDBaseModel.extend({
             url: "data/ui/workflow-actions",
             initialize: function() {
@@ -572,7 +573,9 @@ define('models/services/data/ui/WorkflowAction',
                         interpolate : /\$([\s\S]+?)\$/g 
                     },
                     $matches$ = text.match(settings.interpolate);
-
+                
+                text = this.convertRaw(text, data);
+                    
                 //underscore templates will raise if the value to be replaced
                 //is undefined.  Like 5.0, we will strip out $ delimited values
                 //if they do not exist in event.  
@@ -601,7 +604,20 @@ define('models/services/data/ui/WorkflowAction',
                         field_name: fieldName,
                         field_value: fieldValue
                     };
+
                 return _.template(text, data, settings);
+            },
+            convertRaw: function(text, data) {
+                /*
+                 * SPL-77129, when we request results with segmentation the 
+                 * _raw field is returned as an object.  Ensure that we 
+                 * replace _raw with the _raw string before passing to the template.
+                 */
+                 if(RAW_REX.test(text) && !_(data._raw).isArray()) {
+                    return text.replace(RAW_REX, data._raw.value);
+                 }
+                
+                return text;
             },
             isInFieldMenu: function() {
                 return (this.entry.content.get('display_location') != 'event_menu');
@@ -1092,7 +1108,7 @@ define('models/services/search/Job',
                     // need an id so that in case of an empty response we don't blow up
                     rootModel.set('id', createModel.get('sid'));
                     fetchModel.fetch({
-                        url: url + "/" + createModel.get("sid"),
+                        url: url + "/" + encodeURIComponent(createModel.get("sid")),
                         data: {
                             output_mode: "json"
                         },
@@ -1140,7 +1156,7 @@ define('models/services/search/Job',
                 });
             }
 
-            defaults.url = splunkd_utils.fullpath(model.url + "/" + model.id, app_and_owner);
+            defaults.url = splunkd_utils.fullpath(model.url + "/" + encodeURIComponent(model.id), app_and_owner);
             $.extend(true, defaults, options || {});
             
             delete defaults.data.app;
@@ -1165,7 +1181,7 @@ define('models/services/search/Job',
             //append the values from the entry.content.custom model
             $.extend(true, defaults.data, customAttrs || {});
 
-            defaults.url = splunkd_utils.fullpath(model.url + "/" + model.id, app_and_owner);
+            defaults.url = splunkd_utils.fullpath(model.url + "/" + encodeURIComponent(model.id), app_and_owner);
             defaults.processData = true;
             defaults.type = 'POST';
             
@@ -1179,7 +1195,7 @@ define('models/services/search/Job',
         },
         syncDelete = function(model, options){
             var defaults = {data: {output_mode: 'json'}},
-                url = model.url + "/" + model.id;
+                url = model.url + "/" + encodeURIComponent(model.id);
 
             if(options.data && options.data.output_mode){
                 //add layering of url if specified by user
@@ -3384,7 +3400,10 @@ define('helpers/user_agent',['underscore'], function(_) {
         Chrome: /chrome/i,
         Firefox: /firefox/i,
         Safari: /safari/i,
-        IE: /msie ([\d.]+)/i,
+        //User-agent string has been changed for IE11
+        //Here is the sample user-agent string: "Mozilla/5.0 (Windows NT 6.1; Trident/7.0; rv:11.0) like Gecko"
+        IE: /(?=.*msie ([\d.]+))|(?=.*trident)(?=.*rv\:([\d.]+))/i,
+        IE11: /(?=.*trident)(?=.*rv\:11)/i,
         IE10: /msie 10\.0/i,
         IE9: /msie 9\.0/i,
         IE8: /msie 8\.0/i,
@@ -3404,6 +3423,7 @@ define('helpers/user_agent',['underscore'], function(_) {
         isChrome: function() { return TESTS.Chrome.test(helper.agentString); },
         isFirefox: function() { return TESTS.Firefox.test(helper.agentString); },
         isIE: function() { return TESTS.IE.test(helper.agentString); },
+        isIE11: function() { return TESTS.IE11.test(helper.agentString); },
         isIE10: function() { return TESTS.IE10.test(helper.agentString); },
         isIE9: function() { return TESTS.IE9.test(helper.agentString); },
         isIE8: function() { return TESTS.IE8.test(helper.agentString); },
@@ -3414,7 +3434,7 @@ define('helpers/user_agent',['underscore'], function(_) {
         isSafariiPad: function() { return TESTS.SafariiPad.test(helper.agentString); },
 
         isIELessThan: function(testVersion) {
-            return helper.isIE() && parseFloat(TESTS.IE.exec(helper.agentString)[1]) < testVersion;
+            return helper.isIE() && parseFloat((TESTS.IE.exec(helper.agentString).sort(function(a, b) {return b - a;}))[0]) < testVersion;
         },
 
         isInIE7DocumentMode: function() {
@@ -3422,7 +3442,7 @@ define('helpers/user_agent',['underscore'], function(_) {
         },
 
         hasUrlLimit: function() {
-            return helper.isIELessThan(10);
+            return helper.isIE() ? true : false;
         },
         getUrlLimit: function() {
             return helper.hasUrlLimit() ? IE_URL_LIMIT : Infinity;
@@ -3436,6 +3456,7 @@ define('helpers/user_agent',['underscore'], function(_) {
     return helper;
 
 });
+
 define('util/router_utils',
     [
         'jquery',
@@ -3524,7 +3545,8 @@ define('util/router_utils',
         // in production, start_backbone_history should always be called with no arguments
         exports.start_backbone_history = function(forceNoPushState) {
             var hasPushstate = "pushState" in window.history;
-            if (forceNoPushState || !hasPushstate) {
+            //Due to the URL length constraint, forcing IE to use fragment identifier for the history management
+            if (forceNoPushState || !hasPushstate || userAgent.isIE()) {
                 $(document).ready(function() {
                     var hash = Backbone.history.getHash(),
                         splitHash = hash.split('?'),
@@ -3549,6 +3571,7 @@ define('util/router_utils',
         return exports;
     }
 );
+
 define('models/classicurl',
     [
         'jquery',
@@ -4012,7 +4035,7 @@ define('models/Report',
                             
                             viewstate.fetch({
                                 url: splunkd_utils.fullpath(
-                                    viewstate.url + "/" + name,
+                                    viewstate.url + "/" + encodeURIComponent(name),
                                     {
                                         app: options.data.app,
                                         owner: options.data.owner                               

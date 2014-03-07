@@ -90,9 +90,24 @@ MEDIA_ROOT = ''
 # Examples: "http://media.lawrence.com/media/", "http://example.com/media/"
 MEDIA_URL = ''
 
+SPLUNKD_SCHEME        = str(get_config('splunkd_scheme'))
+SPLUNKD_HOST          = str(get_config('splunkd_host'))
+SPLUNKD_PORT          = int(get_config('splunkd_port'))
+SPLUNK_WEB_SCHEME     = str(get_config('splunkweb_scheme'))
+SPLUNK_WEB_HOST       = str(get_config('splunkweb_host'))
+SPLUNK_WEB_PORT       = int(get_config('splunkweb_port'))
+SPLUNK_WEB_MOUNT      = str(get_config('splunkweb_mount'))
+SPLUNK_WEB_INTEGRATED = bool(get_config('splunkweb_integrated'))
+REMOTE_USER_HEADER    = str(get_config('remote_user_header'))
+SSO_ENABLED           = bool(get_config('sso'))
+
 # We will error out if there is no 'mount' set.
 MOUNT = get_config('mount')
 RAW_MOUNT = get_config('raw_mount')
+
+if not SPLUNK_WEB_INTEGRATED:
+    splunkweb_mount = "%s/" % SPLUNK_WEB_MOUNT if SPLUNK_WEB_MOUNT else ""
+    MOUNT = "%s%s" % (splunkweb_mount, MOUNT)
 
 # Absolute path to the directory static files should be collected to.
 # Don't put anything in this directory yourself; store your static files
@@ -143,6 +158,7 @@ MIDDLEWARE_CLASSES = (
     'splunkdj.middlewares.SplunkResolvedUrlMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
+    'splunkdj.middlewares.SplunkSSOSessionMiddleware',
     'splunkdj.middlewares.SplunkWebSessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'splunkdj.auth.middleware.SplunkAuthenticationMiddleware',
@@ -233,15 +249,6 @@ DISCOVERED_APPS = set(USER_APPS) - set(BUILTIN_APPS)
 # Combine the USER_APPS into INSTALLED_APPS
 INSTALLED_APPS += USER_APPS
 
-SPLUNKD_SCHEME        = str(get_config('splunkd_scheme'))
-SPLUNKD_HOST          = str(get_config('splunkd_host'))
-SPLUNKD_PORT          = int(get_config('splunkd_port'))
-SPLUNK_WEB_SCHEME     = str(get_config('splunkweb_scheme'))
-SPLUNK_WEB_HOST       = str(get_config('splunkweb_host'))
-SPLUNK_WEB_PORT       = int(get_config('splunkweb_port'))
-SPLUNK_WEB_MOUNT      = str(get_config('splunkweb_mount'))
-SPLUNK_WEB_INTEGRATED = bool(get_config('splunkweb_integrated'))
-
 DJANGO_PORT = int(get_config('splunkdj_port'))
 
 CSRF_COOKIE_NAME = "django_csrftoken_%s" % DJANGO_PORT
@@ -277,7 +284,7 @@ else:
     # Splunkweb uses "return_to", so we will as well.
     django.contrib.auth.REDIRECT_FIELD_NAME = "return_to"
 
-PROXY_PATH = str(get_config('proxy_path'))
+PROXY_PATH = "%s%s" % (('/' + SPLUNK_WEB_MOUNT) if SPLUNK_WEB_MOUNT else '', str(get_config('proxy_path')))
 
 # Whether or not to use built and minified files
 USE_BUILT_FILES = bool(get_config('use_built_files'))

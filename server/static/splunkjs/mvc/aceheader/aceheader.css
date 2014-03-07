@@ -1,6 +1,6 @@
 /* TODO reconcile URLs */
 header.splunk-ace-header {
-    background: #000 url(/en-US/static/img/skins/default/bg_appHeaderWrapper.png) repeat-x;
+    background: #000 url(./img/bg_appHeaderWrapper.png) repeat-x;
 	color: #666;
 	font-family: Arial,Helvetica,sans-serif;
 	font-size: 11px;
@@ -44,7 +44,7 @@ header.splunk-ace-header .splunk-app-logo-container a.splunk-app-logo {
 	float: left;
 	height: 43px;
 	width: 80px;
-	background: url(/en-US/static/img/skins/default/splunk_logo_black.png) no-repeat 0 0;
+	background: url(./img/splunk_logo_black.png) no-repeat 0 0;
 }
 
 header.splunk-ace-header .splunk-app-logo-container h1 {
@@ -103,7 +103,7 @@ header.splunk-ace-header .splunk-dropdown-icon {
 	background-repeat: no-repeat;
 	cursor: pointer;
 	display: block;
-	background-image: url(/en-US/static/img/skins/default/splIcons.gif);
+	background-image: url(./img/splIcons.gif);
 	background-color: transparent;
 }
 
@@ -128,7 +128,7 @@ header.splunk-ace-header .splunk-dropdown-icon.splunk-triangle-2 {
 
 header.splunk-ace-header .splunk-navigation-header ul li a:hover,
 header.splunk-ace-header .splunk-navigation-header ul li a.menuOpen {
-    background: url(/en-US/static/img/skins/default/overlay_white_28.png) repeat-x 0 0;
+    background: url(./img/overlay_white_28.png) repeat-x 0 0;
 }
 
 header.splunk-ace-header .splunk-navigation-header ul.menu-list li {

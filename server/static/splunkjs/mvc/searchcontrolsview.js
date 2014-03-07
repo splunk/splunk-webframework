@@ -181,7 +181,9 @@ define('views/shared/jobstatus/controls/Cancel',['underscore', 'module', 'views/
         moduleId: module.id,
         className: 'cancel btn btn-small btn-square',
         tagName: 'a',
-        attributes: { href: '#' },
+        attributes: {
+            "href": "#"
+        },
         initialize: function() {
             BaseView.prototype.initialize.apply(this, arguments);
         },
@@ -207,7 +209,9 @@ define('views/shared/jobstatus/controls/Stop',['underscore','module', 'views/Bas
         moduleId: module.id,
         className: 'stop btn btn-small btn-square',
         tagName: 'a',
-        attributes: { href: '#' },
+        attributes: {
+            "href": "#"
+        },
         initialize: function() {
             BaseView.prototype.initialize.apply(this, arguments);
         },
@@ -244,7 +248,9 @@ define('views/shared/jobstatus/controls/PlayPause',['jquery', 'underscore', 'mod
         moduleId: module.id,
         className: 'playpause btn btn-small btn-square',
         tagName: 'a',
-        attributes: { href: '#' },
+        attributes: {
+            "href": "#"
+        },
         initialize: function(){
             BaseView.prototype.initialize.apply(this, arguments);
             this.model.entry.content.on('change', this.render, this);
@@ -287,7 +293,9 @@ define('views/shared/jobstatus/controls/Reload',['underscore', 'module', 'views/
         moduleId: module.id,
         className: 'reload btn btn-small btn-square',
         tagName: 'a',
-        attributes: { href: '#' },
+        attributes: {
+            "href": "#"
+        },
         initialize: function() {
             BaseView.prototype.initialize.apply(this, arguments);
         },
@@ -1471,6 +1479,9 @@ define('views/shared/jobstatus/buttons/ShareButton',
             moduleId: module.id,
             className: 'share btn btn-small btn-square disabled',
             tagName: 'a',
+            attributes: {
+                "href": "#"
+            },
             initialize: function() {
                 Base.prototype.initialize.apply(this, arguments);
                 this.$el.html('<i class="icon-share"></i><span class="hide-text">' + _("Share").t() + '</span>');
@@ -1550,6 +1561,9 @@ define('views/shared/jobstatus/buttons/ExportButton',
             moduleId: module.id,
             className: 'export btn btn-small btn-square',
             tagName: 'a',
+            attributes: {
+                "href": "#"
+            },
             initialize: function() {
                 Base.prototype.initialize.apply(this, arguments);
                 this.$el.html('<i class="icon-export"></i><span class="hide-text">' + _("Export").t() + '</span>');
@@ -1576,7 +1590,10 @@ define('views/shared/jobstatus/buttons/ExportButton',
             },
             enableDisable: function() {
                 if (this.model.searchJob.isPreparing() ||
-                   ((this.model.searchJob.isReportSearch() || this.model.searchJob.isRealtime()) && !this.model.searchJob.entry.content.get('isDone'))) {
+                    this.model.searchJob.isRunning() ||
+                    ((this.model.searchJob.isReportSearch() || this.model.searchJob.isRealtime()) && !this.model.searchJob.entry.content.get('isDone'))
+                   )
+                {
                     this.$el.tooltip('hide');
                     this.$el.data('tooltip', false);
                     this.$el.tooltip({animation:false, title:_('Export - You can only export results for completed jobs.').t(), container: 'body'});
@@ -1609,6 +1626,9 @@ define('views/shared/jobstatus/buttons/PrintButton',
             moduleId: module.id,
             className: 'print btn btn-small btn-square',
             tagName: 'a',
+            attributes: {
+                "href": "#"
+            },
             initialize: function() {
                 Base.prototype.initialize.apply(this, arguments);
                 this.$el.html('<i class="icon-print"></i><span class="hide-text">' + _("Print").t() + '</span>');

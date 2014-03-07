@@ -84,9 +84,12 @@ def get_splunk_path():
         sys.exit(1)
     return splunk_bin_path
         
-def get_conf_value(conf, stanza, key):
+def get_conf_value(conf, stanza, key, default_value=None):
     # This wrapper is here for future functionality
-    return getConfKeyValue(conf, stanza, key)
+    try:
+        return getConfKeyValue(conf, stanza, key)
+    except:
+        return default_value
 
 def confirm(prompt_str="Confirm", allow_empty=True, default=False):
     fmt = (prompt_str, 'y', 'n') if default else (prompt_str, 'n', 'y')
@@ -928,6 +931,8 @@ def setup(file, nodeploy):
             splunkweb_port             = int(splunkweb_port),
             splunkweb_mount            = splunkweb_mount,
             x_frame_options_sameorigin = normalizeBoolean(get_conf_value("web", "settings", "x_frame_options_sameorigin")),
+            remote_user_header         = get_conf_value("web", "settings", "remoteUser"),
+            sso                        = get_conf_value("web", "settings", "trustedIP", None) != None,
             mount                      = splunkdj_mount,
             raw_mount                  = splunkdj_mount,
             splunkdj_port              = int(splunkdj_appserver_port),
@@ -1002,6 +1007,8 @@ def create_config_file(config_file_path=None, generate_secret_key=True, **kwargs
     raw_mount = kwargs.get("raw_mount", "")
     splunkdj_port = kwargs.get("splunkdj_port", 0)
     proxy_port = kwargs.get("proxy_port", 0)
+    remote_user_header = kwargs.get("remote_user_header", None)
+    sso = kwargs.get("sso", False)
     # only strip the leading slash
     proxy_path = kwargs.get("proxy_path", "").rstrip("/")
     quickstart = kwargs.get("quickstart", True)
@@ -1030,6 +1037,8 @@ def create_config_file(config_file_path=None, generate_secret_key=True, **kwargs
         "splunkweb_mount"            : splunkweb_mount,
         "splunkweb_integrated"       : splunkweb_integrated,
         "x_frame_options_sameorigin" : x_frame_options_sameorigin,
+        "remote_user_header"         : remote_user_header,
+        "sso"                        : sso,
         "mount"                      : mount,
         "raw_mount"                  : raw_mount,
         "splunkdj_port"              : int(splunkdj_port),

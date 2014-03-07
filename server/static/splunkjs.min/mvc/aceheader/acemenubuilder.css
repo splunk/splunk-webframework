@@ -49,7 +49,7 @@
 }
 
 .splunk-splShadow {
-    background: url(/static/img/skins/default/shadow_soft.png) no-repeat bottom right;
+    background: url(./img/shadow_soft.png) no-repeat bottom right;
     -moz-border-radius-bottomleft: 16px; /*is this supposed to be different?*/
     -moz-border-radius-topright: 17px;
     -webkit-border-top-right-radius: 17px;
@@ -132,7 +132,7 @@
 }
 
 .splunk-splMenu .splIcon {
-    background-image: url(/en-US/static/img/skins/default/splIcons.gif);
+    background-image: url(./img/splIcons.gif);
 }
 .splunk-splMenu .dropDown {
     text-indent: -10000px;

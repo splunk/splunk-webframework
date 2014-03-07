@@ -47,18 +47,20 @@ if (process.env['SPLUNKDJ_CONFIG']) {
 }
 
 var router = {};
-router[util.format('/%s', config.mount)]        = util.format('127.0.0.1:%s/%s', config.splunkdj_port, config.mount);
-router['/[^/]+/account/login']                  = util.format('127.0.0.1:%s/%s/accounts/login', config.splunkdj_port, config.mount);
-router['/[^/]+/account/logout']                 = util.format('127.0.0.1:%s/%s/accounts/logout', config.splunkdj_port, config.mount);
-router[util.format('%s/', config.proxy_path)]   = util.format('%s:%s', config.splunkd_host, config.splunkd_port);
-router['/']                                     = util.format('%s:%s', config.splunkweb_host, config.splunkweb_port);
+var sw_mount = (config.splunkweb_mount) ? ('/' + config.splunkweb_mount) : '';
+router[util.format('%s/%s', sw_mount, config.mount)]         = util.format('127.0.0.1:%s%s/%s', config.splunkdj_port, sw_mount, config.mount);
+router[util.format('%s/[^/]+/account/login',  sw_mount)]     = util.format('127.0.0.1:%s%s/%s/accounts/login',  config.splunkdj_port, sw_mount, config.mount);
+router[util.format('%s/[^/]+/account/logout', sw_mount)]     = util.format('127.0.0.1:%s%s/%s/accounts/logout', config.splunkdj_port, sw_mount, config.mount);
+router[util.format('%s%s/', sw_mount, config.proxy_path)]    = util.format('%s:%s', config.splunkd_host, config.splunkd_port);
+router[util.format('%s', sw_mount || '/')]                          = util.format('%s:%s%s', config.splunkweb_host, config.splunkweb_port, sw_mount);
+//router[util.format('/')]                                     = util.format('127.0.0.1:%s%s', config.proxy_port, sw_mount);
 
 var options = {
     router: router
 };
 
 var dispatcherRouter = {};
-dispatcherRouter[util.format('%s/(.*)', config.proxy_path)] = function(req, res, next) {
+dispatcherRouter[util.format('%s%s/(.*)', sw_mount, config.proxy_path)] = function(req, res, next) {
     var cookies = new Cookies(req, res);
     var encryptedSessionToken = cookies.get("session_token") || "";
     

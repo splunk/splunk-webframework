@@ -705,6 +705,7 @@ define('views/shared/eventsviewer/shared/WorkflowActions',
                     actions: this.options.actions,
                     event: $.extend({}, this.model.event.toJSON()),
                     isField: this.isFieldAction,
+                    trim: util.smartTrim,
                     _: _
                 }));
                 
@@ -718,7 +719,7 @@ define('views/shared/eventsviewer/shared/WorkflowActions',
                         <% var model = collection.at(i); %>\
                         <% if(model) {%>\
                             <li>\
-                                <a class="actions" href="#" data-offset="<%-i%>"> <%- _(model.fieldSubstitute(model.entry.content.get("label"), event)).t()  %></a>\
+                                <a class="actions" href="#" data-offset="<%-i%>"> <%- trim(_(model.fieldSubstitute(model.entry.content.get("label"), event)).t(), 100)  %></a>\
                             </li>\
                         <% } %>\
                     <% }); %>\
@@ -2445,15 +2446,24 @@ define('views/shared/eventsviewer/list/body/row/Master',
                     this.clickToExpandRow(true);
                     e.preventDefault();
                 },
-                'click .formated-time': function(e) {
-                    var epoch = splunkUtil.getEpochTimeFromISO($(e.currentTarget).data().timeIso);
-                    this.model.report.entry.content.set({
-                        'dispatch.earliest_time': epoch,
-                        'dispatch.latest_time': '' + (parseFloat(epoch) + 1)
-                    });
-                    this.model.report.trigger('eventsviewer:drilldown');
+                'keyup ._time': function(e) {
                     e.preventDefault();
+                    if(e.which === 13) {
+                        this.drilldown($(e.currentTarget).find('span.formated-time'));
+                    }
+                }, 
+                'click .formated-time': function(e) { 
+                    e.preventDefault();
+                    this.drilldown($(e.currentTarget));
                 } 
+            },
+            drilldown: function($target) {
+                var epoch = splunkUtil.getEpochTimeFromISO($target.data().timeIso);
+                this.model.report.entry.content.set({
+                    'dispatch.earliest_time': epoch,
+                    'dispatch.latest_time': '' + (parseFloat(epoch) + 1)
+                });
+                this.model.report.trigger('eventsviewer:drilldown');
             },
             eventFieldsFactory: function() {
                 if (this.children.eventFields) {
@@ -2576,7 +2586,7 @@ define('views/shared/eventsviewer/list/body/row/Master',
                 </td>\
                 <% } %>\
                 <td class="line-num"><span><%- lineNum %></span></td>\
-                <td class="_time">\
+                <td class="_time" tabindex="0">\
                     <span class="formated-time" data-time-iso="<%- event.get("_time") %>">\
                     <% if(application.get("locale").indexOf("en") > -1){ %>\
                          <span><%- $.trim(formattedTime.slice(0, formattedTime.indexOf(" "))) %></span>\
@@ -2836,6 +2846,9 @@ define('views/shared/eventsviewer/list/Master',
                 this.$('> table.events-results').append(this.children.body.render().el);
                 return this;
             },
+            reflow: function() {
+                this.children.tableDock && this.children.tableDock.update();
+            },
             template: '\
                 <table class="table table-chrome <% if(hidelinenums){ %> hide-line-num <% } %> table-row-expanding events-results events-results-table" id="<%= cid %>-table"></table>\
             '
@@ -3002,15 +3015,8 @@ define('views/shared/eventsviewer/table/body/PrimaryRow',
                     e.preventDefault(); // handled by the cell.
                 },
                 'click ._time-drilldown': function(e) {
-                    if(splunkutil.normalizeBoolean(this.model.report.entry.content.get('display.events.table.drilldown'))){
-                        var epoch = splunkutil.getEpochTimeFromISO($(e.currentTarget).find('a').data().timeIso);
-                        this.model.report.entry.content.set({
-                            'dispatch.earliest_time': epoch,
-                            'dispatch.latest_time': '' + (parseFloat(epoch) + 1)
-                        });
-                        this.model.report.trigger('eventsviewer:drilldown');
-                        e.preventDefault();
-                    }
+                    e.preventDefault();
+                    this.drilldown($(e.currentTarget).find('a'));
                 },
                 'click .one-value-drilldown > a.field-val': function(e) {
                     e.preventDefault(); // handled by the cell.
@@ -3022,7 +3028,13 @@ define('views/shared/eventsviewer/table/body/PrimaryRow',
                 'click .multi-value-drilldown > a.field-val': function(e) {
                     e.preventDefault();
                     this.drilldown($(e.currentTarget));
-                }
+                },
+                'keypress td ': function(e) {
+                    e.preventDefault();
+                    if(e.which === 13) {
+                        this.drilldown($(e.currentTarget).find('a'));
+                    }
+                } 
             },
             clickToExpandRow: function(isRowClick) {
                 var options = {
@@ -3055,19 +3067,34 @@ define('views/shared/eventsviewer/table/body/PrimaryRow',
                 return this;
             },
             drilldown: function($target) {
-                var field = $target.data().name,
-                    value = $.trim($target.text());
-                this.model.intentionsParser.clear({silent: true});
-                this.model.intentionsParser.fetch({
-                    data: {
-                        q: this.model.report.entry.content.get('search'),
-                        action: 'fieldvalue', 
-                        field: field,
-                        value: value,
-                        app: this.model.application.get('app'),
-                        owner: this.model.application.get('owner')
+                var data  = $target.data();
+                
+                if(data.timeIso) {
+                    if(splunkutil.normalizeBoolean(this.model.report.entry.content.get('display.events.table.drilldown'))){
+                        var epoch = splunkutil.getEpochTimeFromISO(data.timeIso);
+                        this.model.report.entry.content.set({
+                            'dispatch.earliest_time': epoch,
+                            'dispatch.latest_time': '' + (parseFloat(epoch) + 1)
+                        });
+                        this.model.report.trigger('eventsviewer:drilldown');
                     }
-                });
+                  
+                } else {
+
+                    var field = data.name,
+                        value = $.trim($target.text());
+                    this.model.intentionsParser.clear({silent: true});
+                    this.model.intentionsParser.fetch({
+                        data: {
+                            q: this.model.report.entry.content.get('search'),
+                            action: 'fieldvalue', 
+                            field: field,
+                            value: value,
+                            app: this.model.application.get('app'),
+                            owner: this.model.application.get('owner')
+                        }
+                    });
+                }
             },
             expandState: function() {
                 this.model.state.set(this.rowExpanded, true);
@@ -3113,7 +3140,7 @@ define('views/shared/eventsviewer/table/body/PrimaryRow',
                     </td>\
                 <% } %>\
                 <td class="line-num"><span><%- lineNum %></span></td>\
-                <td class="_time <%= drilldown ? "_time-drilldown" : ""  %>">\
+                <td class="_time <%= drilldown ? "_time-drilldown" : ""  %>" tabindex="0">\
                     <% if(drilldown) { %>\
                         <a data-time-iso="<%- event.get("_time") %>">\
                     <% } else { %>\
@@ -3131,9 +3158,9 @@ define('views/shared/eventsviewer/table/body/PrimaryRow',
                 <% selectedFields.each(function(model) { %>\
                     <% var fields = event.get(model.get("name")); %>\
                     <% if (drilldown) { %>\
-                        <td class="<% if(!wrap) { %>no-wrap<% } %> <%= drilldown && fields && fields.length > 1 ? "multi-value-drilldown" : ""  %> <%= drilldown && fields && fields.length == 1 ? "one-value-drilldown" : ""  %>"><% _(fields).each(function(field) { %><a class="field-val" data-name="<%- model.get("name") %>"><%- field %></a><% }) %></td>\
+                        <td class="<% if(!wrap) { %>no-wrap<% } %> <%= drilldown && fields && fields.length > 1 ? "multi-value-drilldown" : ""  %> <%= drilldown && fields && fields.length == 1 ? "one-value-drilldown" : ""  %>"  tabindex="0"><% _(fields).each(function(field) { %><a class="field-val" data-name="<%- model.get("name") %>"><%- field %></a><% }) %></td>\
                     <% } else { %>\
-                        <td class="<% if(!wrap) { %>no-wrap<% } %>"><% _(fields).each(function(field) { %><span class="field-val" data-name="<%- model.get("name") %>"><%- field %></span><% }) %></td>\
+                        <td class="<% if(!wrap) { %>no-wrap<% } %>"  tabindex="0"><% _(fields).each(function(field) { %><span class="field-val" data-name="<%- model.get("name") %>"><%- field %></span><% }) %></td>\
                     <% } %>\
                 <% }) %>\
             '

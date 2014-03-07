@@ -9,7 +9,10 @@ from django.utils import translation
 from django.http import Http404
 
 from splunkdj.auth.backends import get_user
+from splunkdj.auth.encryption import SimplerAES
 from splunkdj.utility import format_local_tzoffset, create_derived_service
+
+from splunklib.client import Service
 
 import datetime
 import time
@@ -18,6 +21,9 @@ import rfc822
 import sys
 import os
 
+from xml.etree.ElementTree import XML
+
+aes = SimplerAES(settings.SECRET_KEY)
 logger = logging.getLogger('spl.django.service')
         
 class SplunkCsrfMiddleware(object):
@@ -107,6 +113,62 @@ class SplunkLocaleMiddleware(LocaleMiddleware):
         patch_vary_headers(response, ('Accept-Language',))
         if 'Content-Language' not in response:
             response['Content-Language'] = language
+        return response
+        
+class SplunkSSOSessionMiddleware(object):
+    def __init__(self, port=8000, **kwargs):
+        
+        self._initialized = False
+        self._session_key = None
+        
+        if settings.SPLUNK_WEB_INTEGRATED or not settings.REMOTE_USER_HEADER or not settings.SSO_ENABLED:
+            return
+        
+        try:
+            self._initialized = True
+        except Exception, e:
+            self._initialized = False
+            pass
+            
+            
+    def process_request(self, request):
+        if not self._initialized:
+            return
+            
+        user = None
+        session = None
+
+        try:
+            remote_user_header = 'HTTP_' + settings.REMOTE_USER_HEADER.upper().replace('-', '_')
+            remote_user = request.META.get(remote_user_header, None)
+            if not remote_user:
+                logger.warn('Using SSO but no remote user in header "%s"' % setting.REMOTE_USER_HEADER)
+                return
+            
+            service = Service(
+                username=remote_user, 
+                scheme=settings.SPLUNKD_SCHEME,
+                host=settings.SPLUNKD_HOST,
+                port=settings.SPLUNKD_PORT
+            )
+            
+            response = service.post('/services/auth/trustedlogin', username=remote_user)
+            session_key = XML(response.body.read()).findtext("./sessionKey")
+            user = get_user(remote_user, "Splunk %s" % session_key)
+            if user:
+                request._cached_user = user
+                self._session_key = user.service.token
+                
+        except Exception, e:
+            logger.exception(e)
+            pass
+            
+    def process_response(self, request, response):
+        if not self._initialized or not self._session_key:
+            return response
+            
+        response.set_cookie('session_token', aes.encrypt(str(self._session_key)))
+        
         return response
         
 class SplunkWebSessionMiddleware(object):
