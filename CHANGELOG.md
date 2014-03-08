@@ -1,5 +1,39 @@
 # Splunk Web Framework Changelog
 
+## Version 1.0.2
+
+### New features and changes
+
+* The choice-based views (DropdownView, MultiDropdownView, CheckboxGroupView, and
+RadioGroupView) now take a new Boolean property, `selectFirstChoice`. When `true`, 
+and when the `default` or `value` properties have not been set, the view automatically takes 
+the first available choice when the user has not made a selection.
+
+### Bug fixes
+
+* A load-ordering issue with the TimelineView has been resolved.
+
+## Version 1.0.1
+
+### New features and changes
+
+* Django has been upgraded from version 1.5.1 to 1.5.5.
+
+### Bug fixes
+
+* The following Django-related issues have been fixed:
+
+  * Pages are now served properly when using the Free license with Splunk Enterprise.
+
+  * Locales are now resolved correctly.
+
+  * The root_endpoint is now handled correctly.
+
+* Incorrect logging errors during setup have been addressed. 
+
+* Postprocess searches are now updated correctly, regardless of whether the status
+of the parent search has changed.
+
 ## Version 1.0
 This is the first GA release of the Splunk Web Framework (formerly called "The
 new Splunk Application Framework").

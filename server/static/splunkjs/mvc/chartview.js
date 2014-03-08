@@ -616,7 +616,9 @@ define('splunkjs/mvc/chartview',['require','exports','module','underscore','jque
             // Now that the event is trigged, if there is a default action of
             // redirecting, we will execute it (depending on whether the user
             // executed preventDefault()).
-            if (this.settings.get("drilldownRedirect") && !preventRedirect) {
+            var drilldownType = this.settings.get('charting.drilldown');
+            if (drilldownType !== 'none' && SplunkUtil.normalizeBoolean(drilldownType) !== false &&
+                this.settings.get("drilldownRedirect") && !preventRedirect) {
                 defaultDrilldown();
             }
         },

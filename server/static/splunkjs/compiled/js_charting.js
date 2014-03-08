@@ -3525,17 +3525,17 @@ define('js_charting/series/Series',[
                 <% } %>>\
                 <% if(xAxisIsTime) { %>\
                     <tr>\
-                        <td style="text-align: left; color: #ffffff;" colpsan="2"><%= xValueDisplay %></td>\
+                        <td style="text-align: left; color: #ffffff;" colpsan="2"><%- xValueDisplay %></td>\
                     </tr>\
                 <% } else { %>\
                     <tr>\
-                        <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%= xAxisName %>:&nbsp;&nbsp;</td>\
-                        <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%= xValueDisplay %></td>\
+                        <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%- xAxisName %>:&nbsp;&nbsp;</td>\
+                        <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%- xValueDisplay %></td>\
                     </tr>\
                 <% } %>\
                     <tr>\
-                        <td style="text-align: left; color:<%= seriesColor %>; max-width: <%= scaledMaxLeftColWidth %>;"><%= seriesName %>:&nbsp;&nbsp;</td>\
-                        <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%= yValueDisplay %></td>\
+                        <td style="text-align: left; color:<%= seriesColor %>; max-width: <%= scaledMaxLeftColWidth %>;"><%- seriesName %>:&nbsp;&nbsp;</td>\
+                        <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%- yValueDisplay %></td>\
                     </tr>\
             </table>\
         '
@@ -4137,16 +4137,16 @@ define('js_charting/series/PieSeries',[
                     style="word-wrap: break-word; white-space: normal;"\
                 <% } %>>\
                 <tr>\
-                    <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%= sliceFieldName %>:&nbsp;&nbsp;</td>\
-                    <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%= sliceName %></td>\
+                    <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%- sliceFieldName %>:&nbsp;&nbsp;</td>\
+                    <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%- sliceName %></td>\
                 </tr>\
                 <tr>\
-                    <td style="text-align: left; color: <%= sliceColor %>; max-width: <%= scaledMaxLeftColWidth %>;"><%= seriesName %>:&nbsp;&nbsp;</td>\
-                    <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%= yValue %></td>\
+                    <td style="text-align: left; color: <%= sliceColor %>; max-width: <%= scaledMaxLeftColWidth %>;"><%- seriesName %>:&nbsp;&nbsp;</td>\
+                    <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%- yValue %></td>\
                 </tr>\
                 <tr>\
-                    <td style="text-align: left; color: <%= sliceColor %>; max-width: <%= scaledMaxLeftColWidth %>;"><%= seriesName %>%:&nbsp;&nbsp;</td>\
-                    <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%= yPercent %></td>\
+                    <td style="text-align: left; color: <%= sliceColor %>; max-width: <%= scaledMaxLeftColWidth %>;"><%- seriesName %>%:&nbsp;&nbsp;</td>\
+                    <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%- yPercent %></td>\
                 </tr>\
             </table>\
         '
@@ -4308,23 +4308,23 @@ define('js_charting/series/ScatterSeries',['jquery', './ManyShapeSeries', '../ut
                 <% } %>>\
                 <% if(isMultiSeries) { %>\
                     <tr>\
-                        <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%= labelSeriesName %>:&nbsp;&nbsp;</td>\
-                        <td style="text-align: right; color: <%= seriesColor %>; max-width: <%= scaledMaxRightColWidth %>;"><%= seriesName %></td>\
+                        <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%- labelSeriesName %>:&nbsp;&nbsp;</td>\
+                        <td style="text-align: right; color: <%= seriesColor %>; max-width: <%= scaledMaxRightColWidth %>;"><%- seriesName %></td>\
                     </tr>\
                 <% } %>\
                 <% if(markName) { %>\
                     <tr>\
-                        <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%= markName %>:&nbsp;&nbsp;</td>\
-                        <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%= markValue %></td>\
+                        <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%- markName %>:&nbsp;&nbsp;</td>\
+                        <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%- markValue %></td>\
                     </tr>\
                 <% } %>\
                 <tr>\
-                    <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%= xAxisName %>:&nbsp;&nbsp;</td>\
-                    <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%= xValue %></td>\
+                    <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%- xAxisName %>:&nbsp;&nbsp;</td>\
+                    <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%- xValue %></td>\
                 </tr>\
                 <tr>\
-                    <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%= yAxisName %>:&nbsp;&nbsp;</td>\
-                    <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%= yValue %></td>\
+                    <td style="text-align: left; color: #cccccc; max-width: <%= scaledMaxLeftColWidth %>;"><%- yAxisName %>:&nbsp;&nbsp;</td>\
+                    <td style="text-align: right; color: #ffffff; max-width: <%= scaledMaxRightColWidth %>;"><%- yValue %></td>\
                 </tr>\
             </table>\
         '

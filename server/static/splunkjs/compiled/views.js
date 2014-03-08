@@ -507,7 +507,8 @@ define('views/shared/Modal',
                             
                             tabbableElements = _.uniq(tabbableElements);
                             for (var i = 0; i < tabbableElements.length; i++) {
-                                if (!$(tabbableElements[i]).is(':visible')) {
+                                var $tabbableElement = $(tabbableElements[i]);
+                                if (!$tabbableElement.is(':visible') || $tabbableElement.css('visibility') === 'hidden') {
                                     tabbableElements.splice(i, 1);
                                     i--;
                                 }
@@ -3126,7 +3127,8 @@ define('views/shared/jobstatus/buttons/ExportResultsDialog',[
                 controlType: 'Text',
                 controlOptions: {
                     modelAttribute: 'fileName',
-                    model: this.model.inmem
+                    model: this.model.inmem,
+                    placeholder: 'optional'
                 },
                 label: _('File Name').t()
             });
@@ -4090,8 +4092,12 @@ define('views/shared/delegates/TableHeadStatic',['jquery', 'underscore', 'views/
             $headerWrapper.css({ 'margin-right': this.$scrollContainer[0].offsetWidth - this.$scrollContainer[0].clientWidth});
             this.$headerTable = $('<table>');
             this.$headerTable.attr('class', this.$table.attr('class')).width(this.$table.outerWidth()).css('table-layout', 'fixed');
-            this.$table.find('> thead').clone().appendTo(this.$headerTable);
+            // SPL-77034, for in-place updates make sure we don't clone the visibility: hidden; that is added later
+            this.$table.find('> thead').clone().css('visibility', 'visible').appendTo(this.$headerTable);
             $headerWrapper.prepend(this.$headerTable);
+
+            // 508: make sure the browser doesn't tab to the original table header
+            this.$table.find('thead').css('visibility', 'hidden');
             
             this.$headerTable.on('click', 'th', function (e) {
                 e.preventDefault();

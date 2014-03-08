@@ -3731,6 +3731,8 @@ define('views/shared/results_table/ResultsTableMaster',[
 
     var MV_SUBCELL_SELECTOR = '.' + ResultsTableRow.MV_SUBCELL_CLASSNAME;
 
+    var ENTER_KEY = 13;
+
     return Base.extend({
 
         moduleId: module.id,
@@ -3745,6 +3747,19 @@ define('views/shared/results_table/ResultsTableMaster',[
             'click tbody td': function(e) {
                 e.preventDefault();
                 this.handleCellClick($(e.target), e);
+            },
+            'keypress tbody td': function(e) {
+                if(e.which === ENTER_KEY) {
+                    e.preventDefault();
+                    this.handleCellClick($(e.target), e);
+                }
+            },
+            'keypress tbody tr': function(e) {
+                if(e.which === ENTER_KEY) {
+                    e.preventDefault();
+                    // treat the target as the first cell in the row
+                    this.handleCellClick($(e.target).find('td').first(), e);
+                }
             }
         },
 
@@ -4172,17 +4187,25 @@ define('views/shared/results_table/ResultsTableMaster',[
 
         updateDrilldownClasses: function() {
             var drilldown = this.model.format.get('display.statistics.drilldown'),
-                $table = this.$el.children('.table');
+                $table = this.$('.table'),
+                $rows = $table.find('tbody > tr'),
+                $cells = $table.find('tbody > tr > td');
 
             if(drilldown === 'none') {
                 $table.removeClass('table-drilldown table-drilldown-row table-drilldown-cell');
+                $cells.removeAttr('tabindex');
+                $rows.removeAttr('tabindex');
             }
             else if(drilldown === 'cell') {
                 $table.addClass('table-drilldown table-drilldown-cell').removeClass('table-drilldown-row');
+                $cells.attr('tabindex', '0');
+                $rows.removeAttr('tabindex');
             }
             else {
                 // drilldown === 'row'
                 $table.addClass('table-drilldown table-drilldown-row').removeClass('table-drilldown-cell');
+                $rows.attr('tabindex', '0');
+                $cells.removeAttr('tabindex');
             }
         },
 
@@ -4743,7 +4766,7 @@ define('splunkjs/mvc/tableview',['require','exports','module','jquery','undersco
             // Now that the event is trigged, if there is a default action of
             // redirecting, we will execute it (depending on whether the user
             // executed preventDefault()).
-            if (this.settings.get("drilldownRedirect") && !preventRedirect) {
+            if (this.settings.get('drilldown') !== 'none' && this.settings.get("drilldownRedirect") && !preventRedirect) {
                 defaultDrilldown();
             }
         },

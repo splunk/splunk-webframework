@@ -1271,7 +1271,7 @@ function(
                 applicationDfd.done(function() {
                     if (options.model.application.get("app") !== 'system') {
                         options.model.appLocal.fetch({
-                            url: splunkDUtils.fullpath(options.model.appLocal.url + "/" + options.model.application.get("app")),
+                            url: splunkDUtils.fullpath(options.model.appLocal.url + "/" + encodeURIComponent(options.model.application.get("app"))),
                             data: {
                                 app: options.model.application.get("app"),
                                 owner: options.model.application.get("owner")
@@ -1322,7 +1322,7 @@ function(
             if(!options.model.user){
                 options.model.user = new UserModel();
                 $.when(currentUserIdDfd).done(function(currentUserId){
-                    options.model.user.set('id', currentUserId);
+                    options.model.user.set('id', encodeURIComponent(currentUserId));
                     options.model.user.fetch();
                 });
             }
@@ -1824,10 +1824,10 @@ function (
             });
         if (saved) {
             obj = {
-                uri: splunk_util.make_full_url('app/'+app+'/@go', {'s': saved.id}),
+                uri: splunk_util.make_full_url('app/'+encodeURIComponent(app)+'/@go', {'s': saved.id}),
                 sharing: saved.get('sharing'),
                 label: name,
-                reportUri: splunk_util.make_full_url('app/'+app+'/report', {'s': saved.id})
+                reportUri: splunk_util.make_full_url('app/'+encodeURIComponent(app)+'/report', {'s': saved.id})
             };
             if (saved.entry.content.get('request.ui_dispatch_view')) {
                 obj.dispatchView = saved.entry.content.get('request.ui_dispatch_view');
@@ -2519,52 +2519,50 @@ function(
         END_GRADIENT_LUMINOSITY: 0.90,
         createWithAppNavUrl: function(options){
             var self = this;
-            options.model.application.on('change', function(appModel){
-                var url = route.appNavUrl(appModel.get('root'), appModel.get('locale'), appModel.get('app'));
-                $.ajax({
-                    url: url,
-                    dataType:'json'
-                }).done(function(data){
-                    var appLink, appIcon, appLogo, reportRoute;
-                    appLink = route.page(
-                        options.model.application.get('root'),
-                        options.model.application.get('locale') || '',
-                        options.model.application.get('app')
-                    );
+            var url = route.appNavUrl(options.model.application.get('root'), options.model.application.get('locale'), options.model.application.get('app'));
+            $.ajax({
+                url: url,
+                dataType:'json'
+            }).done(function(data){
+                var appLink, appIcon, appLogo, reportRoute;
+                appLink = route.page(
+                    options.model.application.get('root'),
+                    options.model.application.get('locale') || '',
+                    options.model.application.get('app')
+                );
 
-                    appIcon = route.appIcon(
-                        options.model.application.get('root'),
-                        options.model.application.get('locale') || '',
-                        options.model.application.get('owner'),
-                        appModel.get('app')
-                    );
+                appIcon = route.appIcon(
+                    options.model.application.get('root'),
+                    options.model.application.get('locale') || '',
+                    options.model.application.get('owner'),
+                    options.model.application.get('app')
+                );
 
-                    appLogo = route.appLogo(
-                        options.model.application.get('root'),
-                        options.model.application.get('locale') || '',
-                        options.model.application.get('owner'),
-                        appModel.get('app')
-                    );
+                appLogo = route.appLogo(
+                    options.model.application.get('root'),
+                    options.model.application.get('locale') || '',
+                    options.model.application.get('owner'),
+                    options.model.application.get('app')
+                );
 
-                    reportRoute = route.page(
-                        options.model.application.get('root'),
-                        options.model.application.get('locale') || '',
-                        options.model.application.get('app'),
-                        'report');
+                reportRoute = route.page(
+                    options.model.application.get('root'),
+                    options.model.application.get('locale') || '',
+                    options.model.application.get('app'),
+                    'report');
 
-                    options.model.appNav.set({
-                        nav: data.nav,
-                        color: data.color,
-                        label: data.label,
-                        icon: appIcon,
-                        logo: appLogo,
-                        link: appLink,
-                        defaultView: data.defaultView
-                        //searchView: 'not implemented TODO'
-                    });
-                }).fail(function(){
-                    self.createWithBackbone(options);
+                options.model.appNav.set({
+                    nav: data.nav,
+                    color: data.color,
+                    label: data.label,
+                    icon: appIcon,
+                    logo: appLogo,
+                    link: appLink,
+                    defaultView: data.defaultView
+                    //searchView: 'not implemented TODO'
                 });
+            }).fail(function(){
+                self.createWithBackbone(options);
             });
         },
         createWithAppNavModel: function(options) {
