@@ -8,6 +8,8 @@ from django.utils.cache import patch_vary_headers
 from django.utils import translation
 from django.http import Http404
 
+import requests
+
 from splunkdj.auth.backends import get_user
 from splunkdj.auth.encryption import SimplerAES
 from splunkdj.utility import format_local_tzoffset, create_derived_service
@@ -25,6 +27,34 @@ from xml.etree.ElementTree import XML
 
 aes = SimplerAES(settings.SECRET_KEY)
 logger = logging.getLogger('spl.django.service')
+        
+def get_splunkweb_url(path):
+    splunkweb_mount = ""
+    if settings.SPLUNK_WEB_MOUNT:
+        splunkweb_mount = "%s/" % settings.SPLUNK_WEB_MOUNT
+        
+    return "/%s%s" % (splunkweb_mount, path)
+
+class MultipleProxyMiddleware(object):
+    FORWARDED_FOR_FIELDS = [
+        'HTTP_X_FORWARDED_FOR',
+        'HTTP_X_FORWARDED_HOST',
+        'HTTP_X_FORWARDED_SERVER',
+    ]
+
+    def process_request(self, request):
+        """
+        Rewrites the proxy headers so that only the most
+        recent proxy is used.
+        """
+        if not settings.SSO_ENABLED:
+            return
+        
+        for field in self.FORWARDED_FOR_FIELDS:
+            if field in request.META:
+                if ',' in request.META[field]:
+                    parts = request.META[field].split(',')
+                    request.META[field] = parts[0].strip()
         
 class SplunkCsrfMiddleware(object):
     def process_view(self, request, *args, **kwargs):
@@ -168,6 +198,18 @@ class SplunkSSOSessionMiddleware(object):
             return response
             
         response.set_cookie('session_token', aes.encrypt(str(self._session_key)))
+
+        # Get the splunkweb cookie set up correctly, by making a request to a page
+        # that requires login but is very fast to render.
+        splunkweb_sso_uri = request.build_absolute_uri(get_splunkweb_url("en-US/debug/pdf_echo"))
+        
+        r = requests.get(
+            splunkweb_sso_uri,
+            allow_redirects=True)
+        
+        # Set the cookie for our request too
+        splunkweb_session_cookie = 'session_id_%s' % settings.SPLUNK_WEB_PORT
+        response.set_cookie(splunkweb_session_cookie, r.cookies[splunkweb_session_cookie])
         
         return response
         
