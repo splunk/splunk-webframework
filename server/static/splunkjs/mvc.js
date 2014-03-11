@@ -64993,11 +64993,11 @@ define('splunkjs/mvc/searchmodel',['require','exports','module','underscore','./
     };
 });
 
-define('splunkjs/mvc/jobtracker',['require','underscore','backbone','splunkjs/mvc'],function(require) {
+define('splunkjs/mvc/jobtracker',['require','underscore','backbone','splunkjs/mvc','util/console'],function(require) {
     var _ = require('underscore');
     var Backbone = require('backbone');
     var mvc = require('splunkjs/mvc');
-    //var console = require('util/console');
+    var console = require('util/console');
 
     var MONITORED_PROPERTIES = [
         'dispatchState', 'scanCount', 'resultCount', 'eventCount',
@@ -65110,10 +65110,12 @@ define('splunkjs/mvc/jobtracker',['require','underscore','backbone','splunkjs/mv
                 return;
             }
             
+            // Create search filter for splunkd request
             var requestedSIDs = _(requestedJobs).keys();
+            var filter = _(requestedSIDs).map(function(sid) { return ['sid', sid].join('='); }).join(' OR ');
             
             var tracker = this;
-            this._inflight = this.service.jobs().get("", { id: requestedSIDs, count: requestedSIDs.length },
+            this._inflight = this.service.jobs().get("", { search: filter, count: requestedSIDs.length },
                 function(err, response) {
                     tracker._inflight = null;
                     
