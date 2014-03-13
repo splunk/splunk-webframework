@@ -155,7 +155,6 @@ MIDDLEWARE_CLASSES = (
     'django.contrib.sessions.middleware.SessionMiddleware',
     'splunkdj.middlewares.SplunkLocaleMiddleware',
     # NOTE: Middleware which calls resolve/reverse must come after this comment!
-    'splunkdj.middlewares.MultipleProxyMiddleware',
     'splunkdj.middlewares.SplunkResolvedUrlMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -187,10 +186,6 @@ TEMPLATE_CONTEXT_PROCESSORS = (
     "splunkdj.context_processors.splunkdj")
 
 ROOT_URLCONF = 'urls'
-
-# If we are in SSO mode, we need to use the forwarded host (since we are
-# guaranteed behind a proxy)
-USE_X_FORWARDED_HOST = get_config('sso')
 
 # Python dotted path to the WSGI application used by Django's runserver.
 WSGI_APPLICATION = 'wsgi.application'

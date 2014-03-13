@@ -33,29 +33,8 @@ def get_splunkweb_url(path):
     if settings.SPLUNK_WEB_MOUNT:
         splunkweb_mount = "%s/" % settings.SPLUNK_WEB_MOUNT
         
-    return "/%s%s" % (splunkweb_mount, path)
-
-class MultipleProxyMiddleware(object):
-    FORWARDED_FOR_FIELDS = [
-        'HTTP_X_FORWARDED_FOR',
-        'HTTP_X_FORWARDED_HOST',
-        'HTTP_X_FORWARDED_SERVER',
-    ]
-
-    def process_request(self, request):
-        """
-        Rewrites the proxy headers so that only the most
-        recent proxy is used.
-        """
-        if not settings.SSO_ENABLED:
-            return
-        
-        for field in self.FORWARDED_FOR_FIELDS:
-            if field in request.META:
-                if ',' in request.META[field]:
-                    parts = request.META[field].split(',')
-                    request.META[field] = parts[0].strip()
-        
+    return "%s://%s:%s/%s%s" % (settings.SPLUNK_WEB_SCHEME, settings.SPLUNK_WEB_HOST, settings.SPLUNK_WEB_PORT, splunkweb_mount, path)
+    
 class SplunkCsrfMiddleware(object):
     def process_view(self, request, *args, **kwargs):
         get_token(request)
@@ -194,18 +173,19 @@ class SplunkSSOSessionMiddleware(object):
             pass
             
     def process_response(self, request, response):
-        if not self._initialized or not self._session_key:
+        if not self._initialized or not self._session_key or not hasattr(request, 'user'):
             return response
             
         response.set_cookie('session_token', aes.encrypt(str(self._session_key)))
 
-        # Get the splunkweb cookie set up correctly, by making a request to a page
-        # that requires login but is very fast to render.
-        splunkweb_sso_uri = request.build_absolute_uri(get_splunkweb_url("en-US/debug/pdf_echo"))
-        
+        splunkweb_headers = {}
+        splunkweb_headers[settings.REMOTE_USER_HEADER] = request.user.username
+        splunkweb_sso_uri = get_splunkweb_url("en-US/debug/pdf_echo")
         r = requests.get(
             splunkweb_sso_uri,
-            allow_redirects=True)
+            allow_redirects=True,
+            headers=splunkweb_headers  
+        )
         
         # Set the cookie for our request too
         splunkweb_session_cookie = 'session_id_%s' % settings.SPLUNK_WEB_PORT
