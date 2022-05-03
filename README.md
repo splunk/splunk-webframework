@@ -1,5 +1,23 @@
 # The Splunk Web Framework
 
+<blockquote>
+<h3>Deprecation notice</h3>
+<p>The Standalone Splunk Web Framework is deprecated. This tool was intended for deployment alongside a Splunk Enterprise 5.x deployment and is no longer necessary starting with Splunk Enterprise 6.0, at which point this functionality was embedded into the platform itself.</p>
+<p>What deprecation means:</p>
+<ul>
+<li>The resources relating to the Standalone Splunk Web Framework have been removed from dev.splunk.com. Documentation for the Splunk Web Framework is still <a href="https://dev.splunk.com/enterprise/docs/developapps/visualizedata/usewebframework">available</a>. Only the Standalone Splunk Web Framework is deprecated at this time, and the Splunk Web Framework app is archived on Splunkbase.</li>
+<li>Splunk will no longer provide feature enhancements, engineering support, or customer support for the Standalone Splunk Web Framework.</li></ul>
+<p>Recommendation on new app development and app migration:</p>
+<ul>
+<li>Because Splunk is no longer investing in the Standalone Splunk Web Framework, any new app development should be done using other approaches:<p>
+<ul><li>Use the SplunkUI Toolkit (<a href="https://splunkui.splunk.com/">splunkui.splunk.com</a>).</li>
+<li>SplunkUI <a href="https://splunkui.splunk.com/Create/ExamplesGallery/">examples gallery</a> with GitHub links.</li>
+<li>For existing apps that use the Standalone Splunk Web Framework, we request that developers migrate away from the Standalone Splunk Web Framework. We encourage developers to provide feedback to Splunk at <a href="mailto:devinfo@splunk.com">devinfo@splunk.com</a> if there are any issues with migration. </li></ul></ul>
+
+<p>Notice of removal:</p>
+<ul><li>The Standalone Splunk Web Framework will continue to be available as a public archive on GitHub, should other developers want to clone or fork the project.</li></ul>
+</blockquote>
+
 #### Version 1.0 GA
 
 The Splunk Web Framework lets developers quickly create custom Splunk apps by using prebuilt components, styles, templates, and reusable samples, and by adding custom logic, interactions, and UI. Applications developed with the Web Framework work seamlessly side by side with current Splunk applications.
