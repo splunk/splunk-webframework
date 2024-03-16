@@ -211,7 +211,7 @@ Stay connected with other developers building on Splunk.
 
 <tr>
 <td><b>Issues</b>
-<td>https://github.com/splunk/splunk-appframework/issues/</td>
+<td>https://github.com/splunk/splunk-webframework/issues/</td>
 </tr>
 
 <tr>
